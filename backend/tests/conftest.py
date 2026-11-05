@@ -16,13 +16,17 @@ FIXTURES = Path(__file__).parent / "fixtures"
 TEST_DATABASE_URL = "postgresql+psycopg://learninghub:learninghub@localhost:5434/learninghub_test"
 
 
-@pytest.fixture(scope="session", autouse=True)
-def migrated_test_db() -> None:
-    """Run the real migrations once per test session against the test database."""
+def alembic_config() -> Config:
     config = Config(str(BACKEND_DIR / "alembic.ini"))
     config.set_main_option("script_location", str(BACKEND_DIR / "alembic"))
     config.set_main_option("sqlalchemy.url", TEST_DATABASE_URL)
-    command.upgrade(config, "head")
+    return config
+
+
+@pytest.fixture(scope="session", autouse=True)
+def migrated_test_db() -> None:
+    """Run the real migrations once per test session against the test database."""
+    command.upgrade(alembic_config(), "head")
 
 
 @pytest.fixture(autouse=True)

@@ -34,19 +34,26 @@ describe('RoadmapMap', () => {
 })
 
 describe('layoutRoadmap', () => {
-  it('creates one flow node per roadmap node and one edge per parent link', () => {
+  it('creates one flow node per roadmap node, parent edges and a spine between topics', () => {
     const { nodes, edges } = layoutRoadmap(backend, { caching: 3 }, 'backend/redis')
     expect(nodes).toHaveLength(4)
-    expect(edges).toEqual([{ id: 'caching->redis', source: 'caching', target: 'redis' }])
+    expect(edges.map((e) => e.id).sort()).toEqual(
+      ['caching->redis', 'spine:apis->caching', 'spine:caching->auth'].sort(),
+    )
     const byId = Object.fromEntries(nodes.map((n) => [n.id, n.data]))
     expect(byId.caching.count).toBe(3)
     expect(byId.apis.count).toBe(0)
     expect(byId.redis.selected).toBe(true)
+    expect(byId.caching.isTopic).toBe(true)
+    expect(byId.redis.isTopic).toBe(false)
   })
 
-  it('places a child below its parent', () => {
+  it('stacks topics down a spine and branches subtopics to the right', () => {
     const { nodes } = layoutRoadmap(backend, {}, null)
     const pos = Object.fromEntries(nodes.map((n) => [n.id, n.position]))
-    expect(pos.redis.y).toBeGreaterThan(pos.caching.y)
+    expect(pos.apis.x).toBe(pos.caching.x)
+    expect(pos.caching.y).toBeGreaterThan(pos.apis.y)
+    expect(pos.auth.y).toBeGreaterThan(pos.caching.y)
+    expect(pos.redis.x).toBeGreaterThan(pos.caching.x)
   })
 })

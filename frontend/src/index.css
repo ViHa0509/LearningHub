@@ -111,3 +111,6 @@ button.icon { padding: 2px 8px; }
 .outcome.duplicate .outcome-label { color: var(--warn); }
 .filename { font-weight: 600; overflow-wrap: anywhere; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.roadmap-node.topic { font-weight: 600; border-width: 2px; }
+.roadmap-node .react-flow__handle { opacity: 0; pointer-events: none; }
+.react-flow__edge.spine-edge path { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 6 4; }

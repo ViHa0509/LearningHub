@@ -5,7 +5,7 @@
 - [x] 1.1 Add `.gitattributes` (`* text=auto eol=lf`) and extend `.gitignore` for `storage/`, verify `git check-ignore storage/blobs/x.html` matches
 - [x] 1.2 Add `docker-compose.yml` with Postgres (`pgvector/pgvector:pg17`), a dev and a test database, and verify `docker compose up -d` reports the service healthy
 - [x] 1.3 Scaffold `backend/` (FastAPI app, `requirements.txt`, `requirements-dev.txt`, ruff and mypy config, settings from `.env` with `.env.example`) and verify `GET /api/health` returns 200 under `uvicorn`
-- [x] 1.4 Scaffold `frontend/` (Vite + React + TypeScript, eslint, Vitest, `/api` proxy to port 8000) and verify `npm run build` and `npm test` succeed
+- [x] 1.4 Scaffold `frontend/` (Vite + React + TypeScript, oxlint, Vitest, `/api` proxy to port 8000) and verify `npm run build` and `npm test` succeed
 - [x] 1.5 Install Kit v0 from `ai-sdlc-kit-petrus`: add `CLAUDE.md` (run, test, lint commands for both parts), `REVIEW.md` and the verifier subagent, and verify the verifier runs the documented checks on the empty scaffold
 
 ## 2. Roadmap catalog (spec: roadmap-catalog)
@@ -33,15 +33,15 @@
 
 - [x] 5.1 Build the three-pane layout with collapsible left and right panels and the "agent not available yet" placeholder, and verify a Vitest test for collapse and expand
 - [x] 5.2 Build the left learned-items list (grouped by domain and node in roadmap order, Unsorted group, title filter, empty state with import button) and verify Vitest tests for grouping, filtering and empty state
-- [x] 5.3 Build the center map with React Flow + dagre, note-count markers and a domain switcher, and verify a Vitest test that marked nodes match the counts API response
+- [x] 5.3 Build the center map with React Flow and a roadmap-style spine layout, note-count markers and a domain switcher, and verify a Vitest test that marked nodes match the counts API response
 - [x] 5.4 Wire two-way selection between list and map and verify Vitest tests for both list-to-map and map-to-list scenarios
 - [x] 5.5 Build import from the UI (pick or drop many files, per-file outcome, optional node picker) and verify a Vitest test for import-and-link and skip-linking flows against a mocked API
 - [x] 5.6 Build the note view (title, sandboxed iframe with `sandbox="allow-scripts"`, rename, relink, unlink, delete with confirmation) and verify Vitest tests that the iframe has no `allow-same-origin` and delete requires confirmation
 
 ## 6. End-to-end check
 
-- [ ] 6.1 Run the full flow against the real backend and database: import three real Claude research files, link two, leave one unsorted, reload the app, and verify the list, map counts and original pages match; record the result in the change's evidence log
-- [ ] 6.2 Run all checks listed in CLAUDE.md (ruff, mypy, pytest, eslint, tsc, Vitest) and the verifier subagent, and verify everything passes with output pasted into the PR
+- [x] 6.1 Run the full flow against the real backend and database: import three real Claude research files, link two, leave one unsorted, reload the app, and verify the list, map counts and original pages match; record the result in the change's evidence log
+- [x] 6.2 Run all checks listed in CLAUDE.md (ruff, mypy, pytest, oxlint, tsc, Vitest) and the verifier subagent, and verify everything passes with the verifier report recorded in evidence.md (no PR flow yet: work is pushed to main)
 
 ## Workflow follow-up
 

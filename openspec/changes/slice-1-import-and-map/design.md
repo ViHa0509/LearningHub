@@ -93,7 +93,7 @@ The original is served with `Content-Security-Policy: sandbox allow-scripts` and
 
 ### Frontend: Vite + React + TypeScript
 
-- **Map:** React Flow (`@xyflow/react`) with a top-down tree layout computed by `dagre`. Alternative: hand-drawn SVG like roadmap.sh - better looking, but far more work; React Flow gives pan, zoom and selection for free and fits later agent overlays.
+- **Map:** React Flow (`@xyflow/react`) with a roadmap-style layout (top-level topics on a vertical spine, subtopics branching right; originally planned with `dagre`, replaced during apply - see Implementation notes). Alternative: hand-drawn SVG like roadmap.sh - better looking, but far more work; React Flow gives pan, zoom and selection for free and fits later agent overlays.
 - **Server state:** TanStack Query. **Panels:** `react-resizable-panels`. **Styling:** plain CSS modules with design tokens; no component library yet.
 - Dev server on port 5173 proxies `/api` to the backend on port 8000.
 
@@ -101,7 +101,7 @@ The original is served with `Content-Security-Policy: sandbox allow-scripts` and
 
 - Backend: pytest against a real Postgres test database from docker-compose (no SQLite stand-in, so migrations are exercised). Roadmap validation and HTML extraction get table-driven unit tests with sample Claude pages under `backend/tests/fixtures/`.
 - Frontend: Vitest + Testing Library for list grouping, filtering and selection sync.
-- Checks: `ruff` + `mypy` for Python, `eslint` + `tsc --noEmit` for TypeScript. These commands go into CLAUDE.md so agents and the verifier run the same checks.
+- Checks: `ruff` + `mypy` for Python, `oxlint` + `tsc -b` for TypeScript. These commands go into CLAUDE.md so agents and the verifier run the same checks.
 
 ### Implementation notes (recorded during apply, 2026-11-06)
 
@@ -110,6 +110,7 @@ The original is served with `Content-Security-Policy: sandbox allow-scripts` and
 - **Postgres host port 5434** (`LH_DB_PORT`), because 5433 is already used on the dev machine.
 - **CSS grid instead of react-resizable-panels.** The spec asks for collapsible side panels, not drag-resizing; v4 of the library measures layout that jsdom cannot provide, so a grid with explicit collapse state is simpler and testable. Drag-resize can be added later without changing specs.
 - **httpx2** replaces httpx in dev dependencies: Starlette's TestClient deprecated httpx.
+- **Spine layout instead of dagre.** dagre laid 10 top-level topics side by side, and `fitView` shrank nodes to unreadable size (seen in the E2E screenshot). A small custom layout puts topics on a vertical spine with subtopics to the right, like roadmap.sh, and drops the dependency.
 - **The learned list waits for roadmaps** before rendering, so notes never flash under "Unsorted" while their roadmap is still loading (found by a failing UI test).
 
 ## Risks / Trade-offs
@@ -117,7 +118,7 @@ The original is served with `Content-Security-Policy: sandbox allow-scripts` and
 - [Claude pages load scripts or fonts from CDNs] -> Offline viewing may render without them; acceptable for a local tool, revisit if it hurts.
 - [Sandboxed iframe still runs arbitrary scripts] -> They are isolated in an opaque origin and cannot reach the app; only files the user chose are imported.
 - [No foreign key between notes and nodes] -> Missing nodes are detected and flagged at read time (node-linking spec).
-- [React Flow + dagre layouts look generic compared with roadmap.sh] -> Fine for Slice 1; styling can improve without changing specs.
+- [React Flow layouts look generic compared with roadmap.sh] -> Fine for Slice 1; styling can improve without changing specs.
 - [Windows path and line-ending issues] -> Use `pathlib` everywhere, `.gitattributes` with `* text=auto eol=lf`.
 
 ## Migration Plan

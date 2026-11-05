@@ -15,18 +15,21 @@ import { layoutRoadmap, type RoadmapNodeData } from '../lib/layout'
 
 function RoadmapNodeView({ data }: NodeProps<Node<RoadmapNodeData>>) {
   const classes = ['roadmap-node']
+  if (data.isTopic) classes.push('topic')
   if (data.count > 0) classes.push('has-notes')
   if (data.selected) classes.push('selected')
   return (
     <div className={classes.join(' ')} data-testid={`node-${data.fullId}`} aria-selected={data.selected}>
-      <Handle type="target" position={Position.Top} isConnectable={false} />
+      <Handle id="top" type="target" position={Position.Top} isConnectable={false} />
+      <Handle id="left" type="target" position={Position.Left} isConnectable={false} />
       <span className="node-title">{data.title}</span>
       {data.count > 0 && (
         <span className="badge" aria-label={`${data.count} notes`}>
           {data.count}
         </span>
       )}
-      <Handle type="source" position={Position.Bottom} isConnectable={false} />
+      <Handle id="right" type="source" position={Position.Right} isConnectable={false} />
+      <Handle id="bottom" type="source" position={Position.Bottom} isConnectable={false} />
     </div>
   )
 }
@@ -77,6 +80,7 @@ export function RoadmapMap({ domains, domainId, selectedNodeId, onSelectDomain, 
             nodesDraggable={false}
             nodesConnectable={false}
             fitView
+            fitViewOptions={{ maxZoom: 1, padding: 0.08 }}
             minZoom={0.2}
             proOptions={{ hideAttribution: true }}
             onNodeClick={(_, node) => onSelectNode((node.data as RoadmapNodeData).fullId)}
