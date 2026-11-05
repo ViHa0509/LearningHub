@@ -4,6 +4,7 @@ import { defineConfig } from 'vite'
 
 export default defineConfig({
   plugins: [react()],
+  build: { chunkSizeWarningLimit: 800 },
   server: {
     port: 5173,
     proxy: {

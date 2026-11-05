@@ -31,12 +31,12 @@
 
 ## 5. Web views (spec: learning-views)
 
-- [ ] 5.1 Build the three-pane layout with collapsible left and right panels and the "agent not available yet" placeholder, and verify a Vitest test for collapse and expand
-- [ ] 5.2 Build the left learned-items list (grouped by domain and node in roadmap order, Unsorted group, title filter, empty state with import button) and verify Vitest tests for grouping, filtering and empty state
-- [ ] 5.3 Build the center map with React Flow + dagre, note-count markers and a domain switcher, and verify a Vitest test that marked nodes match the counts API response
-- [ ] 5.4 Wire two-way selection between list and map and verify Vitest tests for both list-to-map and map-to-list scenarios
-- [ ] 5.5 Build import from the UI (pick or drop many files, per-file outcome, optional node picker) and verify a Vitest test for import-and-link and skip-linking flows against a mocked API
-- [ ] 5.6 Build the note view (title, sandboxed iframe with `sandbox="allow-scripts"`, rename, relink, unlink, delete with confirmation) and verify Vitest tests that the iframe has no `allow-same-origin` and delete requires confirmation
+- [x] 5.1 Build the three-pane layout with collapsible left and right panels and the "agent not available yet" placeholder, and verify a Vitest test for collapse and expand
+- [x] 5.2 Build the left learned-items list (grouped by domain and node in roadmap order, Unsorted group, title filter, empty state with import button) and verify Vitest tests for grouping, filtering and empty state
+- [x] 5.3 Build the center map with React Flow + dagre, note-count markers and a domain switcher, and verify a Vitest test that marked nodes match the counts API response
+- [x] 5.4 Wire two-way selection between list and map and verify Vitest tests for both list-to-map and map-to-list scenarios
+- [x] 5.5 Build import from the UI (pick or drop many files, per-file outcome, optional node picker) and verify a Vitest test for import-and-link and skip-linking flows against a mocked API
+- [x] 5.6 Build the note view (title, sandboxed iframe with `sandbox="allow-scripts"`, rename, relink, unlink, delete with confirmation) and verify Vitest tests that the iframe has no `allow-same-origin` and delete requires confirmation
 
 ## 6. End-to-end check
 

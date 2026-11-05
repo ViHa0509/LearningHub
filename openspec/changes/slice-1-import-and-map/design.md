@@ -108,6 +108,9 @@ The original is served with `Content-Security-Policy: sandbox allow-scripts` and
 - **Sync SQLAlchemy instead of async.** psycopg 3's async mode does not run on Windows' default Proactor event loop, which uvicorn uses on this dev machine. Routes are plain `def` handlers (FastAPI runs them in its thread pool) with sync `Session`s over psycopg 3. At single-user scale this costs nothing; moving to async later means switching the driver to asyncpg or forcing a selector loop.
 - **oxlint instead of eslint.** The current Vite React template ships oxlint; the lint check is `npm run lint` (oxlint) plus `tsc -b` for types.
 - **Postgres host port 5434** (`LH_DB_PORT`), because 5433 is already used on the dev machine.
+- **CSS grid instead of react-resizable-panels.** The spec asks for collapsible side panels, not drag-resizing; v4 of the library measures layout that jsdom cannot provide, so a grid with explicit collapse state is simpler and testable. Drag-resize can be added later without changing specs.
+- **httpx2** replaces httpx in dev dependencies: Starlette's TestClient deprecated httpx.
+- **The learned list waits for roadmaps** before rendering, so notes never flash under "Unsorted" while their roadmap is still loading (found by a failing UI test).
 
 ## Risks / Trade-offs
 
