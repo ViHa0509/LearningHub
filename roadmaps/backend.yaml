@@ -1,0 +1,102 @@
+# Backend roadmap - hand-written for Learning Hub (not copied from roadmap.sh).
+# Node ids: lowercase kebab-case, unique in this file. Sibling order = order in this list.
+id: backend
+title: Backend
+nodes:
+  - id: internet
+    title: How the internet works
+    description: Requests travel from clients to servers over TCP/IP.
+  - id: http
+    parent: internet
+    title: HTTP and HTTPS
+    description: Methods, status codes, headers, TLS.
+  - id: dns
+    parent: internet
+    title: DNS
+    description: How names resolve to addresses.
+
+  - id: language
+    title: Programming language
+    description: One backend language learned in depth.
+  - id: python
+    parent: language
+    title: Python
+    description: Types, packaging, virtual environments.
+  - id: async-programming
+    parent: language
+    title: Async programming
+    description: Event loops, coroutines, concurrency limits.
+
+  - id: apis
+    title: APIs
+    description: Designing interfaces other programs call.
+  - id: rest
+    parent: apis
+    title: REST
+    description: Resources, verbs, idempotency, pagination.
+  - id: graphql
+    parent: apis
+    title: GraphQL
+    description: Schemas, resolvers, query cost.
+  - id: websockets
+    parent: apis
+    title: WebSockets
+    description: Long-lived two-way connections.
+
+  - id: databases
+    title: Databases
+    description: Storing and querying data reliably.
+  - id: sql-databases
+    parent: databases
+    title: Relational databases
+    description: SQL, indexes, transactions, isolation levels.
+  - id: orm
+    parent: sql-databases
+    title: ORMs
+    description: Mapping objects to tables, N+1 queries.
+  - id: migrations
+    parent: sql-databases
+    title: Schema migrations
+    description: Versioned, reversible schema changes.
+  - id: nosql
+    parent: databases
+    title: NoSQL databases
+    description: Document, key-value and wide-column stores.
+
+  - id: caching
+    title: Caching
+    description: Serving repeated work faster.
+  - id: redis
+    parent: caching
+    title: Redis
+    description: Data structures, eviction, TTL.
+  - id: http-caching
+    parent: caching
+    title: HTTP caching
+    description: Cache-Control, ETags, CDNs.
+
+  - id: auth
+    title: Authentication and authorization
+    description: Who the caller is and what they may do.
+  - id: jwt
+    parent: auth
+    title: JWT
+    description: Signed tokens, expiry, revocation.
+  - id: oauth
+    parent: auth
+    title: OAuth 2 and OIDC
+    description: Delegated access and sign-in flows.
+
+  - id: testing
+    title: Testing
+    description: Unit, integration and contract tests.
+  - id: message-queues
+    title: Message queues
+    description: Asynchronous work and decoupled services.
+  - id: architecture
+    title: Architecture
+    description: Structuring systems as they grow.
+  - id: microservices
+    parent: architecture
+    title: Microservices
+    description: Service boundaries and their costs.

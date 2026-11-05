@@ -1,0 +1,88 @@
+# DevOps roadmap - hand-written for Learning Hub (not copied from roadmap.sh).
+# Node ids: lowercase kebab-case, unique in this file. Sibling order = order in this list.
+id: devops
+title: DevOps
+nodes:
+  - id: linux
+    title: Linux
+    description: The operating system most servers run.
+  - id: shell-scripting
+    parent: linux
+    title: Shell scripting
+    description: Automating tasks with Bash.
+  - id: processes
+    parent: linux
+    title: Processes and services
+    description: Signals, systemd, resource limits.
+
+  - id: networking
+    title: Networking
+    description: How machines reach each other.
+  - id: dns
+    parent: networking
+    title: DNS
+    description: Records, TTLs, propagation.
+  - id: load-balancing
+    parent: networking
+    title: Load balancing
+    description: Spreading traffic across instances.
+
+  - id: version-control
+    title: Version control
+    description: Tracking and sharing changes.
+  - id: git
+    parent: version-control
+    title: Git
+    description: Branches, rebase, history.
+
+  - id: containers
+    title: Containers
+    description: Packaging apps with their dependencies.
+  - id: docker
+    parent: containers
+    title: Docker
+    description: Images, layers, compose.
+  - id: kubernetes
+    parent: containers
+    title: Kubernetes
+    description: Scheduling and running containers at scale.
+  - id: helm
+    parent: kubernetes
+    title: Helm
+    description: Packaging Kubernetes manifests.
+
+  - id: ci-cd
+    title: CI/CD
+    description: Building, testing and releasing automatically.
+  - id: github-actions
+    parent: ci-cd
+    title: GitHub Actions
+    description: Workflows, runners, secrets.
+
+  - id: infrastructure-as-code
+    title: Infrastructure as code
+    description: Declaring infrastructure in versioned files.
+  - id: terraform
+    parent: infrastructure-as-code
+    title: Terraform
+    description: Providers, state, plans.
+
+  - id: cloud
+    title: Cloud providers
+    description: Renting compute, storage and networks.
+  - id: aws
+    parent: cloud
+    title: AWS
+    description: Core services and IAM.
+
+  - id: monitoring
+    title: Monitoring
+    description: Knowing what production is doing.
+  - id: logging
+    parent: monitoring
+    title: Logging
+    description: Structured logs and aggregation.
+  - id: metrics
+    parent: monitoring
+    title: Metrics and alerting
+    description: Time series, SLOs, alerts.

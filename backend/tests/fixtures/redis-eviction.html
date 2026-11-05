@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Redis eviction policies</title>
+<style>
+  :root { --accent: #c33; }
+  body { font-family: system-ui, sans-serif; max-width: 860px; margin: 2rem auto; }
+  .card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+</head>
+<body>
+<h1>Redis eviction policies</h1>
+<p class="lead">When <code>maxmemory</code> is reached, Redis evicts keys according to a policy.</p>
+<div class="card">
+  <h2>allkeys-lru</h2>
+  <p>Evicts the least recently used keys across the whole keyspace.</p>
+</div>
+<div class="card">
+  <h2>volatile-ttl</h2>
+  <p>Evicts keys with an expire set, shortest TTL first.</p>
+</div>
+<canvas id="chart"></canvas>
+<script>
+  const SECRET_CODE_MARKER = "this-should-not-be-text";
+  new Chart(document.getElementById('chart'), { type: 'bar', data: { labels: ['a'], datasets: [] } });
+</script>
+</body>
+</html>

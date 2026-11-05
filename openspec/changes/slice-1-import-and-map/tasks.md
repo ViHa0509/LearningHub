@@ -10,24 +10,24 @@
 
 ## 2. Roadmap catalog (spec: roadmap-catalog)
 
-- [ ] 2.1 Write `roadmaps/backend.yaml` and `roadmaps/devops.yaml` by hand, 15-25 nodes each, and verify each node id is kebab-case and unique by running the loader
-- [ ] 2.2 Implement YAML loading and validation (missing fields, duplicates, non-kebab ids, unknown parent, cycles) that stops startup with file and node in the error, and verify with table-driven pytest cases for each invalid kind
-- [ ] 2.3 Implement `GET /api/domains` and `GET /api/domains/{domain}/roadmap` (404 for unknown domain) and verify with API tests covering every roadmap-catalog scenario
+- [x] 2.1 Write `roadmaps/backend.yaml` and `roadmaps/devops.yaml` by hand, 15-25 nodes each, and verify each node id is kebab-case and unique by running the loader
+- [x] 2.2 Implement YAML loading and validation (missing fields, duplicates, non-kebab ids, unknown parent, cycles) that stops startup with file and node in the error, and verify with table-driven pytest cases for each invalid kind
+- [x] 2.3 Implement `GET /api/domains` and `GET /api/domains/{domain}/roadmap` (404 for unknown domain) and verify with API tests covering every roadmap-catalog scenario
 
 ## 3. Note storage and import (spec: knowledge-import)
 
-- [ ] 3.1 Create the `notes` table with an Alembic migration and verify `alembic upgrade head` then `alembic downgrade base` both succeed on the test database
-- [ ] 3.2 Implement the `FileStore` protocol and `LocalFileStore` (content-addressed under `storage/blobs/`) and verify put/get/delete round-trip tests, including byte-identical reads
-- [ ] 3.3 Implement HTML extraction (title fallback chain, text without scripts/styles, charset fallback) and verify with fixture Claude pages under `backend/tests/fixtures/`
-- [ ] 3.4 Implement `POST /api/notes/import` for many files with per-file outcome (created, duplicate, rejected with reason; 10 MB limit) and verify API tests for each knowledge-import import and rejection scenario
-- [ ] 3.5 Implement list, read, rename and delete (`GET/PATCH/DELETE /api/notes...`; delete also removes the blob) and verify API tests for rename and delete scenarios
-- [ ] 3.6 Implement `GET /api/notes/{id}/original` with `Content-Security-Policy: sandbox allow-scripts` and `nosniff` and verify a test asserts the headers and byte-identical body
+- [x] 3.1 Create the `notes` table with an Alembic migration and verify `alembic upgrade head` then `alembic downgrade base` both succeed on the test database
+- [x] 3.2 Implement the `FileStore` protocol and `LocalFileStore` (content-addressed under `storage/blobs/`) and verify put/get/delete round-trip tests, including byte-identical reads
+- [x] 3.3 Implement HTML extraction (title fallback chain, text without scripts/styles, charset fallback) and verify with fixture Claude pages under `backend/tests/fixtures/`
+- [x] 3.4 Implement `POST /api/notes/import` for many files with per-file outcome (created, duplicate, rejected with reason; 10 MB limit) and verify API tests for each knowledge-import import and rejection scenario
+- [x] 3.5 Implement list, read, rename and delete (`GET/PATCH/DELETE /api/notes...`; delete also removes the blob) and verify API tests for rename and delete scenarios
+- [x] 3.6 Implement `GET /api/notes/{id}/original` with `Content-Security-Policy: sandbox allow-scripts` and `nosniff` and verify a test asserts the headers and byte-identical body
 
 ## 4. Node linking (spec: node-linking)
 
-- [ ] 4.1 Extend `PATCH /api/notes/{id}` to set, change or clear `node_id`, rejecting unknown nodes without changing the note, and verify API tests for link, move, unlink and unknown-node scenarios
-- [ ] 4.2 Implement `GET /api/notes?node=` and `?unsorted=true` (unsorted includes notes on missing nodes, flagged) and verify API tests including the removed-node scenario
-- [ ] 4.3 Implement `GET /api/domains/{domain}/counts` and verify the per-domain count scenario
+- [x] 4.1 Extend `PATCH /api/notes/{id}` to set, change or clear `node_id`, rejecting unknown nodes without changing the note, and verify API tests for link, move, unlink and unknown-node scenarios
+- [x] 4.2 Implement `GET /api/notes?node=` and `?unsorted=true` (unsorted includes notes on missing nodes, flagged) and verify API tests including the removed-node scenario
+- [x] 4.3 Implement `GET /api/domains/{domain}/counts` and verify the per-domain count scenario
 
 ## 5. Web views (spec: learning-views)
 
