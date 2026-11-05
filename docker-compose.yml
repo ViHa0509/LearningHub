@@ -1,0 +1,20 @@
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: learninghub
+      POSTGRES_PASSWORD: learninghub
+      POSTGRES_DB: learninghub
+    ports:
+      - "${LH_DB_PORT:-5434}:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./docker/db-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U learninghub -d learninghub"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  db-data:

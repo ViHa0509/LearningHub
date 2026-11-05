@@ -2,11 +2,11 @@
 
 ## 1. Repository scaffolding and Kit v0 adoption
 
-- [ ] 1.1 Add `.gitattributes` (`* text=auto eol=lf`) and extend `.gitignore` for `storage/`, verify `git check-ignore storage/blobs/x.html` matches
-- [ ] 1.2 Add `docker-compose.yml` with Postgres (`pgvector/pgvector:pg17`), a dev and a test database, and verify `docker compose up -d` reports the service healthy
-- [ ] 1.3 Scaffold `backend/` (FastAPI app, `requirements.txt`, `requirements-dev.txt`, ruff and mypy config, settings from `.env` with `.env.example`) and verify `GET /api/health` returns 200 under `uvicorn`
-- [ ] 1.4 Scaffold `frontend/` (Vite + React + TypeScript, eslint, Vitest, `/api` proxy to port 8000) and verify `npm run build` and `npm test` succeed
-- [ ] 1.5 Install Kit v0 from `ai-sdlc-kit-petrus`: add `CLAUDE.md` (run, test, lint commands for both parts), `REVIEW.md` and the verifier subagent, and verify the verifier runs the documented checks on the empty scaffold
+- [x] 1.1 Add `.gitattributes` (`* text=auto eol=lf`) and extend `.gitignore` for `storage/`, verify `git check-ignore storage/blobs/x.html` matches
+- [x] 1.2 Add `docker-compose.yml` with Postgres (`pgvector/pgvector:pg17`), a dev and a test database, and verify `docker compose up -d` reports the service healthy
+- [x] 1.3 Scaffold `backend/` (FastAPI app, `requirements.txt`, `requirements-dev.txt`, ruff and mypy config, settings from `.env` with `.env.example`) and verify `GET /api/health` returns 200 under `uvicorn`
+- [x] 1.4 Scaffold `frontend/` (Vite + React + TypeScript, eslint, Vitest, `/api` proxy to port 8000) and verify `npm run build` and `npm test` succeed
+- [x] 1.5 Install Kit v0 from `ai-sdlc-kit-petrus`: add `CLAUDE.md` (run, test, lint commands for both parts), `REVIEW.md` and the verifier subagent, and verify the verifier runs the documented checks on the empty scaffold
 
 ## 2. Roadmap catalog (spec: roadmap-catalog)
 

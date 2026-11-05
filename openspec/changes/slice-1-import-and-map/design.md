@@ -38,7 +38,7 @@ LearningHub/
 
 Alternative: separate backend and frontend repos. Rejected: one feature touches both, and a single change should leave one commit chain.
 
-### Backend: FastAPI + SQLAlchemy 2 (async) + Alembic + psycopg 3
+### Backend: FastAPI + SQLAlchemy 2 + Alembic + psycopg 3 (sync sessions, see Implementation notes)
 
 SQLAlchemy 2 typed models with Alembic migrations are the mainstream FastAPI choice and keep the schema versioned for later slices. Alternative: SQLModel - thinner, but less control over migrations and async sessions. Dependencies are managed with `venv` + `pip` and a pinned `requirements.txt` (plus `requirements-dev.txt`).
 
@@ -102,6 +102,12 @@ The original is served with `Content-Security-Policy: sandbox allow-scripts` and
 - Backend: pytest against a real Postgres test database from docker-compose (no SQLite stand-in, so migrations are exercised). Roadmap validation and HTML extraction get table-driven unit tests with sample Claude pages under `backend/tests/fixtures/`.
 - Frontend: Vitest + Testing Library for list grouping, filtering and selection sync.
 - Checks: `ruff` + `mypy` for Python, `eslint` + `tsc --noEmit` for TypeScript. These commands go into CLAUDE.md so agents and the verifier run the same checks.
+
+### Implementation notes (recorded during apply, 2026-11-06)
+
+- **Sync SQLAlchemy instead of async.** psycopg 3's async mode does not run on Windows' default Proactor event loop, which uvicorn uses on this dev machine. Routes are plain `def` handlers (FastAPI runs them in its thread pool) with sync `Session`s over psycopg 3. At single-user scale this costs nothing; moving to async later means switching the driver to asyncpg or forcing a selector loop.
+- **oxlint instead of eslint.** The current Vite React template ships oxlint; the lint check is `npm run lint` (oxlint) plus `tsc -b` for types.
+- **Postgres host port 5434** (`LH_DB_PORT`), because 5433 is already used on the dev machine.
 
 ## Risks / Trade-offs
 

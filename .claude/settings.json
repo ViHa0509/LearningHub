@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "petrus-sdlc": {
+      "source": {
+        "source": "github",
+        "repo": "ViHa0509/ai-sdlc-kit-petrus"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "ai-sdlc-kit@petrus-sdlc": true
+  }
+}
