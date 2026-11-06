@@ -9,6 +9,11 @@ const python = join(backendDir, '.venv', 'Scripts', 'python')
 export const E2E_ENV = {
   LH_DATABASE_URL: 'postgresql+psycopg://learninghub:learninghub@localhost:5434/learninghub_e2e',
   LH_STORAGE_DIR: join(tmpdir(), 'learninghub-e2e-storage'),
+  // No agent provider, whatever backend/.env says: the checks must not call a paid API.
+  LH_ANTHROPIC_API_KEY: '',
+  LH_OPENAI_API_KEY: '',
+  LH_DEEPSEEK_API_KEY: '',
+  LH_OLLAMA_URL: '',
 }
 
 export default defineConfig({

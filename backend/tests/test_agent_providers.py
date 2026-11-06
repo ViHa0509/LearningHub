@@ -139,6 +139,8 @@ def test_build_providers_only_for_configured_settings(settings_factory: Any) -> 
         settings_factory(anthropic_api_key=SecretStr("sk-a"), ollama_url="http://localhost:11434/")
     )
     assert set(configured) == {"anthropic", "ollama"}
+    blank = build_providers(settings_factory(openai_api_key=SecretStr("  "), ollama_url=""))
+    assert blank == {}
 
 
 # Scenario: No provider configured

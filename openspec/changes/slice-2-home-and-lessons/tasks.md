@@ -24,5 +24,5 @@
 
 ## 5. UI checks and verification
 
-- [ ] 5.1 Add the Playwright suite (`frontend/e2e/`, Edge channel, backend on 8001 with `learninghub_e2e`, Vite on 5174, reset in global setup, screenshots per page) covering home -> roadmap -> lesson edit -> import -> open note -> theme, add the database to `docker/db-init`, add `npm run e2e` as a check in CLAUDE.md, and verify the suite passes
+- [x] 5.1 Add the Playwright suite (`frontend/e2e/`, Edge channel, backend on 8001 with `learninghub_e2e`, Vite on 5174, reset in global setup, screenshots per page) covering home -> roadmap -> lesson edit -> import -> open note -> theme, add the database to `docker/db-init`, add `npm run e2e` as a check in CLAUDE.md, and verify the suite passes
 - [ ] 5.2 Run every CLAUDE.md check, the UI QC agent and the verifier subagent on this change, record results in `evidence.md`, and verify the verifier verdict is pass

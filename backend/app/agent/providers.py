@@ -11,6 +11,7 @@ from typing import Any, Protocol
 
 import anthropic
 import openai
+from pydantic import SecretStr
 
 from app.agent.messages import Message, ProviderError, ToolCall, ToolSpec, Turn
 from app.config import Settings
@@ -189,25 +190,24 @@ class OpenAICompatibleProvider:
 # --- Registry -----------------------------------------------------------------
 
 
+def _secret(value: SecretStr | None) -> str | None:
+    """The key, or None when unset or blank (an empty LH_*_API_KEY means not configured)."""
+    text = value.get_secret_value().strip() if value is not None else ""
+    return text or None
+
+
 def build_providers(settings: Settings) -> dict[str, ChatProvider]:
     """Providers whose key or URL is configured. Creating a client makes no request."""
     providers: dict[str, ChatProvider] = {}
-    if settings.anthropic_api_key:
-        providers["anthropic"] = AnthropicProvider(
-            anthropic.Anthropic(api_key=settings.anthropic_api_key.get_secret_value())
-        )
-    if settings.openai_api_key:
-        providers["openai"] = OpenAICompatibleProvider(
-            openai.OpenAI(api_key=settings.openai_api_key.get_secret_value())
-        )
-    if settings.deepseek_api_key:
+    if key := _secret(settings.anthropic_api_key):
+        providers["anthropic"] = AnthropicProvider(anthropic.Anthropic(api_key=key))
+    if key := _secret(settings.openai_api_key):
+        providers["openai"] = OpenAICompatibleProvider(openai.OpenAI(api_key=key))
+    if key := _secret(settings.deepseek_api_key):
         providers["deepseek"] = OpenAICompatibleProvider(
-            openai.OpenAI(
-                api_key=settings.deepseek_api_key.get_secret_value(),
-                base_url="https://api.deepseek.com",
-            )
+            openai.OpenAI(api_key=key, base_url="https://api.deepseek.com")
         )
-    if settings.ollama_url:
+    if settings.ollama_url and settings.ollama_url.strip():
         providers["ollama"] = OpenAICompatibleProvider(
             openai.OpenAI(api_key="ollama", base_url=settings.ollama_url.rstrip("/") + "/v1")
         )

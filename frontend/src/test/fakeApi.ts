@@ -1,5 +1,5 @@
 import { vi } from 'vitest'
-import type { ImportOutcome, Lesson, Note, Roadmap } from '../api'
+import type { AgentProvider, ChatPage, ChatReply, ChatTurn, ImportOutcome, Lesson, Note, Roadmap } from '../api'
 
 export const backend: Roadmap = {
   id: 'backend',
@@ -28,6 +28,25 @@ export const devops: Roadmap = {
   ],
 }
 
+export const PROVIDERS: AgentProvider[] = [
+  {
+    id: 'anthropic',
+    label: 'Anthropic (Claude)',
+    available: true,
+    setting: 'LH_ANTHROPIC_API_KEY',
+    models: ['claude-sonnet-5-5', 'claude-haiku-5-5'],
+    default_model: 'claude-sonnet-5-5',
+  },
+  {
+    id: 'openai',
+    label: 'OpenAI',
+    available: true,
+    setting: 'LH_OPENAI_API_KEY',
+    models: ['gpt-5.5'],
+    default_model: 'gpt-5.5',
+  },
+]
+
 let seq = 0
 export function makeNote(title: string, nodeId: string | null = null, extra: Partial<Note> = {}): Note {
   seq += 1
@@ -48,6 +67,9 @@ export interface FakeState {
   notes: Note[]
   importResults?: ImportOutcome[]
   lessons: Record<string, Lesson>
+  providers: AgentProvider[]
+  /** Answers POST /api/agent/chat; return a reply, or a status and detail for an error. */
+  chat: (body: { provider: string; model: string; messages: ChatTurn[]; page: ChatPage }) => ChatReply | { status: number; detail: string }
   calls: { method: string; url: string; body?: unknown }[]
 }
 
@@ -61,7 +83,14 @@ const respond = (body: unknown, status = 200) =>
 
 /** Installs a fetch stub that behaves like the backend API over in-memory state. */
 export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome[]): FakeState {
-  const state: FakeState = { notes: [...notes], importResults, lessons: {}, calls: [] }
+  const state: FakeState = {
+    notes: [...notes],
+    importResults,
+    lessons: {},
+    providers: PROVIDERS.map((p) => ({ ...p, available: false })),
+    chat: () => ({ reply: 'ok', steps: [], changed_lessons: [], stopped: false }),
+    calls: [],
+  }
   const roadmaps: Record<string, Roadmap> = { backend, devops }
   const descriptions: Record<string, string | null> = { backend: 'Server-side code.', devops: null }
 
@@ -116,6 +145,11 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
           }
         }
         return respond({ domain, counts })
+      }
+      if (url === '/api/agent/providers') return respond(state.providers)
+      if (url === '/api/agent/chat') {
+        const answer = state.chat(body)
+        return 'status' in answer ? respond({ detail: answer.detail }, answer.status) : respond(answer)
       }
       if (url === '/api/notes' && method === 'GET') return respond(state.notes)
       if (url === '/api/notes/import') {

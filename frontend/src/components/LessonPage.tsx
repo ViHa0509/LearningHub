@@ -8,9 +8,11 @@ interface Props {
   domain: string
   node: string
   notes: Note[]
+  /** Asks the agent to draft this lesson; absent when no provider is configured. */
+  onDraft?: () => void
 }
 
-export function LessonPage({ domain, node, notes }: Props) {
+export function LessonPage({ domain, node, notes, onDraft }: Props) {
   const roadmap = useQuery({ queryKey: queryKeys.roadmap(domain), queryFn: () => api.roadmap(domain) })
   const mapLink = routeHash({ page: 'roadmap', domain })
 
@@ -87,7 +89,7 @@ export function LessonPage({ domain, node, notes }: Props) {
         )}
       </section>
 
-      <LessonContent key={current.full_id} domain={domain} node={node} />
+      <LessonContent key={current.full_id} domain={domain} node={node} onDraft={onDraft} />
 
       <p className="further-reading">
         Further reading:{' '}
@@ -99,7 +101,7 @@ export function LessonPage({ domain, node, notes }: Props) {
   )
 }
 
-function LessonContent({ domain, node }: { domain: string; node: string }) {
+function LessonContent({ domain, node, onDraft }: { domain: string; node: string; onDraft?: () => void }) {
   const client = useQueryClient()
   const lesson = useQuery({ queryKey: queryKeys.lesson(domain, node), queryFn: () => api.lesson(domain, node) })
   const [draft, setDraft] = useState<string | null>(null)
@@ -163,9 +165,16 @@ function LessonContent({ domain, node }: { domain: string; node: string }) {
         </div>
       ) : (
         lesson.data && (
-          <p className="muted empty-lesson">
-            No lesson yet. Write down what you learned about this topic, or ask the agent to draft it.
-          </p>
+          <div className="empty-lesson">
+            <p className="muted">
+              No lesson yet. Write down what you learned about this topic, or ask the agent to draft it.
+            </p>
+            {onDraft && (
+              <button type="button" onClick={onDraft}>
+                Draft with agent
+              </button>
+            )}
+          </div>
         )
       )}
     </section>

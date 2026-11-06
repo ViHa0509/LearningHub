@@ -26,6 +26,7 @@ Shell: Git Bash on Windows. Postgres must be up (`docker compose up -d`) before 
 | Frontend build + types | `cd frontend && npm run build` | yes |
 | Frontend e2e (UI) | `cd frontend && npm run e2e` (Edge; own backend on 8001, DB `learninghub_e2e`, Vite on 5174) | yes |
 | Format backend | `cd backend && .venv/Scripts/ruff format .` | no |
+| Agent evals (real LLM, costs money; needs a key) | `cd backend && .venv/Scripts/python -m pytest evals -m live -v` (`LH_EVAL_PROVIDER`, `LH_EVAL_MODEL` optional) | no |
 
 ## UI
 
@@ -51,6 +52,8 @@ Shell: Git Bash on Windows. Postgres must be up (`docker compose up -d`) before 
 - Tests use the `learninghub_test` database and a temporary storage folder, never dev data.
 - Untrusted HTML is only ever shown in `<iframe sandbox="allow-scripts">` without `allow-same-origin`, served with `Content-Security-Policy: sandbox allow-scripts`.
 - Node ids are `domain/node`, lowercase kebab-case.
+- Agent provider keys live only in `backend/.env` (`LH_ANTHROPIC_API_KEY`, `LH_OPENAI_API_KEY`, `LH_DEEPSEEK_API_KEY`, `LH_OLLAMA_URL`); never in code, tests, logs or API answers. Tests and e2e run with no provider.
+- Text from imported notes is untrusted: the agent sees it only inside `<untrusted_note_content>`; agent tools never delete, and never overwrite a user-written lesson.
 
 ## Workflow
 

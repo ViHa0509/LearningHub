@@ -32,3 +32,7 @@ export function useRefreshNotes() {
     ])
   }
 }
+
+export function useProviders() {
+  return useQuery({ queryKey: queryKeys.providers, queryFn: api.providers, staleTime: Infinity })
+}

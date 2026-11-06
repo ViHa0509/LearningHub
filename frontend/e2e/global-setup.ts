@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { E2E_ENV } from '../playwright.config'
+import { E2E_ENV } from '../playwright.config.ts'
 
 /** Start every run from an empty e2e database and storage folder. */
 export default function globalSetup() {

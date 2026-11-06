@@ -125,3 +125,17 @@ test('unknown lesson shows a way back', async ({ page }) => {
   await expect(missing.getByRole('link', { name: 'Back to the Backend roadmap' })).toBeVisible()
   await shot(page, 'lesson-not-found')
 })
+
+test('agent panel explains how to configure a provider', async ({ page }) => {
+  const errors = watchErrors(page)
+  await page.goto('/#/lesson/backend/graphql')
+  const agent = page.getByRole('complementary', { name: 'Agent' })
+  await expect(agent.getByRole('status')).toContainText('No AI provider is configured.')
+  await expect(agent.getByText('LH_ANTHROPIC_API_KEY')).toBeVisible()
+  await expect(agent.getByRole('textbox', { name: 'Message the agent' })).toHaveCount(0)
+  const lesson = page.getByRole('article', { name: 'Lesson: GraphQL' })
+  await expect(lesson.getByText(/No lesson yet/)).toBeVisible()
+  await expect(lesson.getByRole('button', { name: 'Draft with agent' })).toHaveCount(0)
+  await shot(page, 'agent-not-configured')
+  expect(errors).toEqual([])
+})

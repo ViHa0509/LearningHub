@@ -87,7 +87,7 @@ export function RoadmapMap({ domains, domainId, selectedNodeId, onSelectDomain, 
             onNodeClick={(_, node) => onSelectNode((node.data as RoadmapNodeData).fullId)}
           >
             <Background />
-            <Controls showInteractive={false} />
+            <Controls position="bottom-right" showInteractive={false} />
           </ReactFlow>
         )}
       </div>

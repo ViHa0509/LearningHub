@@ -53,6 +53,40 @@ export interface Lesson {
   updated_at: string | null
 }
 
+export interface AgentProvider {
+  id: string
+  label: string
+  available: boolean
+  setting: string
+  models: string[]
+  default_model: string
+}
+
+export interface ChatPage {
+  kind: 'home' | 'roadmap' | 'lesson' | 'note'
+  domain?: string
+  node?: string
+  note_id?: string
+}
+
+export interface ChatTurn {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface AgentStep {
+  tool: string
+  input: Record<string, unknown>
+  summary: string
+}
+
+export interface ChatReply {
+  reply: string
+  steps: AgentStep[]
+  changed_lessons: string[]
+  stopped: boolean
+}
+
 export class ApiError extends Error {
   status: number
 
@@ -102,6 +136,9 @@ export const api = {
     request<Note>(`/api/notes/${id}`, json('PATCH', { node_id: nodeId })),
   remove: (id: string) => request<void>(`/api/notes/${id}`, { method: 'DELETE' }),
   originalUrl: (id: string) => `/api/notes/${id}/original`,
+  providers: () => request<AgentProvider[]>('/api/agent/providers'),
+  chat: (body: { provider: string; model: string; messages: ChatTurn[]; page: ChatPage }) =>
+    request<ChatReply>('/api/agent/chat', json('POST', body)),
   lesson: (domain: string, node: string) => request<Lesson>(`/api/lessons/${domain}/${node}`),
   saveLesson: (domain: string, node: string, body: string, source: LessonSource = 'user') =>
     request<Lesson>(`/api/lessons/${domain}/${node}`, json('PUT', { body, source })),
@@ -113,4 +150,5 @@ export const queryKeys = {
   counts: (domain: string) => ['counts', domain] as const,
   notes: ['notes'] as const,
   lesson: (domain: string, node: string) => ['lesson', domain, node] as const,
+  providers: ['agent-providers'] as const,
 }

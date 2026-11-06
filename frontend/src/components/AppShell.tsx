@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import type { Note } from '../api'
-import { useAllRoadmaps, useDomains, useNotes, useRefreshNotes } from '../hooks'
+import type { ChatPage, Note } from '../api'
+import { useAllRoadmaps, useDomains, useNotes, useProviders, useRefreshNotes } from '../hooks'
 import { domainOf } from '../lib/grouping'
 import { navigate, useRoute } from '../lib/route'
 import { useTheme } from '../lib/theme'
-import { AgentPanel } from './AgentPanel'
+import { AgentPanel, type AgentRequest } from './AgentPanel'
 import { HomePage } from './HomePage'
 import { ImportDialog } from './ImportDialog'
 import { LearnedList } from './LearnedList'
@@ -26,6 +26,23 @@ export function AppShell() {
   // The node last opened from the list or the map; the map highlights it when shown again.
   const [lastNodeId, setLastNodeId] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
+  const [agentRequest, setAgentRequest] = useState<AgentRequest | null>(null)
+  const providers = useProviders()
+  const agentAvailable = (providers.data ?? []).some((p) => p.available)
+
+  const page: ChatPage =
+    route.page === 'roadmap'
+      ? { kind: 'roadmap', domain: route.domain }
+      : route.page === 'lesson'
+        ? { kind: 'lesson', domain: route.domain, node: route.node }
+        : route.page === 'note'
+          ? { kind: 'note', note_id: route.id }
+          : { kind: 'home' }
+
+  const askAgent = (text: string) => {
+    setRightOpen(true)
+    setAgentRequest((previous) => ({ id: (previous?.id ?? 0) + 1, text }))
+  }
 
   const openNote = route.page === 'note' ? (notes.data?.find((n) => n.id === route.id) ?? null) : null
   const selectedNodeId =
@@ -67,7 +84,16 @@ export function AppShell() {
       />
     )
   } else if (route.page === 'lesson') {
-    center = <LessonPage key={`${route.domain}/${route.node}`} domain={route.domain} node={route.node} notes={notes.data ?? []} />
+    const fullId = `${route.domain}/${route.node}`
+    center = (
+      <LessonPage
+        key={fullId}
+        domain={route.domain}
+        node={route.node}
+        notes={notes.data ?? []}
+        onDraft={agentAvailable ? () => askAgent(`Draft this lesson (${fullId}).`) : undefined}
+      />
+    )
   } else if (openNote) {
     center = (
       <NoteView
@@ -128,7 +154,7 @@ export function AppShell() {
           {domains.isError && <p className="error">Could not load roadmaps. Is the backend running?</p>}
         </main>
 
-        <AgentPanel open={rightOpen} onToggle={() => setRightOpen(!rightOpen)} />
+        <AgentPanel open={rightOpen} onToggle={() => setRightOpen(!rightOpen)} page={page} request={agentRequest} />
       </div>
 
       {importing && <ImportDialog roadmaps={roadmaps} onClose={() => setImporting(false)} onChanged={refresh} />}

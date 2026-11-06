@@ -14,8 +14,8 @@
 
 ## 3. Chat panel and lesson drafting (spec: agent-chat, learning-views, lesson-pages)
 
-- [ ] 3.1 Rewrite `AgentPanel`: provider and model picker, conversation, Markdown answers without raw HTML, tool trace, Enter to send, clear, not-configured help and error display, and verify Vitest tests for the chat-panel scenarios
-- [ ] 3.2 Add "Draft with agent" on empty lessons (only with a provider) and refresh lessons named in `changed_lessons`, and verify Vitest tests for drafting and for no provider
+- [x] 3.1 Rewrite `AgentPanel`: provider and model picker, conversation, Markdown answers without raw HTML, tool trace, Enter to send, clear, not-configured help and error display, and verify Vitest tests for the chat-panel scenarios
+- [x] 3.2 Add "Draft with agent" on empty lessons (only with a provider) and refresh lessons named in `changed_lessons`, and verify Vitest tests for drafting and for no provider
 
 ## 4. Evals and verification (spec: agent-evals)
 
