@@ -43,6 +43,11 @@ def settings_factory(tmp_path: Path) -> Callable[..., Settings]:
         values: dict[str, Any] = {
             "database_url": TEST_DATABASE_URL,
             "storage_dir": tmp_path / "storage",
+            # Never pick up real provider keys from the environment in tests.
+            "anthropic_api_key": None,
+            "openai_api_key": None,
+            "deepseek_api_key": None,
+            "ollama_url": None,
         }
         values.update(overrides)
         return Settings(**values)

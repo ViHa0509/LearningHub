@@ -167,7 +167,7 @@ a { color: var(--accent); }
 .lesson-header h1 { font-size: 26px; margin: 8px 0; }
 .lesson-description { font-size: 15px; color: var(--muted); margin-top: 0; }
 .lesson-section { margin-top: 24px; }
-.lesson-section h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 8px; }
+.lesson-section > h2, .section-header h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 8px; }
 .section-header { display: flex; align-items: center; justify-content: space-between; }
 .chip-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip { display: inline-block; padding: 4px 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); text-decoration: none; }
@@ -183,3 +183,13 @@ a { color: var(--accent); }
 .markdown ol { padding-left: 22px; }
 .empty-lesson { margin: 4px 0; }
 .further-reading { margin-top: 24px; font-size: 13px; color: var(--muted); }
+.markdown h1, .markdown h2, .markdown h3 { text-transform: none; letter-spacing: normal; color: var(--text); margin: 16px 0 6px; }
+.markdown h1 { font-size: 20px; }
+.markdown h2 { font-size: 17px; }
+.markdown h3 { font-size: 15px; }
+.list-loading { padding: 12px; }
+.react-flow__controls { box-shadow: none; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.react-flow__controls-button { background: var(--surface); color: var(--text); border-bottom: 1px solid var(--border); fill: currentColor; }
+.react-flow__controls-button:hover { background: var(--surface-2); }
+.react-flow__controls-button svg { fill: currentColor; }
+.react-flow__background { background: var(--bg); }

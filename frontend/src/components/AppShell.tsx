@@ -117,6 +117,9 @@ export function AppShell() {
               onImport={() => setImporting(true)}
             />
           )}
+          {leftOpen && !notes.isError && !(notes.data && roadmapsReady) && (
+            <p className="list-loading muted">Loading your notes…</p>
+          )}
           {leftOpen && notes.isError && <p className="error">Could not load notes. Is the backend running?</p>}
         </aside>
 

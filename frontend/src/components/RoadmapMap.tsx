@@ -79,8 +79,9 @@ export function RoadmapMap({ domains, domainId, selectedNodeId, onSelectDomain, 
             nodeTypes={nodeTypes}
             nodesDraggable={false}
             nodesConnectable={false}
-            fitView
-            fitViewOptions={{ maxZoom: 1, padding: 0.08 }}
+            // Start readable at the top-left like a page; wheel scrolls, ctrl+wheel zooms.
+            defaultViewport={{ x: 32, y: 24, zoom: 0.9 }}
+            panOnScroll
             minZoom={0.2}
             proOptions={{ hideAttribution: true }}
             onNodeClick={(_, node) => onSelectNode((node.data as RoadmapNodeData).fullId)}

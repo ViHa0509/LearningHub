@@ -24,7 +24,15 @@ Shell: Git Bash on Windows. Postgres must be up (`docker compose up -d`) before 
 | Frontend tests | `cd frontend && npm test` | yes |
 | Frontend lint | `cd frontend && npm run lint` | yes |
 | Frontend build + types | `cd frontend && npm run build` | yes |
+| Frontend e2e (UI) | `cd frontend && npm run e2e` (Edge; own backend on 8001, DB `learninghub_e2e`, Vite on 5174) | yes |
 | Format backend | `cd backend && .venv/Scripts/ruff format .` | no |
+
+## UI
+
+- App URL: http://localhost:5173 (dev servers from Commands)
+- E2E command: `cd frontend && npm run e2e`
+- Screenshot folder: `frontend/e2e-results/screens/` (light and dark pages)
+- Viewport: 1440x900
 
 ## Layout
 
@@ -51,6 +59,18 @@ Shell: Git Bash on Windows. Postgres must be up (`docker compose up -d`) before 
 - A behavior the specs do not describe is new scope: update the change's artifacts first.
 - Before a PR, run the verifier subagent (`ai-sdlc-kit:verifier`) on the change and paste its report into the PR.
 - Never weaken or delete a test to make it pass.
+
+## Agent team
+
+Plugin `ai-sdlc-kit` 0.2.0. One cycle: `/ai-sdlc-kit:orchestrate [change]`; loop it with `/loop 30m /ai-sdlc-kit:orchestrate`. Ideas: `/loop 12h /ai-sdlc-kit:brainstorm` (reads `docs/VISION.md`, writes `ideas/BACKLOG.md`).
+
+- `scout` (haiku): read-only lookups with file:line answers.
+- `implementer` (sonnet): one task from `tasks.md`, runs the checks.
+- `verifier` (sonnet): runs every check and compares the change with its specs.
+- `qc-ui` (sonnet): runs the e2e command and inspects every screenshot.
+- `brainstormer` (sonnet): in-scope ideas into `ideas/BACKLOG.md`.
+- Main session (opus): specs, design, migrations, security (sandboxing, agent tools), blocked tasks, final review.
+- Pushing to `main` on GitHub is authorized for this repo (no PR tool here yet); never force-push.
 
 ## Definition of done
 
