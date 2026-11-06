@@ -28,6 +28,19 @@ class Note(Base):
     )
 
 
+class Lesson(Base):
+    """Markdown lesson text for one roadmap node; at most one per node."""
+
+    __tablename__ = "lessons"
+
+    node_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    body: Mapped[str] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 def make_engine(database_url: str) -> Engine:
     return create_engine(database_url, pool_pre_ping=True)
 

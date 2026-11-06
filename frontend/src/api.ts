@@ -1,7 +1,9 @@
 export interface DomainSummary {
   id: string
   title: string
+  description: string | null
   node_count: number
+  learned_nodes: number
 }
 
 export interface RoadmapNode {
@@ -40,6 +42,15 @@ export interface ImportOutcome {
   outcome: 'created' | 'duplicate' | 'rejected'
   reason: string | null
   note: Note | null
+}
+
+export type LessonSource = 'user' | 'agent' | 'import'
+
+export interface Lesson {
+  node_id: string
+  body: string
+  source: LessonSource | null
+  updated_at: string | null
 }
 
 export class ApiError extends Error {
@@ -91,6 +102,9 @@ export const api = {
     request<Note>(`/api/notes/${id}`, json('PATCH', { node_id: nodeId })),
   remove: (id: string) => request<void>(`/api/notes/${id}`, { method: 'DELETE' }),
   originalUrl: (id: string) => `/api/notes/${id}/original`,
+  lesson: (domain: string, node: string) => request<Lesson>(`/api/lessons/${domain}/${node}`),
+  saveLesson: (domain: string, node: string, body: string, source: LessonSource = 'user') =>
+    request<Lesson>(`/api/lessons/${domain}/${node}`, json('PUT', { body, source })),
 }
 
 export const queryKeys = {
@@ -98,4 +112,5 @@ export const queryKeys = {
   roadmap: (domain: string) => ['roadmap', domain] as const,
   counts: (domain: string) => ['counts', domain] as const,
   notes: ['notes'] as const,
+  lesson: (domain: string, node: string) => ['lesson', domain, node] as const,
 }

@@ -13,7 +13,7 @@ describe('import from the UI', () => {
       [makeNote('Existing', 'backend/caching')],
       [{ filename: 'redis-eviction.html', outcome: 'created', reason: null, note: created }],
     )
-    const { user } = renderApp()
+    const { user } = renderApp('#/roadmap/backend')
     await user.click(await screen.findByRole('button', { name: 'Import' }))
     const dialog = screen.getByRole('dialog', { name: 'Import HTML files' })
 

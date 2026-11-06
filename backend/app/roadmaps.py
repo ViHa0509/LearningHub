@@ -36,6 +36,8 @@ class Domain:
     id: str
     title: str
     nodes: tuple[Node, ...]
+    description: str | None = None
+    order: int | None = None
 
 
 def _fail(path: Path, message: str) -> RoadmapError:
@@ -62,6 +64,11 @@ def load_domain(path: Path) -> Domain:
         raise _fail(path, f"domain id '{domain_id}' is not lowercase kebab-case")
     if domain_title is None:
         raise _fail(path, f"domain '{domain_id}' has no title")
+    domain_order = data.get("order")
+    if domain_order is not None and (
+        not isinstance(domain_order, int) or isinstance(domain_order, bool)
+    ):
+        raise _fail(path, f"domain '{domain_id}' order must be an integer")
     raw_nodes = data.get("nodes")
     if not isinstance(raw_nodes, list) or not raw_nodes:
         raise _fail(path, f"domain '{domain_id}' has no nodes")
@@ -110,7 +117,13 @@ def load_domain(path: Path) -> Domain:
             visited.add(current)
             current = parents[current]
 
-    return Domain(id=domain_id, title=domain_title, nodes=tuple(nodes))
+    return Domain(
+        id=domain_id,
+        title=domain_title,
+        nodes=tuple(nodes),
+        description=_text(data.get("description")),
+        order=domain_order,
+    )
 
 
 class RoadmapCatalog:
@@ -129,6 +142,8 @@ class RoadmapCatalog:
             if any(existing.id == domain.id for existing in domains):
                 raise _fail(path, f"duplicate domain id '{domain.id}'")
             domains.append(domain)
+        # Explicit `order` first, then file name order for domains without one.
+        domains.sort(key=lambda d: (d.order is None, d.order or 0))
         return cls(domains)
 
     def domains(self) -> list[Domain]:

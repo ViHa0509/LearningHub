@@ -1,0 +1,82 @@
+# Frontend roadmap - hand-written for Learning Hub (not copied from roadmap.sh).
+# Node ids: lowercase kebab-case, unique in this file. Sibling order = order in this list.
+id: frontend
+title: Frontend
+order: 1
+description: What runs in the browser - markup, styling, JavaScript and the frameworks built on them.
+nodes:
+  - id: web-basics
+    title: Web basics
+    description: How a browser loads, parses and paints a page.
+  - id: html
+    parent: web-basics
+    title: HTML
+    description: Semantic elements, forms, document structure.
+  - id: accessibility
+    parent: web-basics
+    title: Accessibility
+    description: Roles, labels, keyboard use, contrast.
+
+  - id: css
+    title: CSS
+    description: Selectors, the cascade and the box model.
+  - id: layout
+    parent: css
+    title: Flexbox and grid
+    description: One- and two-dimensional layout.
+  - id: responsive
+    parent: css
+    title: Responsive design
+    description: Media queries, fluid sizes, mobile first.
+
+  - id: javascript
+    title: JavaScript
+    description: The language of the browser.
+  - id: dom
+    parent: javascript
+    title: DOM and events
+    description: Reading and changing the page, event bubbling.
+  - id: async-js
+    parent: javascript
+    title: Promises and async
+    description: The event loop, fetch, async/await.
+  - id: typescript
+    parent: javascript
+    title: TypeScript
+    description: Static types for JavaScript.
+
+  - id: frameworks
+    title: Frameworks
+    description: Component-based UI libraries.
+  - id: react
+    parent: frameworks
+    title: React
+    description: Components, hooks, rendering model.
+  - id: state-management
+    parent: frameworks
+    title: State and data fetching
+    description: Local state, server state, caching queries.
+
+  - id: tooling
+    title: Build tooling
+    description: Bundlers, dev servers, package managers.
+  - id: bundlers
+    parent: tooling
+    title: Bundlers
+    description: Vite, module graphs, code splitting.
+
+  - id: fe-testing
+    title: Testing
+    description: Checking UI behavior automatically.
+  - id: component-tests
+    parent: fe-testing
+    title: Component tests
+    description: Rendering components and asserting what users see.
+  - id: e2e-tests
+    parent: fe-testing
+    title: End-to-end tests
+    description: Driving a real browser through user flows.
+
+  - id: performance
+    title: Web performance
+    description: Load time, rendering cost, Core Web Vitals.

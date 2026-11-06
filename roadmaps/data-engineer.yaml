@@ -1,0 +1,69 @@
+# Data Engineer roadmap - hand-written for Learning Hub (not copied from roadmap.sh).
+# Node ids: lowercase kebab-case, unique in this file. Sibling order = order in this list.
+id: data-engineer
+title: Data Engineer
+order: 5
+description: Moving and shaping data at scale - storage, pipelines, orchestration and data quality.
+nodes:
+  - id: foundations
+    title: Foundations
+    description: The languages and models every pipeline is built on.
+  - id: sql
+    parent: foundations
+    title: SQL
+    description: Joins, window functions, query plans.
+  - id: data-modeling
+    parent: foundations
+    title: Data modeling
+    description: Normal forms, star schemas, slowly changing dimensions.
+
+  - id: storage
+    title: Storage
+    description: Where data lives and how it is laid out.
+  - id: warehouses
+    parent: storage
+    title: Data warehouses
+    description: Columnar engines for analytics.
+  - id: data-lakes
+    parent: storage
+    title: Data lakes
+    description: Object storage, Parquet, table formats.
+
+  - id: pipelines
+    title: Pipelines
+    description: Getting data from sources to consumers.
+  - id: batch
+    parent: pipelines
+    title: Batch processing
+    description: ETL and ELT, incremental loads, Spark.
+  - id: streaming
+    parent: pipelines
+    title: Streaming
+    description: Kafka, event time, exactly-once trade-offs.
+  - id: transformations
+    parent: pipelines
+    title: Transformations with dbt
+    description: SQL models, tests and lineage.
+
+  - id: orchestration
+    title: Orchestration
+    description: Scheduling and retrying many dependent jobs.
+  - id: airflow
+    parent: orchestration
+    title: Airflow
+    description: DAGs, operators, sensors, backfills.
+
+  - id: data-quality
+    title: Data quality
+    description: Knowing the data is right before someone uses it.
+  - id: data-contracts
+    parent: data-quality
+    title: Data contracts and tests
+    description: Schemas, freshness and volume checks.
+
+  - id: cloud-data
+    title: Cloud data platforms
+    description: Managed services for storage and compute.
+  - id: governance
+    title: Governance
+    description: Access, lineage, privacy and retention.

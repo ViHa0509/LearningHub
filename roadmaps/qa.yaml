@@ -1,0 +1,77 @@
+# QA roadmap - hand-written for Learning Hub (not copied from roadmap.sh).
+# Node ids: lowercase kebab-case, unique in this file. Sibling order = order in this list.
+id: qa
+title: QA
+order: 4
+description: Finding out whether software does what it should - test design, automation and quality in the pipeline.
+nodes:
+  - id: fundamentals
+    title: Testing fundamentals
+    description: Why we test and what a test can and cannot show.
+  - id: test-levels
+    parent: fundamentals
+    title: Test levels
+    description: Unit, integration, system, acceptance.
+  - id: test-types
+    parent: fundamentals
+    title: Test types
+    description: Functional, regression, smoke, exploratory.
+
+  - id: test-design
+    title: Test design
+    description: Choosing the few cases that find the most bugs.
+  - id: boundary-values
+    parent: test-design
+    title: Equivalence and boundaries
+    description: Partitions of inputs and their edges.
+  - id: test-cases
+    parent: test-design
+    title: Test cases and scenarios
+    description: Given/when/then, preconditions, expected results.
+
+  - id: manual-testing
+    title: Manual testing
+    description: Testing by hand with a plan and a record.
+  - id: bug-reports
+    parent: manual-testing
+    title: Bug reports
+    description: Steps to reproduce, expected vs actual, severity.
+
+  - id: automation
+    title: Test automation
+    description: Tests a machine runs on every change.
+  - id: api-testing
+    parent: automation
+    title: API testing
+    description: Contracts, status codes, schemas.
+  - id: ui-automation
+    parent: automation
+    title: UI automation
+    description: Playwright, selectors, stable waits.
+  - id: test-data
+    parent: automation
+    title: Test data
+    description: Fixtures, factories, isolated databases.
+
+  - id: non-functional
+    title: Non-functional testing
+    description: How well, not only whether, it works.
+  - id: performance-testing
+    parent: non-functional
+    title: Performance testing
+    description: Load, stress, latency budgets.
+  - id: security-testing
+    parent: non-functional
+    title: Security testing
+    description: Common web vulnerabilities and how to probe them.
+
+  - id: quality-in-ci
+    title: Quality in CI
+    description: Gates that stop bad changes from shipping.
+  - id: flaky-tests
+    parent: quality-in-ci
+    title: Flaky tests
+    description: Finding and fixing nondeterministic tests.
+  - id: ai-testing
+    title: Testing AI features
+    description: Evals, golden sets, judging model output.

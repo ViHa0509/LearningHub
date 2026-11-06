@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from app.config import Settings, get_settings
 from app.db import make_engine, make_session_factory
 from app.roadmaps import RoadmapCatalog
-from app.routes import domains, notes
+from app.routes import domains, lessons, notes
 from app.storage import LocalFileStore
 
 
@@ -23,6 +23,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(domains.router)
     app.include_router(notes.router)
+    app.include_router(lessons.router)
     return app
 
 

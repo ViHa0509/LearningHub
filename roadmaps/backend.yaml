@@ -2,6 +2,8 @@
 # Node ids: lowercase kebab-case, unique in this file. Sibling order = order in this list.
 id: backend
 title: Backend
+order: 2
+description: Server-side code - APIs, data stores, security and how services run in production.
 nodes:
   - id: internet
     title: How the internet works

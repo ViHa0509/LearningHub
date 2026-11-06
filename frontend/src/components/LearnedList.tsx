@@ -7,7 +7,6 @@ interface Props {
   roadmaps: Roadmap[]
   selectedNoteId: string | null
   selectedNodeId: string | null
-  onSelectNote: (note: Note) => void
   onOpenNote: (note: Note) => void
   onImport: () => void
 }
@@ -17,7 +16,6 @@ export function LearnedList({
   roadmaps,
   selectedNoteId,
   selectedNodeId,
-  onSelectNote,
   onOpenNote,
   onImport,
 }: Props) {
@@ -48,19 +46,10 @@ export function LearnedList({
           type="button"
           className="note-select"
           aria-pressed={highlighted}
-          onClick={() => onSelectNote(note)}
-          onDoubleClick={() => onOpenNote(note)}
+          onClick={() => onOpenNote(note)}
         >
           {note.title}
           {note.node_missing && <span className="tag warn" title={`Node ${note.node_id} no longer exists`}>missing node</span>}
-        </button>
-        <button
-          type="button"
-          className="icon"
-          aria-label={`Open ${note.title}`}
-          onClick={() => onOpenNote(note)}
-        >
-          Open
         </button>
       </li>
     )

@@ -18,18 +18,43 @@ def write(tmp_path: Path, name: str, text: str) -> Path:
     return path
 
 
+SHIPPED_ORDER = ["frontend", "backend", "devops", "qa", "data-engineer"]
+
+
 # Scenario: Roadmap files are loaded at startup
-def test_shipped_roadmaps_load_backend_and_devops() -> None:
+def test_shipped_roadmaps_load_in_explicit_order() -> None:
     catalog = RoadmapCatalog.load(SHIPPED)
-    assert {d.id for d in catalog.domains()} == {"backend", "devops"}
+    assert [d.id for d in catalog.domains()] == SHIPPED_ORDER
 
 
 # Scenario: Initial roadmap content
-@pytest.mark.parametrize("domain_id", ["backend", "devops"])
+@pytest.mark.parametrize("domain_id", SHIPPED_ORDER)
 def test_shipped_roadmaps_have_15_to_25_nodes(domain_id: str) -> None:
     domain = RoadmapCatalog.load(SHIPPED).domain(domain_id)
     assert domain is not None
     assert 15 <= len(domain.nodes) <= 25
+    assert domain.description
+
+
+# Scenario: Domain description is optional
+def test_domain_without_description_or_order(tmp_path: Path) -> None:
+    write(tmp_path, "b.yaml", "{id: b, title: B, nodes: [{id: x, title: X}]}")
+    write(
+        tmp_path,
+        "a.yaml",
+        "{id: a, title: A, order: 2, description: ' First. ', nodes: [{id: x, title: X}]}",
+    )
+    write(tmp_path, "c.yaml", "{id: c, title: C, order: 1, nodes: [{id: x, title: X}]}")
+    catalog = RoadmapCatalog.load(tmp_path)
+    assert [d.id for d in catalog.domains()] == ["c", "a", "b"]
+    assert catalog.domain("b").description is None
+    assert catalog.domain("a").description == "First."
+
+
+def test_domain_order_must_be_an_integer(tmp_path: Path) -> None:
+    path = write(tmp_path, "a.yaml", "{id: a, title: A, order: first, nodes: [{id: x, title: X}]}")
+    with pytest.raises(RoadmapError, match=r"a\.yaml.*order must be an integer"):
+        load_domain(path)
 
 
 # Scenario: Full node id
@@ -107,8 +132,10 @@ def test_list_domains(client: TestClient) -> None:
     response = client.get("/api/domains")
     assert response.status_code == 200
     body = {d["id"]: d for d in response.json()}
-    assert set(body) == {"backend", "devops"}
+    assert [d["id"] for d in response.json()] == SHIPPED_ORDER
     assert body["backend"]["title"] == "Backend"
+    assert body["backend"]["description"].startswith("Server-side code -")
+    assert body["backend"]["learned_nodes"] == 0
     assert body["backend"]["node_count"] == len(
         RoadmapCatalog.load(SHIPPED).domain("backend").nodes
     )
@@ -130,4 +157,4 @@ def test_read_roadmap(client: TestClient) -> None:
 
 
 def test_unknown_domain_is_404(client: TestClient) -> None:
-    assert client.get("/api/domains/frontend/roadmap").status_code == 404
+    assert client.get("/api/domains/mobile/roadmap").status_code == 404

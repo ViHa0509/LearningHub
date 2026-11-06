@@ -34,4 +34,7 @@ Object.defineProperty(SVGElement.prototype, "getBBox", { value: () => ({ x: 0, y
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  window.history.replaceState(null, '', '#/')
+  localStorage.clear()
+  document.documentElement.removeAttribute('data-theme')
 })

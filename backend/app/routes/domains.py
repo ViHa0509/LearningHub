@@ -24,9 +24,18 @@ def require_domain(catalog: RoadmapCatalog, domain_id: str) -> Domain:
 
 
 @router.get("", response_model=list[DomainSummary])
-def list_domains(request: Request) -> list[DomainSummary]:
+def list_domains(
+    request: Request, session: Annotated[Session, Depends(get_session)]
+) -> list[DomainSummary]:
+    linked = set(session.scalars(select(Note.node_id).where(Note.node_id.is_not(None)).distinct()))
     return [
-        DomainSummary(id=d.id, title=d.title, node_count=len(d.nodes))
+        DomainSummary(
+            id=d.id,
+            title=d.title,
+            description=d.description,
+            node_count=len(d.nodes),
+            learned_nodes=sum(1 for n in d.nodes if n.full_id in linked),
+        )
         for d in get_catalog(request).domains()
     ]
 

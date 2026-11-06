@@ -15,7 +15,6 @@ function renderList(notes = sample()) {
       roadmaps={[backend, devops]}
       selectedNoteId={null}
       selectedNodeId={null}
-      onSelectNote={noop}
       onOpenNote={noop}
       onImport={noop}
     />,
@@ -60,7 +59,7 @@ describe('LearnedList', () => {
     const onImport = vi.fn()
     render(
       <LearnedList notes={[]} roadmaps={[backend]} selectedNoteId={null} selectedNodeId={null}
-        onSelectNote={noop} onOpenNote={noop} onImport={onImport} />,
+        onOpenNote={noop} onImport={onImport} />,
     )
     await userEvent.setup().click(screen.getByRole('button', { name: 'Import HTML files' }))
     expect(onImport).toHaveBeenCalled()

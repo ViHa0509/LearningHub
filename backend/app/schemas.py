@@ -8,7 +8,9 @@ from pydantic import BaseModel
 class DomainSummary(BaseModel):
     id: str
     title: str
+    description: str | None
     node_count: int
+    learned_nodes: int
 
 
 class NodeOut(BaseModel):
@@ -60,3 +62,18 @@ class ImportResult(BaseModel):
 class NoteUpdate(BaseModel):
     title: str | None = None
     node_id: str | None = None
+
+
+LessonSource = Literal["user", "agent", "import"]
+
+
+class LessonOut(BaseModel):
+    node_id: str
+    body: str
+    source: LessonSource | None
+    updated_at: datetime | None
+
+
+class LessonWrite(BaseModel):
+    body: str
+    source: LessonSource = "user"

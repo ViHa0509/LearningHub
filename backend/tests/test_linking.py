@@ -60,7 +60,7 @@ def test_title_only_patch_keeps_link(client: TestClient) -> None:
 
 
 # Scenario: Unknown node
-@pytest.mark.parametrize("bad", ["backend/does-not-exist", "frontend/react", "caching"])
+@pytest.mark.parametrize("bad", ["backend/does-not-exist", "mobile/react", "caching"])
 def test_unknown_node_is_rejected_and_note_unchanged(client: TestClient, bad: str) -> None:
     note = new_note(client, "redis")
     link(client, note, "backend/caching")
@@ -99,7 +99,7 @@ def test_counts_for_a_domain(client: TestClient) -> None:
 
 
 def test_counts_unknown_domain_is_404(client: TestClient) -> None:
-    assert client.get("/api/domains/frontend/counts").status_code == 404
+    assert client.get("/api/domains/mobile/counts").status_code == 404
 
 
 # Requirement: Links to removed nodes are kept and flagged

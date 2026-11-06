@@ -2,6 +2,8 @@
 # Node ids: lowercase kebab-case, unique in this file. Sibling order = order in this list.
 id: devops
 title: DevOps
+order: 3
+description: Shipping and running software - build pipelines, containers, cloud and observability.
 nodes:
   - id: linux
     title: Linux

@@ -11,7 +11,7 @@ describe('RoadmapMap', () => {
       makeNote('Redis eviction', 'backend/caching'),
       makeNote('HTTP caching', 'backend/caching'),
     ])
-    renderApp()
+    renderApp('#/roadmap/backend')
     const caching = await screen.findByTestId('node-backend/caching')
     expect(await within(caching).findByLabelText('2 notes')).toHaveTextContent('2')
     expect(caching).toHaveClass('has-notes')
@@ -25,7 +25,7 @@ describe('RoadmapMap', () => {
 
   it('switches domain', async () => {
     installFakeApi([])
-    const { user } = renderApp()
+    const { user } = renderApp('#/roadmap/backend')
     await screen.findByTestId('node-backend/caching')
     await user.click(screen.getByRole('tab', { name: 'DevOps' }))
     expect(await screen.findByTestId('node-devops/ci-cd')).toBeInTheDocument()

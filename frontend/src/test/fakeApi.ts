@@ -1,12 +1,19 @@
 import { vi } from 'vitest'
-import type { ImportOutcome, Note, Roadmap } from '../api'
+import type { ImportOutcome, Lesson, Note, Roadmap } from '../api'
 
 export const backend: Roadmap = {
   id: 'backend',
   title: 'Backend',
   nodes: [
     { id: 'apis', full_id: 'backend/apis', title: 'APIs', description: null, parent: null, order: 0 },
-    { id: 'caching', full_id: 'backend/caching', title: 'Caching', description: null, parent: null, order: 1 },
+    {
+      id: 'caching',
+      full_id: 'backend/caching',
+      title: 'Caching',
+      description: 'Keeping hot data close.',
+      parent: null,
+      order: 1,
+    },
     { id: 'redis', full_id: 'backend/redis', title: 'Redis', description: null, parent: 'caching', order: 0 },
     { id: 'auth', full_id: 'backend/auth', title: 'Auth', description: null, parent: null, order: 2 },
   ],
@@ -40,6 +47,7 @@ export function makeNote(title: string, nodeId: string | null = null, extra: Par
 export interface FakeState {
   notes: Note[]
   importResults?: ImportOutcome[]
+  lessons: Record<string, Lesson>
   calls: { method: string; url: string; body?: unknown }[]
 }
 
@@ -53,8 +61,9 @@ const respond = (body: unknown, status = 200) =>
 
 /** Installs a fetch stub that behaves like the backend API over in-memory state. */
 export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome[]): FakeState {
-  const state: FakeState = { notes: [...notes], importResults, calls: [] }
+  const state: FakeState = { notes: [...notes], importResults, lessons: {}, calls: [] }
   const roadmaps: Record<string, Roadmap> = { backend, devops }
+  const descriptions: Record<string, string | null> = { backend: 'Server-side code.', devops: null }
 
   vi.stubGlobal(
     'fetch',
@@ -65,9 +74,34 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
       state.calls.push({ method, url, body })
 
       if (url === '/api/domains') {
+        const linked = new Set(state.notes.map((n) => n.node_id))
         return respond(
-          Object.values(roadmaps).map((r) => ({ id: r.id, title: r.title, node_count: r.nodes.length })),
+          Object.values(roadmaps).map((r) => ({
+            id: r.id,
+            title: r.title,
+            description: descriptions[r.id],
+            node_count: r.nodes.length,
+            learned_nodes: r.nodes.filter((n) => linked.has(n.full_id)).length,
+          })),
         )
+      }
+      const lesson = url.match(/^\/api\/lessons\/([^/]+)\/([^/]+)$/)
+      if (lesson) {
+        const fullId = `${lesson[1]}/${lesson[2]}`
+        if (!roadmaps[lesson[1]]?.nodes.some((n) => n.full_id === fullId)) {
+          return respond({ detail: `unknown node '${fullId}'` }, 404)
+        }
+        if (method === 'PUT') {
+          if (body.body.trim()) {
+            state.lessons[fullId] = {
+              node_id: fullId,
+              body: body.body,
+              source: body.source,
+              updated_at: '2026-11-07T00:00:00Z',
+            }
+          } else delete state.lessons[fullId]
+        }
+        return respond(state.lessons[fullId] ?? { node_id: fullId, body: '', source: null, updated_at: null })
       }
       let match = url.match(/^\/api\/domains\/([^/]+)\/roadmap$/)
       if (match) return respond(roadmaps[match[1]])

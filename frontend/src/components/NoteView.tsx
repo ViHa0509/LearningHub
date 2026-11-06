@@ -46,7 +46,7 @@ export function NoteView({ note, roadmaps, onClose, onChanged, onDeleted }: Prop
     <article className="note-view" aria-label={`Note: ${note.title}`}>
       <header className="note-header">
         <button type="button" onClick={onClose}>
-          ← Back to map
+          ← Back
         </button>
         <input
           className="title-input"

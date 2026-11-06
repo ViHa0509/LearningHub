@@ -8,7 +8,7 @@ async function openNote(title: string, nodeId: string | null = 'backend/caching'
   const note = makeNote(title, nodeId)
   const state = installFakeApi([note])
   const view = renderApp()
-  await view.user.click(await screen.findByRole('button', { name: `Open ${title}` }))
+  await view.user.click(await screen.findByRole('button', { name: title }))
   const article = await screen.findByRole('article', { name: `Note: ${title}` })
   return { ...view, state, note, article }
 }
