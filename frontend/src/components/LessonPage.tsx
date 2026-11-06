@@ -167,7 +167,8 @@ function LessonContent({ domain, node, onDraft }: { domain: string; node: string
         lesson.data && (
           <div className="empty-lesson">
             <p className="muted">
-              No lesson yet. Write down what you learned about this topic, or ask the agent to draft it.
+              No lesson yet. Write down what you learned about this topic
+              {onDraft ? ', or ask the agent to draft it.' : '.'}
             </p>
             {onDraft && (
               <button type="button" onClick={onDraft}>

@@ -1,20 +1,20 @@
 # learning-views Specification
 
 ## Purpose
-Gives the user two connected views of what they have learned - a list on the left and a roadmap map in the center - plus a reserved place on the right for the future agent.
+Gives the user connected views of what they have learned - a list on the left, the current page (home, roadmap map, lesson or note) in the center and the agent on the right - with a theme switch and an address per page.
 
 ## Requirements
 
 ### Requirement: Three-pane layout
-The web app SHALL show a left panel with the learned-items list, a center panel with the roadmap map, and a right panel reserved for the agent. The left and right panels MUST be collapsible, and the center panel takes the remaining width.
+The web app SHALL show a top bar with the app title and the theme switch, and below it a left panel with the learned-items list, a center panel with the current page (home, roadmap map, lesson or note), and a right panel with the agent chat. The left and right panels MUST be collapsible, and the center panel takes the remaining width.
 
 #### Scenario: App opens
 - **WHEN** the user opens the app
-- **THEN** the three panels are visible and the right panel states that the agent is not available yet
+- **THEN** the top bar, the three panels, the home page in the center and the agent chat on the right are visible
 
 #### Scenario: Collapse a side panel
 - **WHEN** the user collapses the left panel
-- **THEN** the map widens to use the freed space, and the panel can be expanded again
+- **THEN** the center widens to use the freed space, and the panel can be expanded again
 
 ### Requirement: Learned-items list
 The left panel SHALL list all notes grouped by domain, then by node in roadmap order, with an "Unsorted" group for notes without a valid link. It MUST offer a text filter on note titles.
@@ -41,15 +41,15 @@ The center panel SHALL draw the roadmap of the selected domain as a graph of nod
 - **THEN** the map shows the DevOps roadmap
 
 ### Requirement: Two-way selection between list and map
-Selecting a note in the list SHALL show its domain on the map and highlight its node. Selecting a node on the map SHALL highlight that node's notes in the list.
+Opening a note from the list SHALL also select its node, so that the map of its domain, when shown, highlights that node. Opening a node's lesson page from the map SHALL highlight that node's notes in the list.
 
 #### Scenario: From list to map
-- **WHEN** the user selects a note linked to `devops/ci-cd` while the Backend map is shown
-- **THEN** the map switches to DevOps and highlights the CI/CD node
+- **WHEN** the user opens a note linked to `devops/ci-cd` from the list and then goes to the DevOps map
+- **THEN** the map highlights the CI/CD node
 
 #### Scenario: From map to list
-- **WHEN** the user selects the Caching node on the Backend map
-- **THEN** the list highlights the notes linked to `backend/caching`
+- **WHEN** the user clicks the Caching node on the Backend map
+- **THEN** the Caching lesson page opens and the list highlights the notes linked to `backend/caching`
 
 ### Requirement: Import from the UI
 The web app SHALL let the user pick or drop one or more HTML files to import, show the outcome per file, and then offer to link each new note to a node, which the user may skip.
@@ -63,11 +63,11 @@ The web app SHALL let the user pick or drop one or more HTML files to import, sh
 - **THEN** the note appears under Unsorted
 
 ### Requirement: Read a note
-Opening a note SHALL show its title, the original page in an isolated frame, and controls to rename it, change or remove its link, and delete it after a confirmation.
+Clicking a note in the learned list, or in a lesson page, SHALL open it directly without a separate open button. The note page shows its title, the original page in an isolated frame, and controls to rename it, change or remove its link, and delete it after a confirmation.
 
 #### Scenario: Open a note
-- **WHEN** the user opens a note from the list or from a node
-- **THEN** the original page is shown with the note's title and link controls
+- **WHEN** the user clicks a note title in the list
+- **THEN** the original page is shown with the note's title and link controls, and the list has no separate "Open" button
 
 #### Scenario: Delete needs confirmation
 - **WHEN** the user chooses delete on a note
@@ -79,3 +79,26 @@ When there are no notes, the app SHALL explain how to import the first file inst
 #### Scenario: First start
 - **WHEN** the user opens the app with no notes
 - **THEN** the left panel shows a short explanation and an import button
+
+### Requirement: Light and dark theme
+The app SHALL offer three theme choices - system, light and dark - from the top bar. The choice MUST apply immediately and be remembered by the browser; "system" follows the operating system setting.
+
+#### Scenario: Switch to dark
+- **GIVEN** the operating system uses a light theme
+- **WHEN** the user chooses dark
+- **THEN** the app turns dark at once, and stays dark after a reload
+
+#### Scenario: Back to system
+- **WHEN** the user chooses system
+- **THEN** the app follows the operating system theme again
+
+### Requirement: Pages are addressable
+Each page SHALL have its own address in the URL hash - home `#/`, roadmap `#/roadmap/<domain>`, lesson `#/lesson/<domain>/<node>`, note `#/note/<id>` - so that the browser back button returns to the previous page and an address opens its page directly.
+
+#### Scenario: Back button
+- **WHEN** the user goes from home to the Backend map to the Caching lesson and presses the browser back button
+- **THEN** the Backend map is shown again
+
+#### Scenario: Open by address
+- **WHEN** the user loads the app at `#/lesson/backend/caching`
+- **THEN** the Caching lesson page is shown

@@ -20,4 +20,4 @@
 ## 4. Evals and verification (spec: agent-evals)
 
 - [x] 4.1 Add `backend/evals/` golden questions with the `live` marker, excluded from the default run, and verify they report skipped without a key and that the default `pytest` run does not collect them
-- [ ] 4.2 Extend the e2e suite with the agent panel's not-configured state and the CLAUDE.md commands (eval command, settings), run every check, the UI QC agent and the verifier, record `evidence.md`, and verify the verifier verdict is pass
+- [x] 4.2 Extend the e2e suite with the agent panel's not-configured state and the CLAUDE.md commands (eval command, settings), run every check, the UI QC agent and the verifier, record `evidence.md`, and verify the verifier verdict is pass
