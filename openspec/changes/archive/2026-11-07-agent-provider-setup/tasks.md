@@ -14,4 +14,4 @@
 
 ## 3. Verification
 
-- [ ] 3.1 Extend e2e: save a dummy Anthropic key in Settings and see the chat appear without a restart, then remove it; run every check, the UI QC agent and the verifier, record `evidence.md`
+- [x] 3.1 Extend e2e: save a dummy Anthropic key in Settings and see the chat appear without a restart, then remove it; run every check, the UI QC agent and the verifier, record `evidence.md`

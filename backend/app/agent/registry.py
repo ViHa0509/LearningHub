@@ -85,7 +85,6 @@ class EffectiveConfig:
         return self.configured and self.enabled
 
 
-
 class ProviderRegistry:
     def __init__(self, settings: Settings, box: SecretBox, factory: ProviderFactory) -> None:
         self.settings = settings

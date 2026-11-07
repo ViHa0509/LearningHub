@@ -105,7 +105,7 @@ function ProviderCard({ provider }: { provider: AgentProvider }) {
     <article className="provider-card" aria-label={provider.label}>
       <header className="provider-header">
         <h2>{provider.label}</h2>
-        <label className="switch">
+        <label className="switch" title={provider.configured ? undefined : 'Save a key first'}>
           <input
             type="checkbox"
             checked={provider.enabled}
