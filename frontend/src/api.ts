@@ -57,9 +57,32 @@ export interface AgentProvider {
   id: string
   label: string
   available: boolean
+  configured: boolean
+  enabled: boolean
+  source: 'app' | 'env' | null
+  overrides_env: boolean
+  key_hint: string | null
+  key_error: string | null
+  base_url: string | null
   setting: string
   models: string[]
+  /** The model chosen in Settings (may be a custom id); the chat's default. */
+  model: string
   default_model: string
+}
+
+export interface ProviderUpdate {
+  api_key?: string
+  base_url?: string
+  model?: string
+  enabled?: boolean
+}
+
+export interface ProviderTest {
+  ok: boolean
+  model: string
+  latency_ms: number
+  message: string
 }
 
 export interface ChatPage {
@@ -103,6 +126,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     try {
       const body = (await response.json()) as { detail?: unknown }
       if (typeof body.detail === 'string') message = body.detail
+      // FastAPI validation errors: a list of {msg}
+      else if (Array.isArray(body.detail)) {
+        message = body.detail
+          .map((d: { msg?: string }) => (d.msg ?? '').replace(/^Value error, /, ''))
+          .filter(Boolean)
+          .join('; ')
+      }
     } catch {
       // keep the status text
     }
@@ -137,6 +167,10 @@ export const api = {
   remove: (id: string) => request<void>(`/api/notes/${id}`, { method: 'DELETE' }),
   originalUrl: (id: string) => `/api/notes/${id}/original`,
   providers: () => request<AgentProvider[]>('/api/agent/providers'),
+  saveProvider: (id: string, body: ProviderUpdate) =>
+    request<AgentProvider>(`/api/agent/providers/${id}`, json('PUT', body)),
+  removeProvider: (id: string) => request<AgentProvider>(`/api/agent/providers/${id}`, { method: 'DELETE' }),
+  testProvider: (id: string) => request<ProviderTest>(`/api/agent/providers/${id}/test`, { method: 'POST' }),
   chat: (body: { provider: string; model: string; messages: ChatTurn[]; page: ChatPage }) =>
     request<ChatReply>('/api/agent/chat', json('POST', body)),
   lesson: (domain: string, node: string) => request<Lesson>(`/api/lessons/${domain}/${node}`),

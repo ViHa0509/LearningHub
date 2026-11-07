@@ -17,6 +17,9 @@ export function TopBar({ theme, onThemeChange }: Props) {
       <a className="brand" href="#/">
         Learning Hub
       </a>
+      <nav className="top-actions" aria-label="App">
+        <a href="#/settings">Settings</a>
+      </nav>
       <div className="theme-switch" role="radiogroup" aria-label="Theme">
         {THEMES.map((t) => (
           <button

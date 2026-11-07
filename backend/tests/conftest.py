@@ -33,7 +33,7 @@ def migrated_test_db() -> None:
 def clean_tables() -> None:
     engine = create_engine(TEST_DATABASE_URL)
     with engine.begin() as connection:
-        connection.execute(text("TRUNCATE notes, lessons"))
+        connection.execute(text("TRUNCATE notes, lessons, provider_configs"))
     engine.dispose()
 
 

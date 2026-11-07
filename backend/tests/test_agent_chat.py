@@ -36,8 +36,10 @@ def tools(client: TestClient, session: Session) -> AgentTools:
 
 
 def use(client: TestClient, *turns: Turn | Exception) -> FakeProvider:
+    """Save an Anthropic key through the settings API, with clients built as a scripted fake."""
     fake = FakeProvider(turns)
-    client.app.state.providers = {"anthropic": fake}  # type: ignore[attr-defined]
+    client.app.state.registry.factory = lambda *_: fake  # type: ignore[attr-defined]
+    assert client.put("/api/agent/providers/anthropic", json={"api_key": "sk-test-0000"}).is_success
     return fake
 
 

@@ -33,6 +33,11 @@ function readChoice(): { provider?: string; model?: string } {
   }
 }
 
+/** The provider's models plus the model chosen in Settings, which may be a custom id. */
+function modelsOf(p: AgentProvider): string[] {
+  return p.models.includes(p.model) ? p.models : [...p.models, p.model]
+}
+
 function saveChoice(provider: string, model: string) {
   try {
     localStorage.setItem(CHOICE_KEY, JSON.stringify({ provider, model }))
@@ -75,8 +80,14 @@ function NotConfigured({ providers }: { providers: AgentProvider[] }) {
       <p>
         <strong>No AI provider is configured.</strong>
       </p>
+      <p>
+        <a className="button-link primary" href="#/settings">
+          Open settings
+        </a>{' '}
+        <span className="muted">and paste a key - the agent works at once.</span>
+      </p>
       <p className="muted">
-        Add at least one of these settings to <code>backend/.env</code>, then restart the backend:
+        Or add one of these to <code>backend/.env</code> and restart the backend:
       </p>
       <ul className="settings-list">
         {providers.map((p) => (
@@ -108,7 +119,7 @@ function Chat({
   const provider = providers.find((p) => p.id === providerId) ?? providers[0]
   const [model, setModel] = useState(() => {
     const saved = readChoice().model
-    return saved && provider.models.includes(saved) ? saved : provider.default_model
+    return saved && modelsOf(provider).includes(saved) ? saved : provider.model
   })
   const [entries, setEntries] = useState<Entry[]>([])
   const [draft, setDraft] = useState('')
@@ -122,7 +133,7 @@ function Chat({
 
   const choose = (nextProvider: string, nextModel?: string) => {
     const p = providers.find((x) => x.id === nextProvider) ?? providers[0]
-    const m = nextModel && p.models.includes(nextModel) ? nextModel : p.default_model
+    const m = nextModel && modelsOf(p).includes(nextModel) ? nextModel : p.model
     setProviderId(p.id)
     setModel(m)
     saveChoice(p.id, m)
@@ -182,7 +193,7 @@ function Chat({
           ))}
         </select>
         <select aria-label="Model" value={model} onChange={(e) => choose(provider.id, e.target.value)}>
-          {provider.models.map((m) => (
+          {modelsOf(provider).map((m) => (
             <option key={m} value={m}>
               {m}
             </option>

@@ -139,3 +139,31 @@ test('agent panel explains how to configure a provider', async ({ page }) => {
   await shot(page, 'agent-not-configured')
   expect(errors).toEqual([])
 })
+
+test('a key pasted in Settings enables the chat without a restart', async ({ page }) => {
+  const errors = watchErrors(page)
+  await page.goto('/')
+  const agent = page.getByRole('complementary', { name: 'Agent' })
+  await agent.getByRole('link', { name: 'Open settings' }).click()
+  await expect(page).toHaveURL(/#\/settings$/)
+
+  const anthropic = page.getByRole('article', { name: 'Anthropic (Claude)' })
+  await expect(anthropic.getByRole('status')).toHaveText('Not configured')
+  // A dummy key: saving makes no provider call, and the test never presses "Test".
+  await anthropic.getByLabel('API key').fill('sk-ant-e2e-dummy-key-7777')
+  await anthropic.getByRole('button', { name: 'Save' }).click()
+  await expect(anthropic.getByRole('status')).toHaveText('Saved in app · key …7777')
+  await expect(agent.getByRole('textbox', { name: 'Message the agent' })).toBeVisible()
+  await shot(page, 'settings-saved')
+
+  await page.reload()
+  await expect(page.getByRole('complementary', { name: 'Agent' }).getByRole('combobox', { name: 'Provider' })).toHaveValue(
+    'anthropic',
+  )
+  await page.getByRole('article', { name: 'Anthropic (Claude)' }).getByRole('button', { name: 'Remove' }).click()
+  await expect(page.getByRole('article', { name: 'Anthropic (Claude)' }).getByRole('status')).toHaveText('Not configured')
+  await expect(page.getByRole('complementary', { name: 'Agent' }).getByRole('status')).toContainText(
+    'No AI provider is configured.',
+  )
+  expect(errors).toEqual([])
+})

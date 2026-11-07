@@ -3,7 +3,7 @@ from collections.abc import Iterator
 from datetime import datetime
 
 from fastapi import Request
-from sqlalchemy import BigInteger, DateTime, Engine, String, Text, create_engine, func
+from sqlalchemy import BigInteger, Boolean, DateTime, Engine, String, Text, create_engine, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 
@@ -36,6 +36,22 @@ class Lesson(Base):
     node_id: Mapped[str] = mapped_column(Text, primary_key=True)
     body: Mapped[str] = mapped_column(Text)
     source: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ProviderConfig(Base):
+    """Agent provider settings entered in the app; the key is stored encrypted."""
+
+    __tablename__ = "provider_configs"
+
+    provider_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    api_key_enc: Mapped[str | None] = mapped_column(Text)
+    key_hint: Mapped[str | None] = mapped_column(Text)
+    base_url: Mapped[str | None] = mapped_column(Text)
+    model: Mapped[str | None] = mapped_column(Text)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

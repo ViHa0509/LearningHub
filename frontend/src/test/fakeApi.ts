@@ -1,5 +1,5 @@
 import { vi } from 'vitest'
-import type { AgentProvider, ChatPage, ChatReply, ChatTurn, ImportOutcome, Lesson, Note, Roadmap } from '../api'
+import type { AgentProvider, ProviderTest, ChatPage, ChatReply, ChatTurn, ImportOutcome, Lesson, Note, Roadmap } from '../api'
 
 export const backend: Roadmap = {
   id: 'backend',
@@ -28,24 +28,41 @@ export const devops: Roadmap = {
   ],
 }
 
+export function makeProvider(
+  id: string,
+  label: string,
+  models: string[],
+  extra: Partial<AgentProvider> = {},
+): AgentProvider {
+  return {
+    id,
+    label,
+    available: true,
+    configured: true,
+    enabled: true,
+    source: 'app',
+    overrides_env: false,
+    key_hint: '…1234',
+    key_error: null,
+    base_url: null,
+    setting: `LH_${id.toUpperCase()}_API_KEY`,
+    models,
+    model: models[0],
+    default_model: models[0],
+    ...extra,
+  }
+}
+
 export const PROVIDERS: AgentProvider[] = [
-  {
-    id: 'anthropic',
-    label: 'Anthropic (Claude)',
-    available: true,
-    setting: 'LH_ANTHROPIC_API_KEY',
-    models: ['claude-sonnet-5-5', 'claude-haiku-5-5'],
-    default_model: 'claude-sonnet-5-5',
-  },
-  {
-    id: 'openai',
-    label: 'OpenAI',
-    available: true,
-    setting: 'LH_OPENAI_API_KEY',
-    models: ['gpt-5.5'],
-    default_model: 'gpt-5.5',
-  },
+  makeProvider('anthropic', 'Anthropic (Claude)', ['claude-sonnet-5-5', 'claude-haiku-5-5']),
+  makeProvider('openai', 'OpenAI', ['gpt-5.5']),
 ]
+
+/** Every provider in the "nothing configured" state. */
+export const UNCONFIGURED: AgentProvider[] = [
+  ...PROVIDERS,
+  makeProvider('ollama', 'Local (Ollama, Gemma)', ['gemma3'], { setting: 'LH_OLLAMA_URL' }),
+].map((p) => ({ ...p, available: false, configured: false, source: null, key_hint: null }))
 
 let seq = 0
 export function makeNote(title: string, nodeId: string | null = null, extra: Partial<Note> = {}): Note {
@@ -68,6 +85,7 @@ export interface FakeState {
   importResults?: ImportOutcome[]
   lessons: Record<string, Lesson>
   providers: AgentProvider[]
+  test: ProviderTest
   /** Answers POST /api/agent/chat; return a reply, or a status and detail for an error. */
   chat: (body: { provider: string; model: string; messages: ChatTurn[]; page: ChatPage }) => ChatReply | { status: number; detail: string }
   calls: { method: string; url: string; body?: unknown }[]
@@ -87,7 +105,8 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
     notes: [...notes],
     importResults,
     lessons: {},
-    providers: PROVIDERS.map((p) => ({ ...p, available: false })),
+    providers: UNCONFIGURED.map((p) => ({ ...p })),
+    test: { ok: true, model: 'claude-sonnet-5-5', latency_ms: 420, message: 'The model answered: OK' },
     chat: () => ({ reply: 'ok', steps: [], changed_lessons: [], stopped: false }),
     calls: [],
   }
@@ -147,6 +166,29 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
         return respond({ domain, counts })
       }
       if (url === '/api/agent/providers') return respond(state.providers)
+      const providerMatch = url.match(/^\/api\/agent\/providers\/([^/]+)(\/test)?$/)
+      if (providerMatch) {
+        const target = state.providers.find((p) => p.id === providerMatch[1])
+        if (!target) return respond({ detail: 'unknown provider' }, 404)
+        if (providerMatch[2]) return respond({ ...state.test, model: target.model })
+        if (method === 'DELETE') {
+          Object.assign(target, { configured: false, available: false, source: null, key_hint: null, base_url: null })
+          return respond(target)
+        }
+        if (body.base_url !== undefined) {
+          if (!/^https?:\/\//.test(body.base_url)) {
+            return respond({ detail: [{ msg: 'Value error, the URL must start with http:// or https://' }] }, 422)
+          }
+          Object.assign(target, { base_url: body.base_url, configured: true, source: 'app' })
+        }
+        if (body.api_key) {
+          Object.assign(target, { key_hint: `…${body.api_key.slice(-4)}`, configured: true, source: 'app' })
+        }
+        if (body.model !== undefined) target.model = body.model || target.default_model
+        if (body.enabled !== undefined) target.enabled = body.enabled
+        target.available = target.configured && target.enabled
+        return respond(target)
+      }
       if (url === '/api/agent/chat') {
         const answer = state.chat(body)
         return 'status' in answer ? respond({ detail: answer.detail }, answer.status) : respond(answer)

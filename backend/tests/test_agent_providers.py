@@ -7,6 +7,7 @@ from typing import Any
 import anthropic
 import openai
 import pytest
+from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
@@ -14,13 +15,15 @@ from app.agent.messages import Message, ProviderError, ToolCall, ToolSpec
 from app.agent.providers import (
     AnthropicProvider,
     OpenAICompatibleProvider,
-    build_providers,
     to_anthropic_messages,
     to_openai_messages,
 )
+from app.agent.registry import ProviderRegistry
+from app.agent.secrets import SecretBox
 from app.config import Settings
 from app.main import create_app
 
+BOX = SecretBox(Fernet.generate_key())
 TOOL = ToolSpec("search_notes", "Search notes.", {"type": "object", "properties": {}})
 CONVERSATION = [
     Message(role="user", text="what about redis?"),
@@ -133,14 +136,17 @@ def test_openai_error_becomes_provider_error() -> None:
         OpenAICompatibleProvider(client).complete("SYS", CONVERSATION[:1], [TOOL], "m")
 
 
-def test_build_providers_only_for_configured_settings(settings_factory: Any) -> None:
-    assert build_providers(settings_factory()) == {}
-    configured = build_providers(
-        settings_factory(anthropic_api_key=SecretStr("sk-a"), ollama_url="http://localhost:11434/")
-    )
-    assert set(configured) == {"anthropic", "ollama"}
-    blank = build_providers(settings_factory(openai_api_key=SecretStr("  "), ollama_url=""))
-    assert blank == {}
+def test_registry_uses_only_configured_env_settings(settings_factory: Any) -> None:
+    def available(**overrides: Any) -> set[str]:
+        registry = ProviderRegistry(settings_factory(**overrides), BOX, lambda *_: object())  # type: ignore[arg-type,return-value]
+        return {c.info.id for c in registry.configs() if c.available}
+
+    assert available() == set()
+    assert available(anthropic_api_key=SecretStr("sk-a"), ollama_url="http://localhost:11434/") == {
+        "anthropic",
+        "ollama",
+    }
+    assert available(openai_api_key=SecretStr("  "), ollama_url="") == set()
 
 
 # Scenario: No provider configured

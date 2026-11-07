@@ -11,6 +11,7 @@ import { LearnedList } from './LearnedList'
 import { LessonPage } from './LessonPage'
 import { NoteView } from './NoteView'
 import { RoadmapMap } from './RoadmapMap'
+import { SettingsPage } from './SettingsPage'
 import { TopBar } from './TopBar'
 
 export function AppShell() {
@@ -83,6 +84,8 @@ export function AppShell() {
         onSelectNode={openLesson}
       />
     )
+  } else if (route.page === 'settings') {
+    center = <SettingsPage />
   } else if (route.page === 'lesson') {
     const fullId = `${route.domain}/${route.node}`
     center = (

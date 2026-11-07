@@ -1,6 +1,11 @@
-from fastapi import FastAPI
+import logging
 
-from app.agent.providers import build_providers
+from fastapi import FastAPI
+from sqlalchemy.exc import SQLAlchemyError
+
+from app.agent.ratelimit import RateLimiter
+from app.agent.registry import ProviderRegistry, default_factory
+from app.agent.secrets import SecretBox
 from app.config import Settings, get_settings
 from app.db import make_engine, make_session_factory
 from app.roadmaps import RoadmapCatalog
@@ -17,7 +22,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.engine = make_engine(settings.database_url)
     app.state.session_factory = make_session_factory(app.state.engine)
     app.state.store = LocalFileStore(settings.storage_dir)
-    app.state.providers = build_providers(settings)
+    app.state.registry = ProviderRegistry(
+        settings, SecretBox.from_settings(settings), default_factory
+    )
+    app.state.rate_limiter = RateLimiter(settings.agent_rate_per_minute)
+    try:
+        with app.state.session_factory() as session:
+            app.state.registry.reload(session)
+    except SQLAlchemyError:
+        # Database not migrated yet (or down): keys from backend/.env still work.
+        logging.getLogger(__name__).warning(
+            "could not read provider settings; run 'alembic upgrade head'", exc_info=True
+        )
 
     @app.get("/api/health")
     def health() -> dict[str, str]:

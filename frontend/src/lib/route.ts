@@ -5,6 +5,7 @@ export type Route =
   | { page: 'roadmap'; domain: string }
   | { page: 'lesson'; domain: string; node: string }
   | { page: 'note'; id: string }
+  | { page: 'settings' }
 
 const SEGMENT = /^[A-Za-z0-9_-]+$/
 
@@ -14,6 +15,7 @@ export function parseRoute(hash: string): Route {
   if (parts[0] === 'roadmap' && parts.length === 2) return { page: 'roadmap', domain: parts[1] }
   if (parts[0] === 'lesson' && parts.length === 3) return { page: 'lesson', domain: parts[1], node: parts[2] }
   if (parts[0] === 'note' && parts.length === 2) return { page: 'note', id: parts[1] }
+  if (parts[0] === 'settings' && parts.length === 1) return { page: 'settings' }
   return { page: 'home' }
 }
 
@@ -27,6 +29,8 @@ export function routeHash(route: Route): string {
       return `#/lesson/${route.domain}/${route.node}`
     case 'note':
       return `#/note/${route.id}`
+    case 'settings':
+      return '#/settings'
   }
 }
 

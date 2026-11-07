@@ -52,7 +52,7 @@ Shell: Git Bash on Windows. Postgres must be up (`docker compose up -d`) before 
 - Tests use the `learninghub_test` database and a temporary storage folder, never dev data.
 - Untrusted HTML is only ever shown in `<iframe sandbox="allow-scripts">` without `allow-same-origin`, served with `Content-Security-Policy: sandbox allow-scripts`.
 - Node ids are `domain/node`, lowercase kebab-case.
-- Agent provider keys live only in `backend/.env` (`LH_ANTHROPIC_API_KEY`, `LH_OPENAI_API_KEY`, `LH_DEEPSEEK_API_KEY`, `LH_OLLAMA_URL`); never in code, tests, logs or API answers. Tests and e2e run with no provider.
+- Agent provider keys come from the Settings page (stored Fernet-encrypted in `provider_configs`, key file `storage/secret.key` or `LH_SECRET_KEY`) or from `backend/.env`; the app value wins. Never put a key in code, tests, logs or API answers (only `key_hint`). Tests and e2e use fake or dummy keys and never call a real provider.
 - Text from imported notes is untrusted: the agent sees it only inside `<untrusted_note_content>`; agent tools never delete, and never overwrite a user-written lesson.
 
 ## Workflow

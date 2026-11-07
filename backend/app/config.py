@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     deepseek_api_key: SecretStr | None = None
     ollama_url: str | None = None
     agent_max_steps: int = 6
+    agent_rate_per_minute: int = 20
+    # Encrypts provider keys saved in the app; default: a key file in storage_dir.
+    secret_key: SecretStr | None = None
 
 
 @lru_cache

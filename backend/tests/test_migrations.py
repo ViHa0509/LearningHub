@@ -11,9 +11,9 @@ def test_downgrade_base_then_upgrade_head() -> None:
     engine = create_engine(TEST_DATABASE_URL)
     try:
         command.downgrade(config, "base")
-        assert not {"notes", "lessons"} & set(inspect(engine).get_table_names())
+        assert not {"notes", "lessons", "provider_configs"} & set(inspect(engine).get_table_names())
         command.upgrade(config, "head")
-        assert {"notes", "lessons"} <= set(inspect(engine).get_table_names())
+        assert {"notes", "lessons", "provider_configs"} <= set(inspect(engine).get_table_names())
         columns = {c["name"] for c in inspect(engine).get_columns("notes")}
         assert {"id", "title", "body_text", "content_sha256", "storage_key", "node_id"} <= columns
     finally:

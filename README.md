@@ -25,11 +25,7 @@ cd backend && python -m venv .venv && .venv/Scripts/pip install -r requirements-
 cd frontend && npm install && npm run dev              # http://localhost:5173
 ```
 
-To enable the agent, put at least one key in `backend/.env` and restart the backend:
-
-```
-LH_ANTHROPIC_API_KEY=...        # or LH_OPENAI_API_KEY, LH_DEEPSEEK_API_KEY, LH_OLLAMA_URL=http://localhost:11434
-```
+To enable the agent, open **Settings** (top bar), paste a key (Anthropic, OpenAI, DeepSeek) or an Ollama URL, press **Save**, then **Test**. It works at once, without a restart. Keys are stored encrypted (key file `storage/secret.key`) and never sent back to the browser. Keys in `backend/.env` (`LH_ANTHROPIC_API_KEY`, ...) also work; a key saved in the app wins. Chat calls are limited to 20 per minute (`LH_AGENT_RATE_PER_MINUTE`).
 
 ## Checks
 
