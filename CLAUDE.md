@@ -60,12 +60,13 @@ Shell: Git Bash on Windows. Postgres must be up (`docker compose up -d`) before 
 - Every change starts as an OpenSpec change: `/opsx:propose` -> review -> `/opsx:apply`.
 - Work only on tasks in `openspec/changes/<change>/tasks.md`; mark a task `[x]` only when its check passes.
 - A behavior the specs do not describe is new scope: update the change's artifacts first.
+- After the dev agents finish a change, always run e2e: `qc-e2e` writes and runs Playwright tests from the change's specs. Send each failure back to the dev agent that owns the area, then run `qc-e2e` again; repeat until the suite passes. A change is not done, committed or archived while e2e fails.
 - Before a PR, run the verifier subagent (`ai-sdlc-kit:verifier`) on the change and paste its report into the PR.
 - Never weaken or delete a test to make it pass.
 
 ## Agent team
 
-Plugin `ai-sdlc-kit` 0.3.0. One cycle: `/ai-sdlc-kit:orchestrate [change]`; loop it with `/loop 30m /ai-sdlc-kit:orchestrate`. Ideas: `/loop 12h /ai-sdlc-kit:brainstorm` (reads `docs/VISION.md`, writes `ideas/BACKLOG.md`).
+Plugin `ai-sdlc-kit` 0.3.1. One cycle: `/ai-sdlc-kit:orchestrate [change]`; loop it with `/loop 30m /ai-sdlc-kit:orchestrate`. Ideas: `/loop 12h /ai-sdlc-kit:brainstorm` (reads `docs/VISION.md`, writes `ideas/BACKLOG.md`).
 
 - `scout` (haiku): read-only lookups with file:line answers.
 - `implementer` (sonnet): one task from `tasks.md`, runs the checks.
@@ -81,6 +82,7 @@ Plugin `ai-sdlc-kit` 0.3.0. One cycle: `/ai-sdlc-kit:orchestrate [change]`; loop
 - [ ] Every command marked as a check in Commands passes.
 - [ ] The tasks for this work are checked in the change's `tasks.md`.
 - [ ] Every spec scenario touched by this work has a test.
+- [ ] `qc-e2e` ran on the change after the last dev fix, and the e2e suite passes.
 - [ ] The verifier report is attached to the PR.
 
 ## Known mistakes
