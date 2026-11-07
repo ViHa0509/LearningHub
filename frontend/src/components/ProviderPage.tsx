@@ -246,6 +246,12 @@ function ProviderForm({ types, initial }: { types: ProviderTypeInfo[]; initial: 
   const dirty = JSON.stringify(form) !== baseline
   const { markClean } = useUnsavedGuard(dirty)
   const info = types.find((t) => t.type === form.type)
+  const isAnthropic = form.type === 'anthropic'
+  const keyHint = isAnthropic
+    ? 'An Anthropic API key (sk-ant-api…) or a token from `claude setup-token` (sk-ant-oat…). Line breaks from the terminal are removed.'
+    : info && !info.needs_key
+      ? 'Optional for this type.'
+      : undefined
   const id = (name: string) => `${uid}-${name}`
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setJustSaved(false)
@@ -493,10 +499,10 @@ function ProviderForm({ types, initial }: { types: ProviderTypeInfo[]; initial: 
         </Field>
 
         <Field
-          label="API key"
+          label={isAnthropic ? 'API key or setup token' : 'API key'}
           htmlFor={id('api_key')}
           error={err('api_key')}
-          hint={info && !info.needs_key ? 'Optional for this type.' : undefined}
+          hint={keyHint}
         >
           <div className="inline-row">
             <input
@@ -505,9 +511,15 @@ function ProviderForm({ types, initial }: { types: ProviderTypeInfo[]; initial: 
               autoComplete="off"
               spellCheck={false}
               value={form.apiKey}
-              placeholder={saved?.key_hint ? `Saved (${saved.key_hint}), type to replace` : 'Paste your API key'}
+              placeholder={
+                saved?.key_hint
+                  ? `Saved ${saved.key_kind === 'setup_token' ? 'setup token' : 'key'} (${saved.key_hint}), type to replace`
+                  : isAnthropic
+                    ? 'Paste an API key or a claude setup-token'
+                    : 'Paste your API key'
+              }
               aria-invalid={!!err('api_key')}
-              aria-describedby={describe('api_key', !!info && !info.needs_key)}
+              aria-describedby={describe('api_key', !!keyHint)}
               onChange={(e) => set('apiKey', e.target.value)}
             />
             <button type="button" aria-pressed={showKey} onClick={() => setShowKey(!showKey)}>

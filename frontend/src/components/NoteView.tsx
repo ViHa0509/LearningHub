@@ -65,6 +65,16 @@ export function NoteView({ note, roadmaps, onClose, onChanged, onDeleted }: Prop
         {note.node_missing && (
           <span className="tag warn">Linked node {note.node_id} no longer exists</span>
         )}
+        <div className="note-actions">
+        {note.archived_at ? (
+          <button type="button" onClick={() => void run(() => api.setArchived(note.id, false))}>
+            Restore
+          </button>
+        ) : (
+          <button type="button" onClick={() => void run(() => api.setArchived(note.id, true))}>
+            Archive
+          </button>
+        )}
         {confirming ? (
           <span className="confirm" role="alertdialog" aria-label="Confirm delete">
             Delete this note and its original file?
@@ -80,7 +90,16 @@ export function NoteView({ note, roadmaps, onClose, onChanged, onDeleted }: Prop
             Delete
           </button>
         )}
+        </div>
       </header>
+      {note.archived_at && (
+        <p className="archived-banner" role="status">
+          This note is archived.
+          <button type="button" aria-label="Restore this note" onClick={() => void run(() => api.setArchived(note.id, false))}>
+            Restore
+          </button>
+        </p>
+      )}
       {error && <p className="error" role="alert">{error}</p>}
       {/* No allow-same-origin: the page runs in an opaque origin and cannot reach the app. */}
       <iframe

@@ -42,6 +42,22 @@ export const devops: Roadmap = {
   ],
 }
 
+function stub(id: string, title: string): Roadmap {
+  return {
+    id,
+    title,
+    nodes: [
+      { id: 'basics', full_id: `${id}/basics`, title: 'Basics', description: null, parent: null, order: 0 },
+      { id: 'tools', full_id: `${id}/tools`, title: 'Tools', description: null, parent: null, order: 1 },
+    ],
+  }
+}
+
+export const frontend = stub('frontend', 'Frontend')
+export const qa = stub('qa', 'QA')
+export const dataEngineer = stub('data-engineer', 'Data Engineer')
+export const aiEngineer = stub('ai-engineer', 'AI Engineer')
+
 export const TYPES: ProviderTypeInfo[] = [
   {
     type: 'openai',
@@ -104,6 +120,8 @@ export const AGENT_DEFS = [
 ]
 
 let providerSeq = 0
+const keyKind = (key: string) => (key.startsWith('sk-ant-oat') ? 'setup_token' : 'api_key')
+
 export function makeProvider(name: string, type: ProviderType, model: string, extra: Partial<ProviderOut> = {}): ProviderOut {
   providerSeq += 1
   const needsKey = TYPES.find((t) => t.type === type)?.needs_key ?? false
@@ -113,6 +131,7 @@ export function makeProvider(name: string, type: ProviderType, model: string, ex
     provider_type: type,
     model_name: model,
     key_hint: needsKey ? '…1234' : null,
+    key_kind: needsKey ? 'api_key' : null,
     has_key: needsKey,
     base_url: null,
     config: {},
@@ -144,6 +163,7 @@ export function makeNote(title: string, nodeId: string | null = null, extra: Par
     size_bytes: 100,
     node_id: nodeId,
     node_missing: false,
+    archived_at: null,
     created_at: '2026-11-06T00:00:00Z',
     updated_at: '2026-11-06T00:00:00Z',
     ...extra,
@@ -212,8 +232,23 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
     calls: [],
     headers: [],
   }
-  const roadmaps: Record<string, Roadmap> = { backend, devops }
-  const descriptions: Record<string, string | null> = { backend: 'Server-side code.', devops: null }
+  // Catalog order: Frontend, Backend, DevOps, QA, Data Engineer, AI Engineer.
+  const roadmaps: Record<string, Roadmap> = {
+    frontend,
+    backend,
+    devops,
+    qa,
+    'data-engineer': dataEngineer,
+    'ai-engineer': aiEngineer,
+  }
+  const descriptions: Record<string, string | null> = {
+    frontend: 'Interfaces in the browser.',
+    backend: 'Server-side code.',
+    devops: null,
+    qa: 'Testing and quality.',
+    'data-engineer': 'Data pipelines.',
+    'ai-engineer': 'Building with LLMs and agents.',
+  }
 
   const find = (id: string | null | undefined) => state.providers.find((p) => p.id === id)
   const effective = (agentId: string): { provider?: ProviderOut; reason: AgentOut['effective_reason'] } => {
@@ -278,7 +313,7 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
       }
 
       if (url === '/api/domains') {
-        const linked = new Set(state.notes.map((n) => n.node_id))
+        const linked = new Set(state.notes.filter((n) => !n.archived_at).map((n) => n.node_id))
         return respond(
           Object.values(roadmaps).map((r) => ({
             id: r.id,
@@ -314,7 +349,7 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
         const domain = match[1]
         const counts: Record<string, number> = {}
         for (const n of state.notes) {
-          if (n.node_id?.startsWith(`${domain}/`)) {
+          if (!n.archived_at && n.node_id?.startsWith(`${domain}/`)) {
             const id = n.node_id.split('/')[1]
             counts[id] = (counts[id] ?? 0) + 1
           }
@@ -335,6 +370,7 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
           base_url: body.base_url ?? null,
           has_key: !!api_key,
           key_hint: api_key ? `\u2026${api_key.slice(-4)}` : null,
+          key_kind: api_key ? keyKind(api_key) : null,
         })
         state.providers.push(created)
         return respond(withUse(created), 201)
@@ -387,7 +423,8 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
           }
           const { api_key, ...rest } = body
           Object.assign(target, rest, { base_url: body.base_url ?? null })
-          if (api_key) Object.assign(target, { has_key: true, key_hint: `\u2026${api_key.slice(-4)}` })
+          if (api_key)
+            Object.assign(target, { has_key: true, key_hint: `\u2026${api_key.slice(-4)}`, key_kind: keyKind(api_key) })
           return respond(withUse(target))
         }
         return respond(withUse(target))
@@ -422,7 +459,14 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
           ...answer,
         })
       }
-      if (url === '/api/notes' && method === 'GET') return respond(state.notes)
+      if (url === '/api/notes' && method === 'GET') return respond(state.notes.filter((n) => !n.archived_at))
+      if (url === '/api/notes?archived=true' && method === 'GET') {
+        return respond(
+          state.notes
+            .filter((n) => n.archived_at)
+            .sort((a, b) => (b.archived_at ?? '').localeCompare(a.archived_at ?? '')),
+        )
+      }
       if (url === '/api/notes/import') {
         const results = state.importResults ?? []
         for (const r of results) if (r.outcome === 'created' && r.note) state.notes.unshift(r.note)
@@ -435,6 +479,9 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
         if (method === 'PATCH') {
           if (body.title !== undefined) note.title = body.title
           if (body.node_id !== undefined) note.node_id = body.node_id
+          if (body.archived !== undefined) {
+            note.archived_at = body.archived ? (note.archived_at ?? new Date().toISOString()) : null
+          }
           return respond(note)
         }
         if (method === 'DELETE') {

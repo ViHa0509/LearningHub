@@ -20,7 +20,7 @@ describe('create a provider', () => {
     await user.click(within(form).getByRole('radio', { name: 'Anthropic' }))
     expect(within(form).getByLabelText('Model')).toHaveValue('claude-sonnet-5-5')
     await user.type(within(form).getByLabelText('Name'), 'Claude main')
-    await user.type(within(form).getByLabelText('API key'), 'sk-ant-api03-abcd1234')
+    await user.type(within(form).getByLabelText(/^API key/), 'sk-ant-api03-abcd1234')
     await user.click(within(form).getByRole('button', { name: 'Save Changes' }))
 
     await waitFor(() => expect(window.location.hash).toBe('#/settings/providers/p1'))
@@ -34,7 +34,30 @@ describe('create a provider', () => {
       config: {},
     })
     // The saved page shows only the key hint, never the key.
-    expect(await screen.findByLabelText('API key')).toHaveAttribute('placeholder', 'Saved (…1234), type to replace')
+    expect(await screen.findByLabelText(/^API key/)).toHaveAttribute('placeholder', 'Saved key (…1234), type to replace')
+  })
+
+  // Spec: ai-providers - Anthropic accepts an API key or a Claude setup token (Kind of key is shown).
+  it('asks Anthropic for an API key or a setup token and says which kind is saved', async () => {
+    installFakeApi()
+    const { user } = renderApp('#/settings/providers/new')
+    const form = await page()
+    await user.click(within(form).getByRole('radio', { name: 'Anthropic' }))
+    const key = within(form).getByLabelText('API key or setup token')
+    expect(key).toHaveAccessibleDescription(/claude setup-token/)
+    await user.type(within(form).getByLabelText('Name'), 'Claude sub')
+    await user.type(key, 'sk-ant-oat01-tokenwxyz')
+    await user.click(within(form).getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() => expect(window.location.hash).toBe('#/settings/providers/p1'))
+    expect(await screen.findByLabelText('API key or setup token')).toHaveAttribute(
+      'placeholder',
+      'Saved setup token (…wxyz), type to replace',
+    )
+
+    await user.click(screen.getByRole('link', { name: /Back to providers/ }))
+    await user.click(await screen.findByRole('link', { name: 'Add provider' }))
+    await user.click(within(await page()).getByRole('radio', { name: 'OpenAI' }))
+    expect(within(await page()).getByLabelText('API key')).toBeInTheDocument()
   })
 
   it('offers the types as a radio group and prefills the base URL of the chosen type', async () => {
@@ -56,7 +79,7 @@ describe('create a provider', () => {
     const form = await page()
     await user.type(within(form).getByLabelText('Name'), 'OpenAI main')
     await user.click(within(form).getByRole('button', { name: 'Save Changes' }))
-    const key = within(form).getByLabelText('API key')
+    const key = within(form).getByLabelText(/^API key/)
     expect(await within(form).findByText('An API key is required')).toBeInTheDocument()
     expect(key).toHaveAttribute('aria-invalid', 'true')
     expect(key).toHaveAccessibleDescription('An API key is required')
@@ -75,7 +98,7 @@ describe('create a provider', () => {
     const form = await page()
     await user.click(within(form).getByRole('radio', { name: 'Anthropic' }))
     await user.type(within(form).getByLabelText('Name'), 'Claude main')
-    await user.type(within(form).getByLabelText('API key'), 'sk-test-abcd1234')
+    await user.type(within(form).getByLabelText(/^API key/), 'sk-test-abcd1234')
     await user.click(within(form).getByRole('button', { name: 'Save Changes' }))
     expect(await within(form).findByText(/already taken/)).toBeInTheDocument()
   })
@@ -125,7 +148,7 @@ describe('edit a provider', () => {
     installFakeApi()
     const { user } = renderApp('#/settings/providers/new')
     const form = await page()
-    const key = within(form).getByLabelText('API key')
+    const key = within(form).getByLabelText(/^API key/)
     await user.type(key, 'sk-secret')
     expect(key).toHaveAttribute('type', 'password')
     await user.click(within(form).getByRole('button', { name: 'Show' }))
@@ -166,7 +189,7 @@ describe('advanced parameters', () => {
     const { user } = renderApp('#/settings/providers/new')
     const form = await page()
     await user.type(within(form).getByLabelText('Name'), 'OpenAI main')
-    await user.type(within(form).getByLabelText('API key'), 'sk-test-abcd1234')
+    await user.type(within(form).getByLabelText(/^API key/), 'sk-test-abcd1234')
     const extra = within(form).getByLabelText('Provider-specific parameters (JSON)')
 
     await user.type(extra, '{[}1, 2]')

@@ -18,7 +18,7 @@ def write(tmp_path: Path, name: str, text: str) -> Path:
     return path
 
 
-SHIPPED_ORDER = ["frontend", "backend", "devops", "qa", "data-engineer"]
+SHIPPED_ORDER = ["frontend", "backend", "devops", "qa", "data-engineer", "ai-engineer"]
 
 
 # Scenario: Roadmap files are loaded at startup

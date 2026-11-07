@@ -9,6 +9,10 @@ export function useNotes() {
   return useQuery({ queryKey: queryKeys.notes, queryFn: api.notes })
 }
 
+export function useArchivedNotes() {
+  return useQuery({ queryKey: queryKeys.archivedNotes, queryFn: api.archivedNotes })
+}
+
 /** Every domain's roadmap, in domain order; `ready` once all of them are loaded. */
 export function useAllRoadmaps(): { roadmaps: Roadmap[]; ready: boolean } {
   const domains = useDomains()
@@ -22,12 +26,14 @@ export function useAllRoadmaps(): { roadmaps: Roadmap[]; ready: boolean } {
   return { roadmaps: results.map((r) => r.data as Roadmap), ready: true }
 }
 
-/** Refresh everything that depends on notes after an import, link or delete. */
+/** Refresh everything that depends on notes after an import, link, archive or delete. */
 export function useRefreshNotes() {
   const client = useQueryClient()
   return async () => {
     await Promise.all([
+      // The ['notes'] prefix covers the archived list too.
       client.invalidateQueries({ queryKey: queryKeys.notes }),
+      client.invalidateQueries({ queryKey: queryKeys.domains }),
       client.invalidateQueries({ queryKey: ['counts'] }),
     ])
   }

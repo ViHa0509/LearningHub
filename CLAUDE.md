@@ -66,7 +66,7 @@ Shell: Git Bash on Windows. Postgres must be up (`docker compose up -d`) before 
 
 ## Agent team
 
-Plugin `ai-sdlc-kit` 0.3.1. One cycle: `/ai-sdlc-kit:orchestrate [change]`; loop it with `/loop 30m /ai-sdlc-kit:orchestrate`. Ideas: `/loop 12h /ai-sdlc-kit:brainstorm` (reads `docs/VISION.md`, writes `ideas/BACKLOG.md`).
+Plugin `ai-sdlc-kit` 0.4.0 (hooks: secret and command guards; gates from `.sdlc/gates.json` run unit, lint, types and build on commit and e2e on push). One cycle: `/ai-sdlc-kit:orchestrate [change]`; loop it with `/loop 30m /ai-sdlc-kit:orchestrate`. Ideas: `/loop 12h /ai-sdlc-kit:brainstorm` (reads `docs/VISION.md`, writes `ideas/BACKLOG.md`).
 
 - `scout` (haiku): read-only lookups with file:line answers.
 - `implementer` (sonnet): one task from `tasks.md`, runs the checks.

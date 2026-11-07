@@ -20,6 +20,9 @@ def test_downgrade_base_then_upgrade_head() -> None:
         assert "provider_configs" not in inspect(engine).get_table_names()
         columns = {c["name"] for c in inspect(engine).get_columns("notes")}
         assert {"id", "title", "body_text", "content_sha256", "storage_key", "node_id"} <= columns
+        assert "archived_at" in columns
+        command.downgrade(config, "0004")
+        assert "archived_at" not in {c["name"] for c in inspect(engine).get_columns("notes")}
     finally:
         command.upgrade(config, "head")
         engine.dispose()

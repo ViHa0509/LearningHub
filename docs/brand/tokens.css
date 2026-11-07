@@ -1,0 +1,128 @@
+/*
+ * Learning Hub - proposed theme tokens (visual identity, design decision 7).
+ * Not loaded by the app. Task 4.2 copies these values into frontend/src/index.css.
+ *
+ * Mapping onto the app's existing variables (frontend/src/index.css):
+ *
+ *   app variable      light (new)   dark (new)    was light / dark
+ *   --bg              #F7F7FA       #0F0F12       #f7f7f5 / #161615
+ *   --surface         #FFFFFF       #17171D       #ffffff / #1f1f1d
+ *   --surface-2       #EFEFF6       #1F1F27       #f0f0ec / #2a2a27
+ *   --border          #DCDBE6       #2D2D38       #dcdcd6 / #3a3a36   (dividers, card edges)
+ *   --text            #18162E       #ECECF1       #1d1d1b / #ececea
+ *   --muted           #5E5C74       #9D9DAE       #6b6b66 / #a0a09a
+ *   --accent          #4338CA       #22D3EE       #2f6fdb / #7aa7f5   (indigo in light, cyan in dark)
+ *   --accent-soft     #E8E7FB       #0E2A33       #e3ecfb / #24324d
+ *   --on-accent       #FFFFFF       #0F0F12       #ffffff / #10141c
+ *   --has-notes       #18794E       #5FD3A0       #1f8a5b / #5fd3a0   (light darkened: 4.05 -> 5.06 on --bg)
+ *   --has-notes-soft  #E3F3EA       #16302A       #e1f3ea / #1d3a2d
+ *   --warn            #A35B00       #F0B35A       unchanged
+ *   --danger          #C0392B       #EF7A6B       unchanged
+ *   --radius, --font                              unchanged
+ *
+ * New variables (no existing equivalent):
+ *   --border-strong   #8A88A0       #6A6A80       input/button outlines (>= 3:1 against --surface, WCAG 1.4.11)
+ *   --secondary       #6D28D9       #A78BFA       secondary accent: tags, agent, highlights (text-safe)
+ *   --secondary-soft  #F0EAFE       #231C3D
+ *   --brand-indigo / --brand-cyan / --brand-violet / --brand-night: fixed brand colors for the logo,
+ *   app icon and decoration only (never body text: cyan and violet fail on white).
+ *   --glow, --particles: dark-mode page background (see the body rule at the end).
+ *
+ * Computed WCAG 2.x contrast (also on docs/brand/index.html):
+ *   dark : text/bg 16.25, text/surface 15.16, muted/bg 7.17, muted/surface 6.69, accent/bg 10.59,
+ *          accent/surface 9.88, on-accent/accent 10.59, secondary/surface 6.56, border-strong/surface 3.39
+ *   light: text/bg 16.46, text/surface 17.60, muted/bg 6.03, muted/surface 6.44, accent/bg 7.39,
+ *          accent/surface 7.90, on-accent/accent 7.90, secondary/surface 7.10, border-strong/surface 3.44
+ */
+
+:root {
+  --brand-indigo: #1E1B4B;
+  --brand-cyan: #22D3EE;
+  --brand-violet: #A78BFA;
+  --brand-night: #0F0F12;
+
+  --bg: #F7F7FA;
+  --surface: #FFFFFF;
+  --surface-2: #EFEFF6;
+  --border: #DCDBE6;
+  --border-strong: #8A88A0;
+  --text: #18162E;
+  --muted: #5E5C74;
+  --accent: #4338CA;
+  --accent-soft: #E8E7FB;
+  --on-accent: #FFFFFF;
+  --secondary: #6D28D9;
+  --secondary-soft: #F0EAFE;
+  --has-notes: #18794E;
+  --has-notes-soft: #E3F3EA;
+  --warn: #A35B00;
+  --danger: #C0392B;
+  --glow: none;
+  --particles: none;
+}
+
+/* Same block three times, like the app: explicit dark, and OS dark when the user picked "system". */
+:root[data-theme='dark'] {
+  --bg: #0F0F12;
+  --surface: #17171D;
+  --surface-2: #1F1F27;
+  --border: #2D2D38;
+  --border-strong: #6A6A80;
+  --text: #ECECF1;
+  --muted: #9D9DAE;
+  --accent: #22D3EE;
+  --accent-soft: #0E2A33;
+  --on-accent: #0F0F12;
+  --secondary: #A78BFA;
+  --secondary-soft: #231C3D;
+  --has-notes: #5FD3A0;
+  --has-notes-soft: #16302A;
+  --warn: #F0B35A;
+  --danger: #EF7A6B;
+  --glow:
+    radial-gradient(60% 45% at 15% 0%, rgb(34 211 238 / 0.09), transparent 70%),
+    radial-gradient(50% 45% at 90% 5%, rgb(167 139 250 / 0.10), transparent 70%);
+  --particles: url('/brand/bg-particles.svg');
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #0F0F12;
+    --surface: #17171D;
+    --surface-2: #1F1F27;
+    --border: #2D2D38;
+    --border-strong: #6A6A80;
+    --text: #ECECF1;
+    --muted: #9D9DAE;
+    --accent: #22D3EE;
+    --accent-soft: #0E2A33;
+    --on-accent: #0F0F12;
+    --secondary: #A78BFA;
+    --secondary-soft: #231C3D;
+    --has-notes: #5FD3A0;
+    --has-notes-soft: #16302A;
+    --warn: #F0B35A;
+    --danger: #EF7A6B;
+    --glow:
+      radial-gradient(60% 45% at 15% 0%, rgb(34 211 238 / 0.09), transparent 70%),
+      radial-gradient(50% 45% at 90% 5%, rgb(167 139 250 / 0.10), transparent 70%);
+    --particles: url('/brand/bg-particles.svg');
+  }
+}
+
+/*
+ * Page background. Static (no animation), fixed so it does not scroll with content,
+ * and dropped under reduced motion. In light mode both layers are `none`.
+ * Text never sits directly on a particle: cards and panels use --surface.
+ */
+body {
+  background-color: var(--bg);
+  background-image: var(--glow), var(--particles);
+  background-size: auto, auto, 800px 600px;
+  background-repeat: no-repeat, no-repeat, repeat;
+  background-attachment: fixed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body { background-image: var(--glow); }
+}

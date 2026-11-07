@@ -25,3 +25,6 @@ data/
 Thumbs.db
 .vscode/
 .idea/
+
+# ai-sdlc-kit hook state (gate results, e2e stamps)
+.sdlc/state/

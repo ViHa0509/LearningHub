@@ -15,7 +15,7 @@ from app.agent.llm.adapters import (
     to_openai_messages,
 )
 from app.agent.llm.errors import ProviderError
-from app.agent.llm.factory import LLMFactory, ProviderSettings
+from app.agent.llm.factory import LLMFactory, ProviderSettings, normalize_key
 from app.agent.messages import Message, ToolCall, ToolSpec
 from tests.agent_fakes import (
     anthropic_answer,
@@ -302,3 +302,54 @@ def test_factory_refuses_invalid_settings_before_building_a_client() -> None:
 
 def test_settings_repr_hides_the_key() -> None:
     assert KEY not in repr(settings("openai", key=KEY))
+
+
+# Spec: ai-providers - Anthropic accepts an API key or a Claude setup token.
+# Built at runtime so no token-shaped literal sits in the repository.
+SETUP_TOKEN = "sk-ant-" + "oat01-" + "x" * 40 + "wxyz"
+
+
+# Scenario: Setup token is sent as a bearer token
+def test_factory_sends_a_setup_token_as_oauth_bearer() -> None:
+    f, anth, _ = factory()
+    f.create(settings("anthropic", key=SETUP_TOKEN))
+    assert anth.kwargs == [
+        {
+            "auth_token": SETUP_TOKEN,
+            "default_headers": {"anthropic-beta": "oauth-2025-04-20"},
+            "timeout": 60.0,
+            "max_retries": 0,
+        }
+    ]
+
+
+# Scenario: API key is sent as an API key
+def test_factory_sends_an_api_key_without_the_oauth_header() -> None:
+    f, anth, _ = factory()
+    api_key = "sk-ant-" + "api03-" + "y" * 40
+    f.create(settings("anthropic", key=api_key))
+    assert anth.kwargs == [{"api_key": api_key, "timeout": 60.0, "max_retries": 0}]
+
+
+# Scenario: Token wrapped over lines; Token pasted with extra text
+@pytest.mark.parametrize(
+    "pasted",
+    [
+        SETUP_TOKEN,
+        SETUP_TOKEN[:20] + "\n" + SETUP_TOKEN[20:] + "\r\n",
+        chr(0x200B) + SETUP_TOKEN,
+        chr(0xFEFF) + SETUP_TOKEN,
+        '"' + SETUP_TOKEN + '"',
+        chr(0x2018) + SETUP_TOKEN + chr(0x2019),
+        "export CLAUDE_CODE_OAUTH_TOKEN=" + SETUP_TOKEN,
+        "Your OAuth token: " + SETUP_TOKEN[:30] + "\n" + SETUP_TOKEN[30:],
+    ],
+)
+def test_normalize_key_recovers_the_token(pasted: str) -> None:
+    assert normalize_key(pasted) == SETUP_TOKEN
+
+
+def test_normalize_key_keeps_other_keys_and_ambiguous_pastes() -> None:
+    assert normalize_key("  sk-proj-abc123 \n") == "sk-proj-abc123"
+    two = SETUP_TOKEN + " sk-ant-" + "api03-" + "z" * 20
+    assert normalize_key(two) == two.replace(" ", "")

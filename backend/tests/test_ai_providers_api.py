@@ -304,11 +304,9 @@ def test_connection_test_categories(client: TestClient, category: str) -> None:
     created = create(client, claude())
     assert client.post(f"{BASE}/{created['id']}/test").json()["ok"] is True
     result = client.post(f"{BASE}/{created['id']}/test").json()
-    assert (result["status"], result["ok"], result["message"]) == (
-        category,
-        False,
-        "provider says no",
-    )
+    assert (result["status"], result["ok"]) == (category, False)
+    # A rejected Anthropic key also says how it was sent (Rejected key says how it was sent).
+    assert result["message"].endswith("provider says no")
     saved = client.get(f"{BASE}/{created['id']}").json()
     assert saved["last_test"]["status"] == category
     # The earlier success stays as "last successful test".
@@ -326,6 +324,20 @@ def test_wrong_key_through_the_real_factory(client: TestClient) -> None:
     result = client.post(f"{BASE}/{created['id']}/test").json()
     assert result["status"] == "auth_failed"
     assert "Incorrect API key" in result["message"]
+
+
+def test_rejected_anthropic_key_says_how_it_was_sent(client: TestClient) -> None:
+    token = "sk-ant-" + "oat01-" + "k" * 40
+    use_factory(client, ProviderError("Invalid bearer token", "auth_failed"))
+    result = client.post(f"{BASE}/test", json=claude(api_key='"' + token + '"')).json()
+    assert result["status"] == "auth_failed"
+    assert result["message"].startswith(
+        "Sent as a setup token (OAuth, 53 characters, ending …kkkk). "
+    )
+    assert token not in result["message"]
+    use_factory(client, ProviderError("Invalid bearer token", "auth_failed"))
+    result = client.post(f"{BASE}/test", json=claude()).json()
+    assert result["message"].startswith("Sent as an API key (16 characters, ending …1234). ")
 
 
 def test_working_provider_through_the_real_factory(client: TestClient) -> None:
@@ -504,3 +516,41 @@ def test_env_import_does_not_overwrite_an_edited_configuration(settings_factory:
     assert [(p["name"], p["model_name"]) for p in again] == [
         ("DeepSeek (from .env)", "deepseek-reasoner")
     ]
+
+
+# --- key kinds (spec: Pasted keys are normalized; Anthropic accepts an API key or a setup token)
+
+
+# Scenario: Token wrapped over lines
+def test_key_wrapped_over_lines_is_saved_as_one_key(client: TestClient) -> None:
+    use_factory(client, Turn("OK"))
+    parts = ["sk-ant-" + "api03-" + "a" * 30, "b" * 30, "c" * 26 + "9876"]
+    pasted = parts[0] + "\n" + parts[1] + "\r\n " + parts[2] + "\n"
+    created = create(client, claude(api_key=pasted))
+    assert created["key_hint"] == "…9876" and created["key_kind"] == "api_key"
+    client.post(f"{BASE}/{created['id']}/test")
+    factory: FakeFactory = client.app.state.llm_factory  # type: ignore[attr-defined]
+    assert factory.built[0].key == "".join(parts)
+
+
+# Scenario: Kind of key is shown
+def test_setup_token_kind_is_shown_never_the_token(client: TestClient) -> None:
+    token = "sk-ant-" + "oat01-" + "t" * 60 + "q7r8"
+    created = create(client, claude(api_key=token))
+    for response in (client.get(BASE), client.get(f"{BASE}/{created['id']}")):
+        assert token not in response.text
+    shown = client.get(f"{BASE}/{created['id']}").json()
+    assert (shown["key_kind"], shown["key_hint"]) == ("setup_token", "…q7r8")
+
+
+def test_no_key_has_no_kind(client: TestClient) -> None:
+    created = create(
+        client,
+        {
+            "name": "Local",
+            "provider_type": "local",
+            "model_name": "qwen3",
+            "base_url": "http://localhost:11434/v1",
+        },
+    )
+    assert created["key_kind"] is None

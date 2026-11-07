@@ -27,7 +27,13 @@ def require_domain(catalog: RoadmapCatalog, domain_id: str) -> Domain:
 def list_domains(
     request: Request, session: Annotated[Session, Depends(get_session)]
 ) -> list[DomainSummary]:
-    linked = set(session.scalars(select(Note.node_id).where(Note.node_id.is_not(None)).distinct()))
+    linked = set(
+        session.scalars(
+            select(Note.node_id)
+            .where(Note.node_id.is_not(None), Note.archived_at.is_(None))
+            .distinct()
+        )
+    )
     return [
         DomainSummary(
             id=d.id,
@@ -69,7 +75,7 @@ def read_counts(
     known = {n.full_id: n.id for n in domain.nodes}
     rows = session.execute(
         select(Note.node_id, func.count())
-        .where(Note.node_id.in_(list(known)))
+        .where(Note.node_id.in_(list(known)), Note.archived_at.is_(None))
         .group_by(Note.node_id)
     )
     return NodeCounts(domain=domain.id, counts={known[node]: count for node, count in rows if node})

@@ -5,7 +5,9 @@ built with the configured timeout and no retries, so a connection test and the f
 real failures instead of SDK retries. Building a client makes no request.
 """
 
+import re
 import socket
+import unicodedata
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -24,6 +26,38 @@ DEFAULT_TIMEOUT = 60.0
 LOCAL_KEY = "local"
 # The openai SDK refuses to start without a key; servers that need none ignore it.
 NO_KEY = "not-needed"
+# A Claude setup token (`claude setup-token`) is an OAuth access token, not an API key.
+SETUP_TOKEN_PREFIX = "sk-ant-oat"
+OAUTH_BETA = "oauth-2025-04-20"
+
+
+# An Anthropic key or token inside a longer paste ("export X=...", "Your token: ...").
+ANTHROPIC_KEY = re.compile(r"sk-ant-[A-Za-z0-9_-]+")
+# Straight and typographic quotes, and backticks, as they come from chats and docs.
+QUOTES = "".join(map(chr, (0x22, 0x27, 0x60, 0x2018, 0x2019, 0x201C, 0x201D)))
+
+
+def normalize_key(raw: str) -> str:
+    """The key as the provider expects it, from what the user pasted.
+
+    Drops whitespace (terminals wrap long tokens) and invisible format characters
+    (zero-width spaces, BOM), then surrounding quotes. If the paste holds exactly one
+    Anthropic key or token among other text (a label, ``export NAME=``), only that is kept.
+    """
+    key = "".join(c for c in raw if not c.isspace() and unicodedata.category(c) != "Cf")
+    key = key.strip(QUOTES)
+    found = ANTHROPIC_KEY.findall(key)
+    if len(found) == 1 and found[0] != key:
+        key = found[0]
+    return key
+
+
+def is_setup_token(key: str) -> bool:
+    return key.startswith(SETUP_TOKEN_PREFIX)
+
+
+def key_kind(key: str) -> str:
+    return "setup_token" if is_setup_token(key) else "api_key"
 
 
 class ChatModel(Protocol):
@@ -93,7 +127,12 @@ class LLMFactory:
             if settings.type == "anthropic":
                 if base_url is not None:
                     options["base_url"] = base_url
-                client = self._anthropic_client(api_key=key, **options)
+                if key is not None and is_setup_token(key):
+                    client = self._anthropic_client(
+                        auth_token=key, default_headers={"anthropic-beta": OAUTH_BETA}, **options
+                    )
+                else:
+                    client = self._anthropic_client(api_key=key, **options)
                 return AnthropicChat(client, settings.model, settings.config, key)
             api_key = key or (LOCAL_KEY if settings.type == "local" else NO_KEY)
             client = self._openai_client(

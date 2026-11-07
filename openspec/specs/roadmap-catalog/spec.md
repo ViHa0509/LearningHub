@@ -15,7 +15,7 @@ The system SHALL load each domain roadmap from one YAML file in the repository's
 
 #### Scenario: Initial roadmap content
 - **WHEN** the system is installed from this change
-- **THEN** it ships with Frontend, Backend, DevOps, QA and Data Engineer roadmaps, each with a short description and between 15 and 25 nodes written by hand, and no content copied from roadmap.sh
+- **THEN** it ships with Frontend, Backend, DevOps, QA, Data Engineer and AI Engineer roadmaps, in that order, each with a short description and between 15 and 25 nodes written by hand, and no content copied from roadmap.sh
 
 #### Scenario: Domain description is optional
 - **GIVEN** a roadmap file has no `description`

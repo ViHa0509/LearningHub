@@ -1,0 +1,70 @@
+{
+  "gates": [
+    {
+      "name": "backend-tests",
+      "kind": "unit",
+      "on": [
+        "commit"
+      ],
+      "cmd": "cd backend && .venv/Scripts/python -m pytest"
+    },
+    {
+      "name": "backend-lint",
+      "kind": "lint",
+      "on": [
+        "commit"
+      ],
+      "cmd": "cd backend && .venv/Scripts/ruff check . && .venv/Scripts/ruff format --check ."
+    },
+    {
+      "name": "backend-types",
+      "kind": "types",
+      "on": [
+        "commit"
+      ],
+      "cmd": "cd backend && .venv/Scripts/mypy app"
+    },
+    {
+      "name": "frontend-tests",
+      "kind": "unit",
+      "on": [
+        "commit"
+      ],
+      "cmd": "cd frontend && npm test"
+    },
+    {
+      "name": "frontend-lint",
+      "kind": "lint",
+      "on": [
+        "commit"
+      ],
+      "cmd": "cd frontend && npm run lint"
+    },
+    {
+      "name": "frontend-build-types",
+      "kind": "build",
+      "on": [
+        "commit"
+      ],
+      "cmd": "cd frontend && npm run build"
+    },
+    {
+      "name": "frontend-e2e",
+      "kind": "e2e",
+      "on": [
+        "push"
+      ],
+      "cmd": "cd frontend && npm run e2e",
+      "timeout": 1500
+    }
+  ],
+  "protected": [
+    "backend/alembic/versions/*.py"
+  ],
+  "secrets": {
+    "allow": [
+      "api_key: 'sk-[A-Za-z0-9-]{1,20}'"
+    ],
+    "ignore_paths": []
+  }
+}

@@ -33,6 +33,7 @@ export interface Note {
   size_bytes: number
   node_id: string | null
   node_missing: boolean
+  archived_at: string | null
   created_at: string
   updated_at: string
 }
@@ -127,6 +128,7 @@ export interface ProviderOut {
   provider_type: ProviderType
   model_name: string
   key_hint: string | null
+  key_kind: 'api_key' | 'setup_token' | null
   has_key: boolean
   base_url: string | null
   config: ProviderConfig
@@ -259,6 +261,7 @@ export const api = {
   roadmap: (domain: string) => request<Roadmap>(`/api/domains/${domain}/roadmap`),
   counts: (domain: string) => request<NodeCounts>(`/api/domains/${domain}/counts`),
   notes: () => request<Note[]>('/api/notes'),
+  archivedNotes: () => request<Note[]>('/api/notes?archived=true'),
   importFiles: (files: File[]) => {
     const form = new FormData()
     for (const file of files) form.append('files', file)
@@ -270,6 +273,8 @@ export const api = {
   rename: (id: string, title: string) => request<Note>(`/api/notes/${id}`, json('PATCH', { title })),
   link: (id: string, nodeId: string | null) =>
     request<Note>(`/api/notes/${id}`, json('PATCH', { node_id: nodeId })),
+  setArchived: (id: string, archived: boolean) =>
+    request<Note>(`/api/notes/${id}`, json('PATCH', { archived })),
   remove: (id: string) => request<void>(`/api/notes/${id}`, { method: 'DELETE' }),
   originalUrl: (id: string) => `/api/notes/${id}/original`,
   providerTypes: () => request<ProviderTypeInfo[]>('/api/ai-providers/types'),
@@ -301,6 +306,7 @@ export const queryKeys = {
   roadmap: (domain: string) => ['roadmap', domain] as const,
   counts: (domain: string) => ['counts', domain] as const,
   notes: ['notes'] as const,
+  archivedNotes: ['notes', 'archived'] as const,
   lesson: (domain: string, node: string) => ['lesson', domain, node] as const,
   providers: ['ai-providers'] as const,
   provider: (id: string) => ['ai-providers', id] as const,

@@ -40,6 +40,7 @@ class NoteOut(BaseModel):
     size_bytes: int
     node_id: str | None
     node_missing: bool
+    archived_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
@@ -62,6 +63,7 @@ class ImportResult(BaseModel):
 class NoteUpdate(BaseModel):
     title: str | None = None
     node_id: str | None = None
+    archived: bool | None = None
 
 
 LessonSource = Literal["user", "agent", "import"]

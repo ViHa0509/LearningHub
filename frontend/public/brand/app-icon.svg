@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="lh-a" x1="12" y1="58" x2="50" y2="6" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8B7CF8"/>
+      <stop offset=".45" stop-color="#A78BFA"/>
+      <stop offset="1" stop-color="#22D3EE"/>
+    </linearGradient>
+    <radialGradient id="lh-t" cx="32" cy="22" r="40" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2E2A78"/><stop offset="1" stop-color="#1E1B4B"/>
+    </radialGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#lh-t)"/>
+  <g transform="translate(7.5 7) scale(.77)">
+  <path fill="url(#lh-a)" fill-opacity=".2" d="M32 48c-6.5-4.6-15-6-25-5.2l.8 8.8c9.6-.8 18 .6 24.2 4.9 6.2-4.3 14.6-5.7 24.2-4.9l.8-8.8C47 42 38.5 43.4 32 48z"/>
+  <g stroke="url(#lh-a)" stroke-linecap="round" stroke-linejoin="round">
+    <path stroke-width="2.6" d="M29.5 9.5a8 8 0 0 0-10 5.5 8 8 0 0 0-5.5 11 7.5 7.5 0 0 0 4.5 11.5 6.5 6.5 0 0 0 11 2.5M34.5 9.5a8 8 0 0 1 10 5.5 8 8 0 0 1 5.5 11 7.5 7.5 0 0 1-4.5 11.5 6.5 6.5 0 0 1-11 2.5"/>
+    <path stroke-width="2.6" d="M32 48c-6.5-4.6-15-6-25-5.2l.8 8.8c9.6-.8 18 .6 24.2 4.9 6.2-4.3 14.6-5.7 24.2-4.9l.8-8.8C47 42 38.5 43.4 32 48z"/>
+    <path stroke-width="1.5" stroke-opacity=".75" d="M32 26v22M32 26c-2-4.5-5.5-6.5-9.5-6.5M32 26c2-5 5-7.5 9.5-7.5M32 26c-3 4-6.5 5.5-11 5.5M32 26c3 4.5 6.5 6.5 11 7"/>
+  </g>
+  <circle cx="32" cy="26" r="3.2" fill="#22D3EE"/>
+  <g fill="#C4B5FD">
+    <circle cx="22.5" cy="19.5" r="2.1"/><circle cx="41.5" cy="18.5" r="2.1" fill="#67E8F9"/><circle cx="21" cy="31.5" r="2.1"/><circle cx="43" cy="33" r="2.1"/>
+  </g>
+
+  </g>
+</svg>

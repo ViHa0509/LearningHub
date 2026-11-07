@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { ChatPage, Note } from '../api'
-import { useAllRoadmaps, useDomains, useNotes, useProviders, useRefreshNotes } from '../hooks'
+import { useAllRoadmaps, useArchivedNotes, useDomains, useNotes, useProviders, useRefreshNotes } from '../hooks'
 import { domainOf } from '../lib/grouping'
 import { navigate, useRoute } from '../lib/route'
 import { useTheme } from '../lib/theme'
@@ -20,6 +20,7 @@ export function AppShell() {
   const [theme, setTheme] = useTheme()
   const domains = useDomains()
   const notes = useNotes()
+  const archived = useArchivedNotes()
   const { roadmaps, ready: roadmapsReady } = useAllRoadmaps()
   const refresh = useRefreshNotes()
 
@@ -46,7 +47,9 @@ export function AppShell() {
     setAgentRequest((previous) => ({ id: (previous?.id ?? 0) + 1, text, agentId }))
   }
 
-  const openNote = route.page === 'note' ? (notes.data?.find((n) => n.id === route.id) ?? null) : null
+  const openNote = route.page === 'note'
+      ? (notes.data?.find((n) => n.id === route.id) ?? archived.data?.find((n) => n.id === route.id) ?? null)
+      : null
   const selectedNodeId =
     route.page === 'lesson'
       ? `${route.domain}/${route.node}`
@@ -111,7 +114,7 @@ export function AppShell() {
         onDeleted={() => leaveNote(null)}
       />
     )
-  } else if (notes.data) {
+  } else if (notes.data && archived.data && !archived.isFetching) {
     center = (
       <section className="lesson-page" aria-label="Note not found">
         <h1>Note not found</h1>
@@ -142,11 +145,13 @@ export function AppShell() {
           {leftOpen && notes.data && roadmapsReady && (
             <LearnedList
               notes={notes.data}
+              archivedNotes={archived.data ?? []}
               roadmaps={roadmaps}
               selectedNoteId={route.page === 'note' ? route.id : null}
               selectedNodeId={selectedNodeId}
               onOpenNote={openNoteFromList}
               onImport={() => setImporting(true)}
+              onChanged={refresh}
             />
           )}
           {leftOpen && !notes.isError && !(notes.data && roadmapsReady) && (

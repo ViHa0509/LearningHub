@@ -94,7 +94,7 @@ test.describe('Manage provider configurations', () => {
     await expect(page).toHaveURL(/#\/settings\/providers\/[0-9a-f-]+$/)
     const row = await trackByName(request, name)
     await expect(form.getByRole('heading', { level: 1, name })).toBeVisible()
-    await expect(form.getByLabel('API key')).toHaveAttribute('placeholder', 'Saved (…1234), type to replace')
+    await expect(form.getByLabel('API key')).toHaveAttribute('placeholder', 'Saved key (…1234), type to replace')
     await expect(form.getByRole('region', { name: 'Provider information' })).toContainText('Not tested yet')
 
     // Create and list
@@ -112,7 +112,7 @@ test.describe('Manage provider configurations', () => {
     await expect(form.getByText('Saved.')).toBeVisible()
     await page.reload()
     await expect(form.getByLabel('Temperature', { exact: true })).toHaveValue('0.2')
-    await expect(form.getByLabel('API key')).toHaveAttribute('placeholder', 'Saved (…1234), type to replace')
+    await expect(form.getByLabel('API key')).toHaveAttribute('placeholder', 'Saved key (…1234), type to replace')
     const stored = await (await request.get(`${API}/api/ai-providers/${row.id}`)).json()
     expect(stored.has_key).toBe(true)
     expect(stored.key_hint).toBe('…1234')

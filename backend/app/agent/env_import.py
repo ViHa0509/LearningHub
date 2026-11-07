@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.agent.llm import catalog
+from app.agent.llm.factory import key_kind
 from app.agent.secrets import SecretBox, key_hint
 from app.config import Settings
 from app.db import AIProvider
@@ -70,6 +71,7 @@ def import_env_providers(session: Session, settings: Settings, box: SecretBox) -
                 model_name=source.model,
                 api_key_enc=box.encrypt(key) if key else None,
                 key_hint=key_hint(key) if key else None,
+                key_kind=key_kind(key) if key else None,
                 base_url=source.base_url,
                 config={},
                 is_active=True,

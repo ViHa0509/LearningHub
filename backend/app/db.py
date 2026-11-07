@@ -35,6 +35,7 @@ class Note(Base):
     content_sha256: Mapped[str] = mapped_column(String(64), unique=True)
     storage_key: Mapped[str] = mapped_column(Text)
     node_id: Mapped[str | None] = mapped_column(Text, index=True)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -65,6 +66,7 @@ class AIProvider(Base):
     model_name: Mapped[str] = mapped_column(Text)
     api_key_enc: Mapped[str | None] = mapped_column(Text)
     key_hint: Mapped[str | None] = mapped_column(Text)
+    key_kind: Mapped[str | None] = mapped_column(Text)
     base_url: Mapped[str | None] = mapped_column(Text)
     config: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)

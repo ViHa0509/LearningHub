@@ -1,0 +1,86 @@
+# AI Engineer roadmap - hand-written for Learning Hub (not copied from roadmap.sh).
+# Node ids: lowercase kebab-case, unique in this file. Sibling order = order in this list.
+id: ai-engineer
+title: AI Engineer
+order: 6
+description: Building with language models - prompting, retrieval, agents, the agent harness, AI-driven development, evals and security.
+nodes:
+  - id: llm-basics
+    title: LLM basics
+    description: How language models work and what they can and cannot do.
+  - id: prompting
+    parent: llm-basics
+    title: Prompting
+    description: Instructions, examples, structure and iteration.
+  - id: multimodal
+    parent: llm-basics
+    title: Multimodal models
+    description: Images, audio and documents as model input and output.
+  - id: llm-cost
+    parent: llm-basics
+    title: Tokens and cost
+    description: Context windows, token budgets, caching and price per call.
+
+  - id: rag
+    title: Retrieval
+    description: Giving a model the right knowledge at question time.
+  - id: embeddings
+    parent: rag
+    title: Embeddings
+    description: Turning text into vectors that capture meaning.
+  - id: vector-search
+    parent: rag
+    title: Vector search
+    description: Indexes, chunking, similarity search and reranking.
+
+  - id: agents
+    title: Agents
+    description: Models that plan, call tools and act in a loop.
+  - id: tool-calling
+    parent: agents
+    title: Tool calling
+    description: Describing functions to a model and handling its calls.
+  - id: mcp
+    parent: agents
+    title: MCP
+    description: The Model Context Protocol for sharing tools and data.
+  - id: multi-agent
+    parent: agents
+    title: Multi-agent orchestration
+    description: Splitting work between agents and combining results.
+
+  - id: agent-harness
+    title: Agent harness
+    description: The runtime around a coding agent that shapes what it does.
+  - id: hooks
+    parent: agent-harness
+    title: Hooks
+    description: Scripts that run on agent events to enforce rules.
+  - id: subagents
+    parent: agent-harness
+    title: Subagents
+    description: Specialised agents with their own context and tools.
+  - id: skills
+    parent: agent-harness
+    title: Skills
+    description: Packaged instructions an agent loads when needed.
+
+  - id: ai-sdlc
+    title: AI-driven SDLC
+    description: Using agents across the software development life cycle.
+  - id: spec-driven
+    parent: ai-sdlc
+    title: Spec-driven development
+    description: Writing specs and plans first, then code against them.
+  - id: ai-code-review
+    parent: ai-sdlc
+    title: Reviewing AI-written code
+    description: Checks, tests and review habits for generated code.
+
+  - id: evals
+    title: Evals
+    description: Measuring model and agent quality with repeatable tests.
+
+  - id: ai-security
+    title: AI security
+    description: Prompt injection, untrusted input and limiting what agents can do.

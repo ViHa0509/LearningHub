@@ -16,7 +16,13 @@ from sqlalchemy.orm import Session
 from app.agent.agents import AGENTS
 from app.agent.llm import catalog
 from app.agent.llm.errors import ProviderError
-from app.agent.llm.factory import ChatModelFactory, ProviderSettings
+from app.agent.llm.factory import (
+    ChatModelFactory,
+    ProviderSettings,
+    is_setup_token,
+    key_kind,
+    normalize_key,
+)
 from app.agent.llm.logs import event
 from app.agent.llm.params import PROVIDER_TYPES, FieldError, clean_config, validate_config
 from app.agent.llm.urls import Resolver, validate_base_url
@@ -75,6 +81,7 @@ class ProviderOut(BaseModel):
     provider_type: str
     model_name: str
     key_hint: str | None
+    key_kind: str | None
     has_key: bool
     base_url: str | None
     config: dict[str, Any]
@@ -155,6 +162,7 @@ def to_out(row: AIProvider, uses: list[UsedBy]) -> ProviderOut:
         provider_type=row.provider_type,
         model_name=row.model_name,
         key_hint=row.key_hint,
+        key_kind=(row.key_kind or "api_key") if row.api_key_enc is not None else None,
         has_key=row.api_key_enc is not None,
         base_url=row.base_url,
         config=dict(row.config or {}),
@@ -209,7 +217,7 @@ def check(
         errors.append(
             FieldError("model_name", "model ids use letters, digits and . _ : / @ + - only")
         )
-    api_key = (payload.api_key or "").strip() or None
+    api_key = normalize_key(payload.api_key or "") or None
     if api_key is not None and (len(api_key) > MAX_KEY or any(c.isspace() for c in api_key)):
         errors.append(FieldError("api_key", "the key must be one word of at most 500 characters"))
     if info is not None and info.needs_key and api_key is None and not has_stored_key:
@@ -264,6 +272,7 @@ def apply(row: AIProvider, values: Checked, box: SecretBox, is_active: bool) -> 
     if values.api_key is not None:
         row.api_key_enc = box.encrypt(values.api_key)
         row.key_hint = key_hint(values.api_key)
+        row.key_kind = key_kind(values.api_key)
 
 
 def run_test(settings: ProviderSettings, factory: ChatModelFactory) -> TestResult:
@@ -276,6 +285,14 @@ def run_test(settings: ProviderSettings, factory: ChatModelFactory) -> TestResul
         message = f"The model answered: {turn.text[:80] or '(empty)'}"
     except ProviderError as exc:
         status, message = exc.category, str(exc)[:MAX_MESSAGE]
+        if status == "auth_failed" and settings.type == "anthropic" and settings.key:
+            # Says how the key was sent, never the key: its kind, length and the same
+            # last four characters as the saved hint, to compare with the original.
+            key = settings.key
+            sent = "a setup token (OAuth" if is_setup_token(key) else "an API key ("
+            sep = ", " if is_setup_token(key) else ""
+            detail = f"{sent}{sep}{len(key)} characters, ending {key_hint(key)})"
+            message = f"Sent as {detail}. {message}"[:MAX_MESSAGE]
     latency = int((time.monotonic() - started) * 1000)
     event(
         "llm.test",

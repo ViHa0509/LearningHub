@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
 import { api, queryKeys, type AgentStep, type ChatPage, type ProviderOut } from '../api'
+import { Icon } from './Icon'
 import { useAgents, useProviders } from '../hooks'
 import { providerLabel } from '../lib/providers'
 
@@ -67,7 +68,11 @@ export function AgentPanel({ open, onToggle, page, request }: Props) {
         >
           {open ? '»' : '«'}
         </button>
-        {open && <h2>Agent</h2>}
+        {open && (
+          <h2>
+            <Icon name="agent" /> Agent
+          </h2>
+        )}
       </div>
       {open && providers.isError && <p className="agent-note error">Could not reach the backend.</p>}
       {open && providers.data && available.length === 0 && <NotConfigured />}

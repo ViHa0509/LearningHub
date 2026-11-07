@@ -3,7 +3,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import Settings
@@ -45,6 +45,7 @@ def note_out(note: Note, catalog: RoadmapCatalog) -> NoteOut:
         size_bytes=note.size_bytes,
         node_id=note.node_id,
         node_missing=note.node_id is not None and not catalog.has_node(note.node_id),
+        archived_at=note.archived_at,
         created_at=note.created_at,
         updated_at=note.updated_at,
     )
@@ -131,9 +132,19 @@ def list_notes(
     session: SessionDep,
     node: Annotated[str | None, Query()] = None,
     unsorted: Annotated[bool, Query()] = False,
+    archived: Annotated[bool, Query()] = False,
 ) -> list[NoteOut]:
     catalog = get_catalog(request)
-    query = select(Note).order_by(Note.created_at.desc(), Note.id)
+    if archived and node is None and not unsorted:
+        query = (
+            select(Note)
+            .where(Note.archived_at.is_not(None))
+            .order_by(Note.archived_at.desc(), Note.id)
+        )
+    else:
+        query = (
+            select(Note).where(Note.archived_at.is_(None)).order_by(Note.created_at.desc(), Note.id)
+        )
     if node is not None:
         query = query.where(Note.node_id == node)
     notes = list(session.scalars(query))
@@ -164,6 +175,10 @@ def update_note(
         if update.node_id is not None and not catalog.has_node(update.node_id):
             raise HTTPException(status_code=422, detail=f"unknown node '{update.node_id}'")
         note.node_id = update.node_id
+    if update.archived is True and note.archived_at is None:
+        note.archived_at = func.now()
+    elif update.archived is False:
+        note.archived_at = None
 
     session.commit()
     session.refresh(note)

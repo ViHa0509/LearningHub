@@ -29,8 +29,8 @@ test('home page shows a card per role with progress', async ({ page }) => {
   await page.goto('/')
   const home = page.getByRole('region', { name: 'Home' })
   const cards = home.getByRole('link')
-  await expect(cards).toHaveCount(5)
-  await expect(cards.locator('h2')).toHaveText(['Frontend', 'Backend', 'DevOps', 'QA', 'Data Engineer'])
+  await expect(cards).toHaveCount(6)
+  await expect(cards.locator('h2')).toHaveText(['Frontend', 'Backend', 'DevOps', 'QA', 'Data Engineer', 'AI Engineer'])
   await expect(home.getByRole('link', { name: /^Backend/ })).toContainText('0 / 25 topics')
   await expect(page.getByText('Nothing learned yet')).toBeVisible()
   await shot(page, 'home-light')
@@ -80,7 +80,7 @@ test('imported note opens from the list in a sandbox', async ({ page }) => {
   await expect(dialog).toBeHidden()
 
   const list = page.getByRole('complementary', { name: 'Learned items' })
-  await list.getByRole('button', { name: 'Redis eviction policies' }).click()
+  await list.getByRole('button', { name: 'Redis eviction policies', exact: true }).click()
   await expect(page).toHaveURL(/#\/note\//)
   const note = page.getByRole('article', { name: 'Note: Redis eviction policies' })
   await expect(note.getByRole('textbox', { name: 'Note title' })).toHaveValue('Redis eviction policies')
@@ -102,7 +102,7 @@ test('dark theme applies at once and is remembered', async ({ page }) => {
   await page.getByRole('radio', { name: 'Dark' }).click()
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
   const background = await page.evaluate('getComputedStyle(document.body).backgroundColor')
-  expect(background).toBe('rgb(22, 22, 21)')
+  expect(background).toBe('rgb(15, 15, 18)')
   await shot(page, 'home-dark')
 
   await page.reload()

@@ -150,10 +150,11 @@ class AgentTools:
         rows = self._session.scalars(
             select(Note)
             .where(
+                Note.archived_at.is_(None),
                 or_(
                     Note.title.ilike(pattern, escape="\\"),
                     Note.body_text.ilike(pattern, escape="\\"),
-                )
+                ),
             )
             .order_by(Note.created_at.desc())
             .limit(SEARCH_LIMIT)
@@ -201,7 +202,7 @@ class AgentTools:
         counts = dict(
             self._session.execute(
                 select(Note.node_id, func.count())
-                .where(Note.node_id.in_(ids))
+                .where(Note.node_id.in_(ids), Note.archived_at.is_(None))
                 .group_by(Note.node_id)
             ).all()
         )

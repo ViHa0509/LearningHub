@@ -1,6 +1,6 @@
 # Learning Hub
 
-A personal web app that keeps what I learn in one place: research pages generated with Claude are imported as notes, placed on hand-written roadmaps per role (Frontend, Backend, DevOps, QA, Data Engineer), and turned into short lessons per topic, with an agent in the side panel that answers from my own notes and drafts lessons.
+A personal web app that keeps what I learn in one place: research pages generated with Claude are imported as notes, placed on hand-written roadmaps per role (Frontend, Backend, DevOps, QA, Data Engineer, AI Engineer), and turned into short lessons per topic, with an agent in the side panel that answers from my own notes and drafts lessons.
 
 It is also built as a showcase of an **AI-native SDLC**: every change goes spec -> plan -> code -> review -> verify, run by a small agent team (see [How it is built](#how-it-is-built)).
 

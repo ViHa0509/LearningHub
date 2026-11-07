@@ -5,13 +5,31 @@ import { installFakeApi, makeNote } from '../test/fakeApi'
 import { renderApp } from '../test/render'
 
 describe('home page', () => {
-  it('shows one card per domain with its description', async () => {
+  it('shows six cards, one per domain in catalog order, with descriptions', async () => {
     installFakeApi()
     renderApp()
     const home = await screen.findByRole('region', { name: 'Home' })
     const cards = await within(home).findAllByRole('link')
-    expect(cards.map((c) => within(c).getByRole('heading').textContent)).toEqual(['Backend', 'DevOps'])
-    expect(within(cards[0]).getByText('Server-side code.')).toBeInTheDocument()
+    expect(cards.map((c) => within(c).getByRole('heading').textContent)).toEqual([
+      'Frontend',
+      'Backend',
+      'DevOps',
+      'QA',
+      'Data Engineer',
+      'AI Engineer',
+    ])
+    expect(within(cards[1]).getByText('Server-side code.')).toBeInTheDocument()
+    expect(within(cards[5]).getByText('Building with LLMs and agents.')).toBeInTheDocument()
+  })
+
+  it('does not count archived notes as progress', async () => {
+    installFakeApi([
+      makeNote('Pipelines', 'devops/ci-cd'),
+      makeNote('Old images', 'devops/docker', { archived_at: '2026-11-07T00:00:00Z' }),
+    ])
+    renderApp()
+    const card = await screen.findByRole('link', { name: /^DevOps/ })
+    expect(within(card).getByLabelText('1 of 2 topics with notes')).toBeInTheDocument()
   })
 
   it('shows progress as topics with notes out of all topics', async () => {
