@@ -11,6 +11,7 @@ import { LearnedList } from './LearnedList'
 import { LessonPage } from './LessonPage'
 import { NoteView } from './NoteView'
 import { RoadmapMap } from './RoadmapMap'
+import { ProviderPage } from './ProviderPage'
 import { SettingsPage } from './SettingsPage'
 import { TopBar } from './TopBar'
 
@@ -29,7 +30,7 @@ export function AppShell() {
   const [importing, setImporting] = useState(false)
   const [agentRequest, setAgentRequest] = useState<AgentRequest | null>(null)
   const providers = useProviders()
-  const agentAvailable = (providers.data ?? []).some((p) => p.available)
+  const agentAvailable = (providers.data ?? []).some((p) => p.is_active)
 
   const page: ChatPage =
     route.page === 'roadmap'
@@ -40,9 +41,9 @@ export function AppShell() {
           ? { kind: 'note', note_id: route.id }
           : { kind: 'home' }
 
-  const askAgent = (text: string) => {
+  const askAgent = (text: string, agentId?: string) => {
     setRightOpen(true)
-    setAgentRequest((previous) => ({ id: (previous?.id ?? 0) + 1, text }))
+    setAgentRequest((previous) => ({ id: (previous?.id ?? 0) + 1, text, agentId }))
   }
 
   const openNote = route.page === 'note' ? (notes.data?.find((n) => n.id === route.id) ?? null) : null
@@ -86,6 +87,8 @@ export function AppShell() {
     )
   } else if (route.page === 'settings') {
     center = <SettingsPage />
+  } else if (route.page === 'provider') {
+    center = <ProviderPage key={route.id} id={route.id} />
   } else if (route.page === 'lesson') {
     const fullId = `${route.domain}/${route.node}`
     center = (
@@ -94,7 +97,7 @@ export function AppShell() {
         domain={route.domain}
         node={route.node}
         notes={notes.data ?? []}
-        onDraft={agentAvailable ? () => askAgent(`Draft this lesson (${fullId}).`) : undefined}
+        onDraft={agentAvailable ? () => askAgent(`Draft this lesson (${fullId}).`, 'lesson-writer') : undefined}
       />
     )
   } else if (openNote) {

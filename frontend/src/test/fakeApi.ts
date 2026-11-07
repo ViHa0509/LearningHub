@@ -1,5 +1,19 @@
 import { vi } from 'vitest'
-import type { AgentProvider, ProviderTest, ChatPage, ChatReply, ChatTurn, ImportOutcome, Lesson, Note, Roadmap } from '../api'
+import type {
+  AgentOut,
+  ChatReply,
+  ChatRequest,
+  ImportOutcome,
+  Lesson,
+  Note,
+  ProviderIn,
+  ProviderOut,
+  ProviderRef,
+  ProviderType,
+  ProviderTypeInfo,
+  Roadmap,
+  TestResult,
+} from '../api'
 
 export const backend: Roadmap = {
   id: 'backend',
@@ -28,41 +42,97 @@ export const devops: Roadmap = {
   ],
 }
 
-export function makeProvider(
-  id: string,
-  label: string,
-  models: string[],
-  extra: Partial<AgentProvider> = {},
-): AgentProvider {
+export const TYPES: ProviderTypeInfo[] = [
+  {
+    type: 'openai',
+    label: 'OpenAI',
+    needs_key: true,
+    needs_base_url: false,
+    default_base_url: 'https://api.openai.com/v1',
+    params: ['temperature', 'max_tokens', 'top_p', 'frequency_penalty', 'presence_penalty', 'stop', 'seed', 'response_format'],
+    capabilities: ['Chat', 'Tool use', 'JSON mode'],
+    models: [{ id: 'gpt-5.5', context_window: 400000, max_output: 128000 }],
+  },
+  {
+    type: 'anthropic',
+    label: 'Anthropic',
+    needs_key: true,
+    needs_base_url: false,
+    default_base_url: null,
+    params: ['temperature', 'max_tokens', 'top_p', 'top_k', 'stop'],
+    capabilities: ['Chat', 'Tool use'],
+    models: [
+      { id: 'claude-sonnet-5-5', context_window: 200000, max_output: 64000 },
+      { id: 'claude-haiku-5-5', context_window: 200000, max_output: 32000 },
+    ],
+  },
+  {
+    type: 'gemini',
+    label: 'Google Gemini',
+    needs_key: true,
+    needs_base_url: false,
+    default_base_url: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+    params: ['temperature', 'max_tokens', 'top_p', 'frequency_penalty', 'presence_penalty', 'stop', 'seed', 'response_format'],
+    capabilities: ['Chat', 'Tool use'],
+    models: [{ id: 'gemini-3-pro', context_window: 1000000, max_output: 64000 }],
+  },
+  {
+    type: 'local',
+    label: 'Local (Ollama, LM Studio)',
+    needs_key: false,
+    needs_base_url: true,
+    default_base_url: 'http://localhost:11434/v1',
+    params: ['temperature', 'max_tokens', 'top_p', 'frequency_penalty', 'presence_penalty', 'stop', 'seed', 'response_format'],
+    capabilities: ['Chat'],
+    models: [{ id: 'gemma3', context_window: null, max_output: null }],
+  },
+  {
+    type: 'custom',
+    label: 'Custom (OpenAI-compatible)',
+    needs_key: false,
+    needs_base_url: true,
+    default_base_url: null,
+    params: ['temperature', 'max_tokens', 'top_p', 'frequency_penalty', 'presence_penalty', 'stop', 'seed', 'response_format'],
+    capabilities: ['Chat'],
+    models: [],
+  },
+]
+
+export const AGENT_DEFS = [
+  { id: 'assistant', name: 'Learning assistant', description: 'The chat panel.' },
+  { id: 'lesson-writer', name: 'Lesson writer', description: 'Drafts lessons.' },
+]
+
+let providerSeq = 0
+export function makeProvider(name: string, type: ProviderType, model: string, extra: Partial<ProviderOut> = {}): ProviderOut {
+  providerSeq += 1
+  const needsKey = TYPES.find((t) => t.type === type)?.needs_key ?? false
   return {
-    id,
-    label,
-    available: true,
-    configured: true,
-    enabled: true,
-    source: 'app',
-    overrides_env: false,
-    key_hint: '…1234',
-    key_error: null,
+    id: `p${providerSeq}`,
+    name,
+    provider_type: type,
+    model_name: model,
+    key_hint: needsKey ? '…1234' : null,
+    has_key: needsKey,
     base_url: null,
-    setting: `LH_${id.toUpperCase()}_API_KEY`,
-    models,
-    model: models[0],
-    default_model: models[0],
+    config: {},
+    is_active: true,
+    last_test: null,
+    last_success_at: null,
+    used_by: [],
+    created_at: '2026-11-06T00:00:00Z',
+    updated_at: '2026-11-06T00:00:00Z',
     ...extra,
   }
 }
 
-export const PROVIDERS: AgentProvider[] = [
-  makeProvider('anthropic', 'Anthropic (Claude)', ['claude-sonnet-5-5', 'claude-haiku-5-5']),
-  makeProvider('openai', 'OpenAI', ['gpt-5.5']),
-]
-
-/** Every provider in the "nothing configured" state. */
-export const UNCONFIGURED: AgentProvider[] = [
-  ...PROVIDERS,
-  makeProvider('ollama', 'Local (Ollama, Gemma)', ['gemma3'], { setting: 'LH_OLLAMA_URL' }),
-].map((p) => ({ ...p, available: false, configured: false, source: null, key_hint: null }))
+/** Two active configurations, the usual starting point of a test. */
+export function twoProviders(): ProviderOut[] {
+  return [
+    makeProvider('Claude main', 'anthropic', 'claude-sonnet-5-5'),
+    makeProvider('Local qwen', 'local', 'qwen3', { base_url: 'http://localhost:11434/v1' }),
+  ]
+}
 
 let seq = 0
 export function makeNote(title: string, nodeId: string | null = null, extra: Partial<Note> = {}): Note {
@@ -84,11 +154,24 @@ export interface FakeState {
   notes: Note[]
   importResults?: ImportOutcome[]
   lessons: Record<string, Lesson>
-  providers: AgentProvider[]
-  test: ProviderTest
-  /** Answers POST /api/agent/chat; return a reply, or a status and detail for an error. */
-  chat: (body: { provider: string; model: string; messages: ChatTurn[]; page: ChatPage }) => ChatReply | { status: number; detail: string }
+  types: ProviderTypeInfo[]
+  providers: ProviderOut[]
+  /** Agent id -> assigned provider ids. */
+  assignments: Record<string, { primary: string | null; fallback: string | null }>
+  /** What Test Connection answers. */
+  test: () => Omit<TestResult, 'tested_at' | 'model'> | Promise<Omit<TestResult, 'tested_at' | 'model'>>
+  models: string[] | { status: number; detail: string }
+  /**
+   * Answers POST /api/agent/chat; return a reply (provider and fallback_used default to the
+   * resolved provider and false), or a status and detail for an error.
+   */
+  chat: (
+    body: ChatRequest,
+    resolved: ProviderOut | null,
+  ) => (Partial<ChatReply> & { reply: string }) | { status: number; detail: string }
   calls: { method: string; url: string; body?: unknown }[]
+  /** The request headers of each call, in the same order as `calls`. */
+  headers: Record<string, string>[]
 }
 
 const respond = (body: unknown, status = 200) =>
@@ -99,19 +182,87 @@ const respond = (body: unknown, status = 200) =>
     }),
   )
 
+const ref = (p: ProviderOut | undefined): ProviderRef | null =>
+  p
+    ? {
+        id: p.id,
+        name: p.name,
+        provider_type: p.provider_type,
+        model_name: p.model_name,
+        is_active: p.is_active,
+        last_test_status: p.last_test?.status ?? null,
+      }
+    : null
+
+const HEADER_REQUIRED = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+
 /** Installs a fetch stub that behaves like the backend API over in-memory state. */
 export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome[]): FakeState {
+  providerSeq = 0
   const state: FakeState = {
     notes: [...notes],
     importResults,
     lessons: {},
-    providers: UNCONFIGURED.map((p) => ({ ...p })),
-    test: { ok: true, model: 'claude-sonnet-5-5', latency_ms: 420, message: 'The model answered: OK' },
+    types: TYPES,
+    providers: [],
+    assignments: {},
+    test: () => ({ status: 'ok', ok: true, message: 'The model answered: OK', latency_ms: 420 }),
+    models: ['gpt-5.5', 'gpt-5.5-mini'],
     chat: () => ({ reply: 'ok', steps: [], changed_lessons: [], stopped: false }),
     calls: [],
+    headers: [],
   }
   const roadmaps: Record<string, Roadmap> = { backend, devops }
   const descriptions: Record<string, string | null> = { backend: 'Server-side code.', devops: null }
+
+  const find = (id: string | null | undefined) => state.providers.find((p) => p.id === id)
+  const effective = (agentId: string): { provider?: ProviderOut; reason: AgentOut['effective_reason'] } => {
+    const primary = find(state.assignments[agentId]?.primary)
+    if (primary?.is_active) return { provider: primary, reason: 'primary' }
+    const first = state.providers.find((p) => p.is_active)
+    return first ? { provider: first, reason: 'default' } : { reason: 'none' }
+  }
+  const agentOut = (def: (typeof AGENT_DEFS)[number]): AgentOut => {
+    const eff = effective(def.id)
+    return {
+      ...def,
+      primary: ref(find(state.assignments[def.id]?.primary)),
+      fallback: ref(find(state.assignments[def.id]?.fallback)),
+      effective: ref(eff.provider),
+      effective_reason: eff.reason,
+    }
+  }
+  const withUse = (p: ProviderOut): ProviderOut => ({
+    ...p,
+    used_by: AGENT_DEFS.flatMap((def) => {
+      const a = state.assignments[def.id]
+      const uses: ProviderOut['used_by'] = []
+      if (a?.primary === p.id) uses.push({ agent_id: def.id, agent_name: def.name, role: 'primary' })
+      if (a?.fallback === p.id) uses.push({ agent_id: def.id, agent_name: def.name, role: 'fallback' })
+      return uses
+    }),
+  })
+  const validate = (body: ProviderIn, selfId?: string) => {
+    const errors: { field: string; msg: string }[] = []
+    const info = TYPES.find((t) => t.type === body.provider_type)
+    if (!body.name?.trim()) errors.push({ field: 'name', msg: 'Name is required' })
+    if (!body.model_name?.trim()) errors.push({ field: 'model_name', msg: 'Model is required' })
+    const stored = find(selfId)
+    if (info?.needs_key && !body.api_key && !stored?.has_key) errors.push({ field: 'api_key', msg: 'An API key is required' })
+    if (info?.needs_base_url && !body.base_url) errors.push({ field: 'base_url', msg: 'A base URL is required' })
+    if (body.provider_type !== 'local' && body.base_url && !/^https:\/\//.test(body.base_url)) {
+      errors.push({ field: 'base_url', msg: 'Private and link-local addresses are only allowed for Local' })
+    }
+    const t = body.config?.temperature
+    if (t !== undefined && (t < 0 || t > 2)) errors.push({ field: 'temperature', msg: 'Temperature must be between 0 and 2' })
+    for (const key of Object.keys(body.config ?? {})) {
+      const basic = ['temperature', 'max_tokens', 'top_p', 'timeout', 'context_window', 'extra']
+      if (!basic.includes(key) && !info?.params.includes(key)) {
+        errors.push({ field: key, msg: `${key} is not supported by ${info?.label}` })
+      }
+    }
+    return errors
+  }
 
   vi.stubGlobal(
     'fetch',
@@ -119,7 +270,12 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
       const url = String(input)
       const method = init?.method ?? 'GET'
       const body = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined
+      const headers = (init?.headers ?? {}) as Record<string, string>
       state.calls.push({ method, url, body })
+      state.headers.push(headers)
+      if (HEADER_REQUIRED.has(method) && headers['X-LearningHub'] !== '1') {
+        return respond({ detail: 'missing X-LearningHub header' }, 403)
+      }
 
       if (url === '/api/domains') {
         const linked = new Set(state.notes.map((n) => n.node_id))
@@ -165,33 +321,106 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
         }
         return respond({ domain, counts })
       }
-      if (url === '/api/agent/providers') return respond(state.providers)
-      const providerMatch = url.match(/^\/api\/agent\/providers\/([^/]+)(\/test)?$/)
+      if (url === '/api/ai-providers/types') return respond(state.types)
+      if (url === '/api/ai-providers' && method === 'GET') return respond(state.providers.map(withUse))
+      if (url === '/api/ai-providers' && method === 'POST') {
+        const errors = validate(body)
+        if (errors.length) return respond({ detail: errors }, 422)
+        if (state.providers.some((p) => p.name === body.name)) {
+          return respond({ detail: `The name '${body.name}' is already taken` }, 409)
+        }
+        const { api_key, ...rest } = body
+        const created = makeProvider(body.name, body.provider_type, body.model_name, {
+          ...rest,
+          base_url: body.base_url ?? null,
+          has_key: !!api_key,
+          key_hint: api_key ? `\u2026${api_key.slice(-4)}` : null,
+        })
+        state.providers.push(created)
+        return respond(withUse(created), 201)
+      }
+      if (url === '/api/ai-providers/test' && method === 'POST') {
+        const errors = validate(body, body.provider_id)
+        if (errors.length) return respond({ detail: errors }, 422)
+        const result = await state.test()
+        return respond({ ...result, model: body.model_name, tested_at: '2026-11-07T10:00:00Z' })
+      }
+      const providerMatch = url.match(/^\/api\/ai-providers\/([^/]+)(\/test|\/models)?$/)
       if (providerMatch) {
-        const target = state.providers.find((p) => p.id === providerMatch[1])
-        if (!target) return respond({ detail: 'unknown provider' }, 404)
-        if (providerMatch[2]) return respond({ ...state.test, model: target.model })
-        if (method === 'DELETE') {
-          Object.assign(target, { configured: false, available: false, source: null, key_hint: null, base_url: null })
-          return respond(target)
+        const target = find(providerMatch[1])
+        if (!target) return respond({ detail: 'provider not found' }, 404)
+        if (providerMatch[2] === '/models') {
+          return Array.isArray(state.models)
+            ? respond({ models: state.models })
+            : respond({ detail: state.models.detail }, state.models.status)
         }
-        if (body.base_url !== undefined) {
-          if (!/^https?:\/\//.test(body.base_url)) {
-            return respond({ detail: [{ msg: 'Value error, the URL must start with http:// or https://' }] }, 422)
+        if (providerMatch[2] === '/test') {
+          const result = await state.test()
+          target.last_test = {
+            status: result.status,
+            message: result.message,
+            latency_ms: result.latency_ms,
+            at: '2026-11-07T10:00:00Z',
           }
-          Object.assign(target, { base_url: body.base_url, configured: true, source: 'app' })
+          if (result.ok) target.last_success_at = '2026-11-07T10:00:00Z'
+          return respond({ ...result, model: target.model_name, tested_at: '2026-11-07T10:00:00Z' })
         }
-        if (body.api_key) {
-          Object.assign(target, { key_hint: `…${body.api_key.slice(-4)}`, configured: true, source: 'app' })
+        if (method === 'DELETE') {
+          const using = withUse(target).used_by
+          if (using.length) {
+            return respond(
+              {
+                detail: 'The provider is in use',
+                agents: using.map((u) => ({ id: u.agent_id, name: u.agent_name, role: u.role })),
+              },
+              409,
+            )
+          }
+          state.providers = state.providers.filter((p) => p !== target)
+          return respond(null, 204)
         }
-        if (body.model !== undefined) target.model = body.model || target.default_model
-        if (body.enabled !== undefined) target.enabled = body.enabled
-        target.available = target.configured && target.enabled
-        return respond(target)
+        if (method === 'PUT') {
+          const errors = validate(body, target.id)
+          if (errors.length) return respond({ detail: errors }, 422)
+          if (state.providers.some((p) => p !== target && p.name === body.name)) {
+            return respond({ detail: `The name '${body.name}' is already taken` }, 409)
+          }
+          const { api_key, ...rest } = body
+          Object.assign(target, rest, { base_url: body.base_url ?? null })
+          if (api_key) Object.assign(target, { has_key: true, key_hint: `\u2026${api_key.slice(-4)}` })
+          return respond(withUse(target))
+        }
+        return respond(withUse(target))
+      }
+      if (url === '/api/agents') return respond(AGENT_DEFS.map(agentOut))
+      const agentMatch = url.match(/^\/api\/agents\/([^/]+)\/provider$/)
+      if (agentMatch) {
+        const def = AGENT_DEFS.find((d) => d.id === agentMatch[1])
+        if (!def) return respond({ detail: 'unknown agent' }, 404)
+        if (method === 'PUT') {
+          if (body.primary_provider_id && body.primary_provider_id === body.fallback_provider_id) {
+            return respond({ detail: 'The fallback must differ from the primary provider' }, 422)
+          }
+          state.assignments[def.id] = { primary: body.primary_provider_id, fallback: body.fallback_provider_id }
+        }
+        return respond(agentOut(def))
       }
       if (url === '/api/agent/chat') {
-        const answer = state.chat(body)
-        return 'status' in answer ? respond({ detail: answer.detail }, answer.status) : respond(answer)
+        const chatBody = body as ChatRequest
+        const override = chatBody.provider_id ? find(chatBody.provider_id) : undefined
+        if (chatBody.provider_id && !override) return respond({ detail: 'unknown provider' }, 404)
+        const resolved = override ?? effective(chatBody.agent_id).provider ?? null
+        if (!resolved) return respond({ detail: 'No AI provider is active. Configure one in Settings.' }, 409)
+        const answer = state.chat(chatBody, resolved)
+        if ('status' in answer) return respond({ detail: answer.detail }, answer.status)
+        return respond({
+          steps: [],
+          changed_lessons: [],
+          stopped: false,
+          provider: { id: resolved.id, name: resolved.name, model: resolved.model_name },
+          fallback_used: false,
+          ...answer,
+        })
       }
       if (url === '/api/notes' && method === 'GET') return respond(state.notes)
       if (url === '/api/notes/import') {

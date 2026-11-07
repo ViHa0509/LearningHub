@@ -1,9 +1,22 @@
 import uuid
 from collections.abc import Iterator
 from datetime import datetime
+from typing import Any
 
 from fastapi import Request
-from sqlalchemy import BigInteger, Boolean, DateTime, Engine, String, Text, create_engine, func
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    Engine,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    create_engine,
+    func,
+)
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 
@@ -41,17 +54,42 @@ class Lesson(Base):
     )
 
 
-class ProviderConfig(Base):
-    """Agent provider settings entered in the app; the key is stored encrypted."""
+class AIProvider(Base):
+    """A named provider configuration; the key is stored encrypted (SecretBox)."""
 
-    __tablename__ = "provider_configs"
+    __tablename__ = "ai_providers"
 
-    provider_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(Text, unique=True)
+    provider_type: Mapped[str] = mapped_column(Text)
+    model_name: Mapped[str] = mapped_column(Text)
     api_key_enc: Mapped[str | None] = mapped_column(Text)
     key_hint: Mapped[str | None] = mapped_column(Text)
     base_url: Mapped[str | None] = mapped_column(Text)
-    model: Mapped[str | None] = mapped_column(Text)
-    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    config: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_test_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_test_status: Mapped[str | None] = mapped_column(Text)
+    last_test_message: Mapped[str | None] = mapped_column(Text)
+    last_test_latency_ms: Mapped[int | None] = mapped_column(Integer)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class AgentProvider(Base):
+    """An agent's primary or fallback provider; agents themselves are defined in code."""
+
+    __tablename__ = "agent_providers"
+
+    agent_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    role: Mapped[str] = mapped_column(Text, primary_key=True)
+    provider_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("ai_providers.id", ondelete="RESTRICT")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

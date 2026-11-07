@@ -6,21 +6,26 @@ Gives the user an agent in the right panel that answers from their own notes and
 ## Requirements
 
 ### Requirement: Providers are configured on the backend
-The system SHALL support the providers Anthropic, OpenAI, DeepSeek and a local OpenAI-compatible server (Ollama). A provider is available when it is switched on and has a key (or, for the local server, a URL) saved in the app's settings or set in `backend/.env`. Clients MUST be able to list all providers with their models, the model chosen for each, whether they are available, where their configuration comes from and a key hint, and the list MUST never contain a key.
+The agent SHALL call models only through provider configurations managed in the app (see `ai-providers`), resolved per agent (see `agent-providers`). The chat request MUST name the agent (default `assistant`) and MAY name a provider configuration to use for this conversation. The request MUST NOT carry keys.
 
 #### Scenario: No provider configured
-- **GIVEN** no provider key or URL is set in the app or in `backend/.env`
-- **WHEN** a client lists providers
-- **THEN** every provider is listed as not available, with the name of the setting that enables it
+- **GIVEN** no active provider configuration exists
+- **WHEN** a client sends a chat
+- **THEN** the system answers with a conflict error that points to Settings, and calls no model
 
 #### Scenario: One provider configured
-- **GIVEN** only `LH_ANTHROPIC_API_KEY` is set
-- **WHEN** a client lists providers
-- **THEN** Anthropic is available with its models and source `env`, the others are not, and no key appears in the answer
+- **GIVEN** "Claude main" is the only active configuration and no agent has an assignment
+- **WHEN** the user chats
+- **THEN** "Claude main" answers, and the answer names it and its model
+
+#### Scenario: Override for one conversation
+- **GIVEN** the assistant uses "Claude main" and "Local qwen" is active
+- **WHEN** the user picks "Local qwen" in the chat panel and asks a question
+- **THEN** the answer comes from "Local qwen", and the assistant's assignment is unchanged
 
 #### Scenario: Chat with an unavailable provider
-- **WHEN** a client sends a chat to a provider that is not configured or is switched off
-- **THEN** the system answers with a conflict error that says how to configure or switch it on, and calls no model
+- **WHEN** a client sends a chat naming a provider configuration that is switched off or does not exist
+- **THEN** the system answers with a conflict or not-found error and calls no model
 
 ### Requirement: The agent answers with tools over the user's data
 For each chat request the system SHALL run the agent loop: call the chosen model with the conversation and the tools (search notes, read a note, list a roadmap, read a lesson, write a lesson), run the tools it calls, and repeat until it answers without a tool call or the step limit is reached. The answer MUST include the final text and each tool call with its name, input and a short result summary.
@@ -73,17 +78,17 @@ Each chat request SHALL carry the page the user is on (home, a roadmap, a lesson
 - **THEN** the agent's instructions name `backend/graphql` as the current lesson
 
 ### Requirement: Chat panel
-The right panel SHALL show the chat: a provider and model picker limited to available providers, the conversation of this browser session with the agent's answers rendered as Markdown without raw HTML, the tool trace of each answer, a text box that sends on Enter (Shift+Enter for a new line), and a way to clear the conversation. When no provider is available it MUST explain which settings to add instead of showing the text box.
+The right panel SHALL show the chat: a provider picker ("Agent default" with the resolved provider and model, plus every active configuration), the session's conversation with Markdown answers without raw HTML, each answer's tool trace and the provider and model that answered (marked when a fallback answered), Enter to send, and a way to clear. With no active configuration it MUST link to Settings instead.
 
 #### Scenario: Ask a question
-- **GIVEN** Anthropic is available
+- **GIVEN** an active provider configuration
 - **WHEN** the user types a question and presses Enter
-- **THEN** the question appears, the panel shows that the agent is working, and the answer appears with its tool trace
+- **THEN** the question appears, the panel shows that the agent is working, and the answer appears with its tool trace and the provider and model that answered
 
 #### Scenario: Nothing configured
-- **GIVEN** no provider is available
+- **GIVEN** no active configuration
 - **WHEN** the user opens the app
-- **THEN** the panel explains that a provider key must be added to `backend/.env` and the backend restarted, and lists the setting names
+- **THEN** the panel says no AI provider is configured and links to Settings
 
 #### Scenario: Error shown
 - **WHEN** a chat request fails

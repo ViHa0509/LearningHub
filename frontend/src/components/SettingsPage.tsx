@@ -1,215 +1,168 @@
-import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { api, queryKeys, type AgentProvider, type ProviderTest } from '../api'
-import { useProviders } from '../hooks'
-
-const OTHER = '__other__'
+import { api, type AgentOut, type ProviderOut } from '../api'
+import { useAgents, useProviders, useProviderTypes, useRefreshProviders } from '../hooks'
+import { providerLabel, typeLabel } from '../lib/providers'
+import { StatusBadge } from './StatusBadge'
 
 export function SettingsPage() {
   const providers = useProviders()
+  const types = useProviderTypes()
   return (
     <section className="settings-page" aria-label="Settings">
-      <h1>AI providers</h1>
+      <div className="settings-header">
+        <h1>AI providers</h1>
+        <a className="button-link primary" href="#/settings/providers/new">
+          Add provider
+        </a>
+      </div>
       <p className="muted">
-        Paste a key to use the agent; it works at once, no restart needed. Keys are stored encrypted on this
-        computer and never sent back to the browser. Usage is billed by the provider: set a spend limit in
-        the provider's console.
+        Each provider is a named configuration of a model service. Keys are stored encrypted on this computer
+        and never sent back to the browser. Usage is billed by the provider: set a spend limit in the
+        provider's console.
       </p>
       {providers.isError && <p className="error">Could not load the providers. Is the backend running?</p>}
+      {providers.data && providers.data.length === 0 && (
+        <p className="muted" role="status">
+          No providers yet. Add one to use the agent.
+        </p>
+      )}
       <div className="provider-cards">
-        {providers.data?.map((p) => <ProviderCard key={p.id} provider={p} />)}
+        {providers.data?.map((p) => (
+          <ProviderCard key={p.id} provider={p} typeName={typeLabel(types.data, p.provider_type)} />
+        ))}
+      </div>
+      {providers.data && <AgentsSection providers={providers.data} />}
+    </section>
+  )
+}
+
+function ProviderCard({ provider, typeName }: { provider: ProviderOut; typeName: string }) {
+  return (
+    <article className="provider-card" aria-label={provider.name}>
+      <header className="provider-header">
+        <h2>
+          <a href={`#/settings/providers/${provider.id}`}>{provider.name}</a>
+        </h2>
+        <span className={provider.is_active ? 'tag on' : 'tag off'}>{provider.is_active ? 'Active' : 'Inactive'}</span>
+      </header>
+      <p className="provider-meta">
+        {typeName} · {provider.model_name}
+      </p>
+      <p className="provider-status">
+        <StatusBadge status={provider.last_test?.status} />
+      </p>
+      <p className="muted small">
+        {provider.used_by.length === 0
+          ? 'Not used by any agent'
+          : `Used by ${provider.used_by.map((u) => `${u.agent_name} (${u.role})`).join(', ')}`}
+      </p>
+    </article>
+  )
+}
+
+function AgentsSection({ providers }: { providers: ProviderOut[] }) {
+  const agents = useAgents()
+  return (
+    <section className="agents-section" aria-label="Agents">
+      <h2>Agents</h2>
+      <p className="muted">
+        Choose which provider each agent uses. The fallback takes over when the primary is rate limited, times
+        out or is unavailable.
+      </p>
+      {agents.isError && <p className="error">Could not load the agents.</p>}
+      <div className="provider-cards">
+        {agents.data?.map((a) => (
+          <AgentCard key={a.id} agent={a} providers={providers} />
+        ))}
       </div>
     </section>
   )
 }
 
-function statusText(p: AgentProvider): string {
-  if (p.key_error) return `Saved key cannot be read: ${p.key_error}`
-  if (!p.configured) return 'Not configured'
-  const where =
-    p.source === 'app'
-      ? p.overrides_env
-        ? 'Saved in app (overrides backend/.env)'
-        : 'Saved in app'
-      : 'From backend/.env'
-  const what = p.key_hint ? ` · key ${p.key_hint}` : p.base_url ? ` · ${p.base_url}` : ''
-  return `${where}${what}${p.enabled ? '' : ' · switched off'}`
-}
-
-function ProviderCard({ provider }: { provider: AgentProvider }) {
-  const client = useQueryClient()
-  const isUrl = provider.id === 'ollama'
-  const inCatalog = provider.models.includes(provider.model)
-  const [secret, setSecret] = useState('')
-  const [url, setUrl] = useState(provider.base_url ?? '')
-  const [choice, setChoice] = useState(inCatalog ? provider.model : OTHER)
-  const [custom, setCustom] = useState(inCatalog ? '' : provider.model)
+function AgentCard({ agent, providers }: { agent: AgentOut; providers: ProviderOut[] }) {
+  const refresh = useRefreshProviders()
+  const [primary, setPrimary] = useState(agent.primary?.id ?? '')
+  const [fallback, setFallback] = useState(agent.fallback?.id ?? '')
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
-  const [test, setTest] = useState<ProviderTest | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-  const refresh = (next: AgentProvider) => {
-    client.setQueryData<AgentProvider[]>(queryKeys.providers, (old) =>
-      old?.map((p) => (p.id === next.id ? next : p)),
-    )
-  }
-
-  const run = async (action: () => Promise<AgentProvider>) => {
+  const save = async () => {
     setBusy(true)
     setError(null)
     setSaved(false)
-    setTest(null)
     try {
-      refresh(await action())
-      return true
+      await api.assignAgent(agent.id, {
+        primary_provider_id: primary || null,
+        fallback_provider_id: fallback || null,
+      })
+      setSaved(true)
+      await refresh()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Saving failed')
-      return false
     } finally {
       setBusy(false)
     }
   }
 
-  const save = async () => {
-    const model = choice === OTHER ? custom.trim() : choice
-    const ok = await run(() =>
-      api.saveProvider(provider.id, {
-        ...(isUrl ? { base_url: url.trim() } : { api_key: secret.trim() }),
-        model: model === provider.default_model ? '' : model,
-      }),
-    )
-    if (ok) {
-      setSecret('')
-      setSaved(true)
-    }
-  }
-
-  const runTest = async () => {
-    setBusy(true)
-    setError(null)
-    setTest(null)
-    try {
-      setTest(await api.testProvider(provider.id))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Test failed')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const fieldId = `provider-${provider.id}`
-  const nothingToSave = !provider.configured && (isUrl ? !url.trim() : !secret.trim())
+  const id = `agent-${agent.id}`
+  const primaryChoices = providers.filter((p) => p.is_active || p.id === primary)
+  const fallbackChoices = providers.filter((p) => p.id !== primary)
+  const inactive = (p: ProviderOut) => (p.is_active ? '' : ' (inactive)')
 
   return (
-    <article className="provider-card" aria-label={provider.label}>
+    <article className="provider-card" aria-label={agent.name}>
       <header className="provider-header">
-        <h2>{provider.label}</h2>
-        <label className="switch" title={provider.configured ? undefined : 'Save a key first'}>
-          <input
-            type="checkbox"
-            checked={provider.enabled}
-            disabled={busy || !provider.configured}
-            onChange={(e) => void run(() => api.saveProvider(provider.id, { enabled: e.target.checked }))}
-          />
-          On
-        </label>
+        <h3 className="agent-name">{agent.name}</h3>
       </header>
-      <p className={provider.available ? 'provider-status ok' : 'provider-status'} role="status">
-        {statusText(provider)}
+      <p className="muted small">{agent.description}</p>
+
+      <label className="field" htmlFor={`${id}-primary`}>
+        Primary provider
+      </label>
+      <select id={`${id}-primary`} value={primary} onChange={(e) => setPrimary(e.target.value)}>
+        <option value="">Default: first active provider</option>
+        {primaryChoices.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
+            {inactive(p)}
+          </option>
+        ))}
+      </select>
+
+      <label className="field" htmlFor={`${id}-fallback`}>
+        Fallback provider
+      </label>
+      <select id={`${id}-fallback`} value={fallback} onChange={(e) => setFallback(e.target.value)}>
+        <option value="">None</option>
+        {fallbackChoices.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
+            {inactive(p)}
+          </option>
+        ))}
+      </select>
+
+      <p className="agent-effective">
+        {agent.effective ? (
+          <>
+            <span className="muted">Uses </span>
+            <strong>{providerLabel(agent.effective)}</strong> <StatusBadge status={agent.effective.last_test_status} />
+          </>
+        ) : (
+          <span className="muted">No active provider, so this agent cannot answer.</span>
+        )}
       </p>
 
-      {isUrl ? (
-        <label className="field" htmlFor={`${fieldId}-url`}>
-          Server URL
-          <input
-            id={`${fieldId}-url`}
-            type="url"
-            placeholder="http://localhost:11434"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-          />
-        </label>
-      ) : (
-        <label className="field" htmlFor={`${fieldId}-key`}>
-          API key
-          <input
-            id={`${fieldId}-key`}
-            type="password"
-            autoComplete="off"
-            spellCheck={false}
-            placeholder={provider.key_hint ? `Saved (${provider.key_hint}) - paste to replace` : 'Paste your key'}
-            value={secret}
-            onChange={(e) => setSecret(e.target.value)}
-          />
-        </label>
-      )}
-
-      <label className="field" htmlFor={`${fieldId}-model`}>
-        Model
-        <select id={`${fieldId}-model`} value={choice} onChange={(e) => setChoice(e.target.value)}>
-          {provider.models.map((m) => (
-              <option key={m} value={m}>
-                {m}
-                {m === provider.default_model ? ' (default)' : ''}
-              </option>
-            ))}
-          <option value={OTHER}>Other model id…</option>
-        </select>
-      </label>
-      {choice === OTHER && (
-        <label className="field" htmlFor={`${fieldId}-custom`}>
-          Model id
-          <input
-            id={`${fieldId}-custom`}
-            placeholder="e.g. claude-sonnet-5-5"
-            value={custom}
-            onChange={(e) => setCustom(e.target.value)}
-          />
-        </label>
-      )}
-
       <div className="provider-actions">
-        <button
-          type="button"
-          className="primary"
-          onClick={() => void save()}
-          disabled={busy || nothingToSave || (choice === OTHER && !custom.trim())}
-        >
+        <button type="button" className="primary" onClick={() => void save()} disabled={busy}>
           Save
         </button>
-        <button type="button" onClick={() => void runTest()} disabled={busy || !provider.configured}>
-          Test
-        </button>
-        {provider.source === 'app' && (
-          <button
-            type="button"
-            className="danger"
-            onClick={() => void run(() => api.removeProvider(provider.id))}
-            disabled={busy}
-          >
-            Remove
-          </button>
-        )}
-        {busy && <span className="muted">Working…</span>}
         {saved && <span className="muted">Saved.</span>}
       </div>
-
       {error && (
         <p className="error" role="alert">
           {error}
-        </p>
-      )}
-      {test && (
-        <p className={test.ok ? 'test-result ok' : 'test-result error'} role="alert">
-          {test.ok
-            ? `Test passed: ${test.model} answered in ${test.latency_ms} ms.`
-            : `Test failed (${test.model}): ${test.message}`}
-        </p>
-      )}
-      {!isUrl && (
-        <p className="muted small">
-          Or set <code>{provider.setting}</code> in <code>backend/.env</code>.
         </p>
       )}
     </article>

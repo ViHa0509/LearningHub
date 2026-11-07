@@ -10,6 +10,7 @@ from sqlalchemy import create_engine, text
 
 from app.config import Settings
 from app.main import create_app
+from tests.agent_fakes import NoNetworkFactory, fake_resolver
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -33,7 +34,7 @@ def migrated_test_db() -> None:
 def clean_tables() -> None:
     engine = create_engine(TEST_DATABASE_URL)
     with engine.begin() as connection:
-        connection.execute(text("TRUNCATE notes, lessons, provider_configs"))
+        connection.execute(text("TRUNCATE notes, lessons, agent_providers, ai_providers"))
     engine.dispose()
 
 
@@ -62,8 +63,11 @@ def settings(settings_factory: Callable[..., Settings]) -> Settings:
 
 @pytest.fixture
 def client(settings: Settings) -> Iterator[TestClient]:
+    """The app as the frontend calls it (with the app header); no DNS, no real providers."""
     app = create_app(settings)
-    with TestClient(app) as test_client:
+    app.state.url_resolver = fake_resolver()
+    app.state.llm_factory = NoNetworkFactory()
+    with TestClient(app, headers={"X-LearningHub": "1"}) as test_client:
         yield test_client
     app.state.engine.dispose()
 

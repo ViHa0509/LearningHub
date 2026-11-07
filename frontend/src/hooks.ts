@@ -34,5 +34,31 @@ export function useRefreshNotes() {
 }
 
 export function useProviders() {
-  return useQuery({ queryKey: queryKeys.providers, queryFn: api.providers, staleTime: Infinity })
+  return useQuery({ queryKey: queryKeys.providers, queryFn: api.providers })
+}
+
+export function useProviderTypes() {
+  return useQuery({ queryKey: queryKeys.providerTypes, queryFn: api.providerTypes, staleTime: Infinity })
+}
+
+export function useAgents() {
+  return useQuery({ queryKey: queryKeys.agents, queryFn: api.agents })
+}
+
+/**
+ * Refresh providers (list and single) and agents after any change to them. After a delete, pass the
+ * deleted id: its detail query is dropped and never refetched.
+ */
+export function useRefreshProviders() {
+  const client = useQueryClient()
+  return async (deletedId?: string) => {
+    if (deletedId) client.removeQueries({ queryKey: queryKeys.provider(deletedId), exact: true })
+    await Promise.all([
+      client.invalidateQueries({
+        queryKey: queryKeys.providers,
+        predicate: (q) => !deletedId || q.queryKey[1] !== deletedId,
+      }),
+      client.invalidateQueries({ queryKey: queryKeys.agents }),
+    ])
+  }
 }

@@ -8,7 +8,8 @@ from app.db import Base
 
 config = context.config
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Keep the app's loggers (for example learninghub.llm) working when run in-process.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # An explicit URL (for example from tests) wins over the app settings.
 if not config.get_main_option("sqlalchemy.url"):

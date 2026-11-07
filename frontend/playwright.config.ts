@@ -49,5 +49,12 @@ export default defineConfig({
       reuseExistingServer: false,
       timeout: 60_000,
     },
+    {
+      // Fake OpenAI-compatible LLM for the provider tests (local providers point at it).
+      command: `"${python}" -m uvicorn fake_llm:app --port 8002 --app-dir e2e`,
+      url: 'http://127.0.0.1:8002/v1/models',
+      reuseExistingServer: false,
+      timeout: 60_000,
+    },
   ],
 })

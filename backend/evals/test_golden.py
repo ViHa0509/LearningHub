@@ -1,8 +1,9 @@
 """Spec: agent-evals - golden questions against a real provider.
 
 Run: cd backend && .venv/Scripts/python -m pytest evals -m live -v
-Choose the provider with LH_EVAL_PROVIDER (default anthropic) and the model with
-LH_EVAL_MODEL (default: the provider's default model). Skipped without a key.
+Choose the provider type with LH_EVAL_PROVIDER (anthropic or openai, default anthropic) and
+the model with LH_EVAL_MODEL (default: the type's first catalog model). The key comes from
+LH_ANTHROPIC_API_KEY or LH_OPENAI_API_KEY. Skipped without a key.
 """
 
 import os
@@ -12,9 +13,10 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from app.agent.llm import catalog
+from app.agent.llm.factory import ChatModel, LLMFactory, ProviderSettings
 from app.agent.loop import AgentResult, Page, run_agent
 from app.agent.messages import Message
-from app.agent.providers import CATALOG, build_providers
 from app.agent.tools import AgentTools
 from app.config import Settings
 from tests.test_linking import HTML, link
@@ -22,9 +24,13 @@ from tests.test_linking import HTML, link
 pytestmark = pytest.mark.live
 
 PROVIDER = os.environ.get("LH_EVAL_PROVIDER", "anthropic")
-INFO = next(p for p in CATALOG if p.id == PROVIDER)
-MODEL = os.environ.get("LH_EVAL_MODEL", INFO.default_model)
-LIVE = build_providers(Settings()).get(PROVIDER)
+MODEL = os.environ.get("LH_EVAL_MODEL", catalog.default_model(PROVIDER) or "")
+SETTING = f"LH_{PROVIDER.upper()}_API_KEY"
+_SECRET = getattr(Settings(), f"{PROVIDER}_api_key", None)
+_KEY = _SECRET.get_secret_value().strip() if _SECRET is not None else ""
+LIVE: ChatModel | None = (
+    LLMFactory().create(ProviderSettings(None, "eval", PROVIDER, MODEL, key=_KEY)) if _KEY else None
+)
 
 NOTES = {
     "Redis eviction policies": (
@@ -129,7 +135,6 @@ def ask(client: TestClient, golden: Golden) -> AgentResult:
     with app.state.session_factory() as session:
         return run_agent(
             LIVE,
-            MODEL,
             [Message(role="user", text=golden.question)],
             AgentTools(session, app.state.catalog),
             app.state.catalog,
@@ -138,7 +143,7 @@ def ask(client: TestClient, golden: Golden) -> AgentResult:
         )
 
 
-@pytest.mark.skipif(LIVE is None, reason=f"{INFO.setting} is not set; evals need a real provider")
+@pytest.mark.skipif(LIVE is None, reason=f"{SETTING} is not set; evals need a real provider")
 @pytest.mark.parametrize("golden", GOLDEN, ids=[g.name for g in GOLDEN])
 def test_golden(client: TestClient, golden: Golden) -> None:
     seed(client, golden)

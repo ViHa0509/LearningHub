@@ -244,3 +244,56 @@ a { color: var(--accent); }
 .test-result { margin: 0; font-size: 13px; }
 .test-result.ok { color: var(--has-notes); }
 .small { font-size: 12px; margin: 0; }
+
+/* Providers list, agents and the provider configuration page. */
+.settings-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.provider-header h2 a { color: var(--text); text-decoration: none; }
+.provider-header h2 a:hover { color: var(--accent); }
+.provider-meta { margin: 0; font-size: 13px; }
+.tag.on { color: var(--has-notes); border: 1px solid currentColor; }
+.tag.off { color: var(--muted); border: 1px solid currentColor; }
+.status-badge { display: inline-block; font-size: 12px; border-radius: 999px; padding: 1px 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--muted); }
+.status-badge.ok { color: var(--has-notes); background: var(--has-notes-soft); border-color: currentColor; }
+.status-badge.auth_failed, .status-badge.invalid_model, .status-badge.invalid_config { color: var(--danger); border-color: currentColor; }
+.status-badge.unavailable, .status-badge.timeout, .status-badge.rate_limited { color: var(--warn); border-color: currentColor; }
+.agents-section { margin-top: 32px; }
+.agents-section h2 { font-size: 18px; margin-bottom: 4px; }
+.agent-name { font-size: 16px; margin: 0; text-transform: none; letter-spacing: normal; color: var(--text); }
+.agent-effective { margin: 0; font-size: 13px; }
+.agent-caption { margin: 6px 0 0; font-size: 12px; }
+.provider-card select { width: 100%; }
+
+.provider-page { display: flex; flex-direction: column; gap: 16px; }
+.provider-page-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.provider-page-header h1 { margin: 0; }
+.provider-section { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.provider-section h2 { font-size: 14px; }
+details.provider-section > summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+details.provider-section[open] > summary { margin-bottom: 10px; }
+.type-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+.type-card { position: relative; display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); cursor: pointer; }
+.type-card:hover { border-color: var(--accent); }
+.type-card.selected { border-color: var(--accent); background: var(--accent-soft); }
+.type-card input { position: absolute; opacity: 0; inset: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+.type-card:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+.type-card-title { font-weight: 600; }
+.type-card-note { font-size: 12px; color: var(--muted); }
+.field > label { color: var(--muted); }
+.field input, .field textarea, .field select { width: 100%; color: var(--text); }
+.field textarea { font: 13px/1.4 ui-monospace, Consolas, monospace; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; resize: vertical; }
+.field input[type='range'] { padding: 0; border: 0; background: transparent; }
+.field-hint { font-size: 12px; color: var(--muted); }
+.field-error { font-size: 12px; color: var(--danger); }
+.field input[aria-invalid='true'], .field textarea[aria-invalid='true'] { border-color: var(--danger); }
+.inline-row { display: flex; gap: 8px; align-items: center; }
+.inline-row input:not([type='range']) { flex: 1; min-width: 0; }
+.inline-row input[type='range'] { flex: 1; }
+.inline-row button { white-space: nowrap; }
+.field-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+.test-result { padding: 8px 10px; border-radius: 8px; border: 1px solid currentColor; }
+.info-grid { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; }
+.info-grid dt { color: var(--muted); }
+.info-grid dd { margin: 0; overflow-wrap: anywhere; }
+.provider-footer { padding-bottom: 8px; }
+.unsaved { margin: 0; color: var(--warn); }
+.back-link { font-size: 13px; }

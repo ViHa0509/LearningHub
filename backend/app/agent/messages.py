@@ -3,6 +3,8 @@
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from app.agent.llm.errors import ProviderError
+
 
 @dataclass(frozen=True)
 class ToolCall:
@@ -36,5 +38,4 @@ class ToolSpec:
     parameters: dict[str, Any]
 
 
-class ProviderError(Exception):
-    """The provider failed (bad key, rate limit, network); the message is safe to show."""
+__all__ = ["Message", "ProviderError", "ToolCall", "ToolSpec", "Turn"]

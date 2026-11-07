@@ -10,7 +10,8 @@ It is also built as a showcase of an **AI-native SDLC**: every change goes spec 
 - **Roadmap maps** (React Flow) with note counts per topic; click a topic to open its lesson.
 - **Lesson pages**: breadcrumb, description, subtopics, linked notes, and a Markdown lesson you write or the agent drafts.
 - **Import** of Claude-generated HTML pages (duplicate detection, 10 MB limit); originals are shown in a sandboxed iframe (`sandbox="allow-scripts"`, CSP `sandbox`), so their scripts cannot reach the app.
-- **Agent chat** with Anthropic, OpenAI, DeepSeek or a local Ollama model (Gemma): tools to search and read notes, list roadmaps, read and write lessons. Note text is treated as untrusted data; the agent never overwrites a lesson you wrote.
+- **AI providers and agents**: named provider configurations (OpenAI, Anthropic, Gemini, Local, Custom) with parameters, a connection test that names the failure, model listing, and a primary and fallback provider per agent.
+- **Agent chat** on the configured providers: tools to search and read notes, list roadmaps, read and write lessons. Note text is treated as untrusted data; the agent never overwrites a lesson you wrote.
 - Light, dark or system theme; every page has its own address (`#/lesson/backend/caching`).
 
 ## Run it
@@ -25,7 +26,12 @@ cd backend && python -m venv .venv && .venv/Scripts/pip install -r requirements-
 cd frontend && npm install && npm run dev              # http://localhost:5173
 ```
 
-To enable the agent, open **Settings** (top bar), paste a key (Anthropic, OpenAI, DeepSeek) or an Ollama URL, press **Save**, then **Test**. It works at once, without a restart. Keys are stored encrypted (key file `storage/secret.key`) and never sent back to the browser. Keys in `backend/.env` (`LH_ANTHROPIC_API_KEY`, ...) also work; a key saved in the app wins. Chat calls are limited to 20 per minute (`LH_AGENT_RATE_PER_MINUTE`).
+To enable the agent, open **Settings** (top bar) -> **Add provider**:
+- Choose a type (OpenAI, Anthropic, Google Gemini, Local such as Ollama, vLLM or LM Studio, or Custom OpenAI-compatible).
+- Enter a model, the API key and, for Local or Custom, a base URL. Optionally set temperature, max tokens, top p, timeout and advanced parameters.
+- Press **Test Connection**, then **Save Changes**. It works at once, without a restart.
+
+Under **Agents**, give the Learning assistant and the Lesson writer their own provider, plus an optional fallback. The fallback is used only on timeout, rate limit or unavailability. Keys are encrypted (`storage/secret.key` or `LH_SECRET_KEY`) and never shown again. Keys in `backend/.env` (`LH_ANTHROPIC_API_KEY`, ...) are imported once as "<Type> (from .env)". Chat calls are limited to 20 per minute (`LH_AGENT_RATE_PER_MINUTE`).
 
 ## Checks
 

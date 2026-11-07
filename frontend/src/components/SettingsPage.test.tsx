@@ -1,111 +1,115 @@
-/** Spec: provider-settings (UI); agent-chat - chosen model is the chat default. */
+/** Spec: ai-providers (list); agent-providers (assign providers, fallback). */
 import { screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { installFakeApi, PROVIDERS } from '../test/fakeApi'
+import { installFakeApi, makeProvider, twoProviders } from '../test/fakeApi'
 import { renderApp } from '../test/render'
 
-const card = (name: string) => screen.findByRole('article', { name })
 const panel = () => screen.getByRole('complementary', { name: 'Agent' })
+const card = (name: string) => screen.findByRole('article', { name })
 
-describe('settings page', () => {
+describe('providers list', () => {
   it('is reachable from the top bar and from the agent panel', async () => {
     installFakeApi()
     const { user } = renderApp()
     expect(await within(panel()).findByRole('link', { name: 'Open settings' })).toHaveAttribute('href', '#/settings')
     await user.click(screen.getByRole('link', { name: 'Settings' }))
     expect(await screen.findByRole('region', { name: 'Settings' })).toBeInTheDocument()
-    expect(await card('Anthropic (Claude)')).toBeInTheDocument()
-    expect(within(await card('Anthropic (Claude)')).getByRole('status')).toHaveTextContent('Not configured')
+    expect(await screen.findByText('No providers yet. Add one to use the agent.')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Add provider' })).toHaveAttribute('href', '#/settings/providers/new')
   })
 
-  it('pastes a key, saves, and the chat appears at once', async () => {
-    const state = installFakeApi()
-    const { user } = renderApp('#/settings')
-    const anthropic = await card('Anthropic (Claude)')
-    const key = within(anthropic).getByLabelText('API key')
-    expect(key).toHaveAttribute('type', 'password')
-    await user.type(key, 'sk-ant-api03-abcd1234')
-    await user.click(within(anthropic).getByRole('button', { name: 'Save' }))
-
-    expect(await within(anthropic).findByText('Saved.')).toBeInTheDocument()
-    expect(within(anthropic).getByRole('status')).toHaveTextContent('Saved in app · key …1234')
-    expect(key).toHaveValue('')
-    expect(state.calls).toContainEqual({
-      method: 'PUT',
-      url: '/api/agent/providers/anthropic',
-      body: { api_key: 'sk-ant-api03-abcd1234', model: '' },
-    })
-    expect(await within(panel()).findByRole('textbox', { name: 'Message the agent' })).toBeInTheDocument()
-  })
-
-  it('saves a custom model id, which becomes the chat default', async () => {
-    const state = installFakeApi()
-    const { user } = renderApp('#/settings')
-    const anthropic = await card('Anthropic (Claude)')
-    await user.type(within(anthropic).getByLabelText('API key'), 'sk-key-0000')
-    await user.selectOptions(within(anthropic).getByLabelText('Model'), 'Other model id…')
-    await user.type(within(anthropic).getByLabelText('Model id'), 'claude-sonnet-5-5-preview')
-    await user.click(within(anthropic).getByRole('button', { name: 'Save' }))
-
-    await waitFor(() =>
-      expect(state.calls.at(-1)?.body).toEqual({ api_key: 'sk-key-0000', model: 'claude-sonnet-5-5-preview' }),
-    )
-    const model = await within(panel()).findByRole('combobox', { name: 'Model' })
-    await waitFor(() => expect(model).toHaveValue('claude-sonnet-5-5-preview'))
-  })
-
-  it('shows the validation message for a bad Ollama URL', async () => {
-    installFakeApi()
-    const { user } = renderApp('#/settings')
-    const ollama = await card('Local (Ollama, Gemma)')
-    await user.type(within(ollama).getByLabelText('Server URL'), 'localhost:11434')
-    await user.click(within(ollama).getByRole('button', { name: 'Save' }))
-    expect(await within(ollama).findByRole('alert')).toHaveTextContent('the URL must start with http:// or https://')
-  })
-
-  it('tests a configured provider and shows the result', async () => {
-    const state = installFakeApi()
-    state.providers = PROVIDERS.map((p) => ({ ...p }))
-    const { user } = renderApp('#/settings')
-    const anthropic = await card('Anthropic (Claude)')
-    await user.click(within(anthropic).getByRole('button', { name: 'Test' }))
-    expect(await within(anthropic).findByRole('alert')).toHaveTextContent(
-      'Test passed: claude-sonnet-5-5 answered in 420 ms.',
-    )
-
-    state.test = { ok: false, model: 'x', latency_ms: 90, message: 'invalid x-api-key' }
-    await user.click(within(anthropic).getByRole('button', { name: 'Test' }))
-    expect(await within(anthropic).findByText(/Test failed .*invalid x-api-key/)).toBeInTheDocument()
-  })
-
-  it('switches a provider off and removes a key', async () => {
-    const state = installFakeApi()
-    state.providers = PROVIDERS.map((p) => ({ ...p }))
-    const { user } = renderApp('#/settings')
-    const anthropic = await card('Anthropic (Claude)')
-    await user.click(within(anthropic).getByRole('checkbox', { name: 'On' }))
-    await waitFor(() => expect(within(anthropic).getByRole('status')).toHaveTextContent('switched off'))
-    expect(state.calls.at(-1)?.body).toEqual({ enabled: false })
-    // The chat no longer offers Anthropic.
-    const provider = await within(panel()).findByRole('combobox', { name: 'Provider' })
-    await waitFor(() => expect(within(provider).queryByRole('option', { name: 'Anthropic (Claude)' })).toBeNull())
-
-    await user.click(within(anthropic).getByRole('button', { name: 'Remove' }))
-    await waitFor(() => expect(within(anthropic).getByRole('status')).toHaveTextContent('Not configured'))
-    expect(state.calls.at(-1)?.method).toBe('DELETE')
-  })
-
-  it('says when a key comes from backend/.env and when the app overrides it', async () => {
+  it('lists each configuration with type, model, state, last test and use', async () => {
     const state = installFakeApi()
     state.providers = [
-      { ...PROVIDERS[0], source: 'env', key_hint: '…9999' },
-      { ...PROVIDERS[1], overrides_env: true, key_hint: '…5555' },
+      makeProvider('Claude main', 'anthropic', 'claude-sonnet-5-5', {
+        last_test: { status: 'ok', message: 'OK', latency_ms: 300, at: '2026-11-07T10:00:00Z' },
+      }),
+      makeProvider('Local qwen', 'local', 'qwen3', { is_active: false }),
+    ]
+    state.assignments.assistant = { primary: 'p1', fallback: null }
+    renderApp('#/settings')
+    const claude = await card('Claude main')
+    expect(claude).toHaveTextContent('Anthropic · claude-sonnet-5-5')
+    expect(within(claude).getByText('Active')).toBeInTheDocument()
+    expect(within(claude).getByText('Connected')).toBeInTheDocument()
+    expect(claude).toHaveTextContent('Used by Learning assistant (primary)')
+    expect(within(claude).getByRole('link', { name: 'Claude main' })).toHaveAttribute('href', '#/settings/providers/p1')
+
+    const local = await card('Local qwen')
+    expect(within(local).getByText('Inactive')).toBeInTheDocument()
+    expect(within(local).getByText('Not tested yet')).toBeInTheDocument()
+    expect(local).toHaveTextContent('Not used by any agent')
+  })
+
+  it('opens a configuration from its name', async () => {
+    const state = installFakeApi()
+    state.providers = twoProviders()
+    const { user } = renderApp('#/settings')
+    await user.click(within(await card('Local qwen')).getByRole('link', { name: 'Local qwen' }))
+    expect(await screen.findByRole('region', { name: 'Provider configuration' })).toBeInTheDocument()
+    expect(await screen.findByDisplayValue('Local qwen')).toBeInTheDocument()
+  })
+})
+
+describe('agents section', () => {
+  it('assigns different providers to the two agents', async () => {
+    const state = installFakeApi()
+    state.providers = twoProviders()
+    const { user } = renderApp('#/settings')
+    const assistant = await card('Learning assistant')
+    const writer = await card('Lesson writer')
+    expect(within(assistant).getByLabelText('Primary provider')).toHaveValue('')
+    expect(within(assistant).getByRole('option', { name: 'Default: first active provider' })).toBeInTheDocument()
+    expect(within(assistant).getByLabelText('Fallback provider')).toHaveValue('')
+    expect(within(assistant).getByRole('option', { name: 'None' })).toBeInTheDocument()
+    expect(assistant).toHaveTextContent('Uses Claude main · claude-sonnet-5-5')
+
+    await user.selectOptions(within(assistant).getByLabelText('Primary provider'), 'Claude main')
+    await user.selectOptions(within(assistant).getByLabelText('Fallback provider'), 'Local qwen')
+    await user.click(within(assistant).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(state.assignments.assistant).toEqual({ primary: 'p1', fallback: 'p2' }))
+    expect(state.calls.find((c) => c.url === '/api/agents/assistant/provider')?.body).toEqual({
+      primary_provider_id: 'p1',
+      fallback_provider_id: 'p2',
+    })
+
+    await user.selectOptions(within(writer).getByLabelText('Primary provider'), 'Local qwen')
+    await user.click(within(writer).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(state.assignments['lesson-writer']).toEqual({ primary: 'p2', fallback: null }))
+    // The writer card now names its provider, and the list says who uses each provider.
+    await waitFor(() => expect(writer).toHaveTextContent('Uses Local qwen · qwen3'))
+    await waitFor(async () => expect(await card('Claude main')).toHaveTextContent('Learning assistant (primary)'))
+  })
+
+  it('does not offer the primary as the fallback, and clears an assignment', async () => {
+    const state = installFakeApi()
+    state.providers = twoProviders()
+    state.assignments.assistant = { primary: 'p1', fallback: 'p2' }
+    const { user } = renderApp('#/settings')
+    const assistant = await card('Learning assistant')
+    const fallback = within(assistant).getByLabelText('Fallback provider')
+    await waitFor(() => expect(fallback).toHaveValue('p2'))
+    expect(within(fallback).queryByRole('option', { name: 'Claude main' })).toBeNull()
+    await user.selectOptions(fallback, 'None')
+    await user.click(within(assistant).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(state.assignments.assistant).toEqual({ primary: 'p1', fallback: null }))
+  })
+
+  it('offers only active providers as primary and shows the status badge', async () => {
+    const state = installFakeApi()
+    state.providers = [
+      makeProvider('Claude main', 'anthropic', 'claude-sonnet-5-5', {
+        last_test: { status: 'rate_limited', message: 'slow down', latency_ms: 10, at: '2026-11-07T10:00:00Z' },
+      }),
+      makeProvider('Local qwen', 'local', 'qwen3', { is_active: false }),
     ]
     renderApp('#/settings')
-    expect(within(await card('Anthropic (Claude)')).getByRole('status')).toHaveTextContent('From backend/.env · key …9999')
-    expect(within(await card('OpenAI')).getByRole('status')).toHaveTextContent(
-      'Saved in app (overrides backend/.env) · key …5555',
-    )
-    expect(within(await card('Anthropic (Claude)')).queryByRole('button', { name: 'Remove' })).toBeNull()
+    const assistant = await card('Learning assistant')
+    const primary = await within(assistant).findByLabelText('Primary provider')
+    expect(within(primary).getAllByRole('option').map((o) => o.textContent)).toEqual([
+      'Default: first active provider',
+      'Claude main',
+    ])
+    expect(within(assistant).getByText('Rate limited')).toBeInTheDocument()
   })
 })

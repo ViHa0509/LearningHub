@@ -1,0 +1,19 @@
+# Model presets per provider type. The first entry is the type's default model.
+# Any other model id can be typed in the app; "Load models" lists what a provider offers.
+# Ids other than Anthropic's are not verified on the dev machine.
+anthropic:
+  - {id: claude-sonnet-5-5, context_window: 200000, max_output: 64000}
+  - {id: claude-haiku-5-5, context_window: 200000, max_output: 64000}
+  - {id: claude-opus-5-5, context_window: 200000, max_output: 32000}
+openai:
+  - {id: gpt-5.5, context_window: 400000, max_output: 128000}
+  - {id: gpt-5.5-mini, context_window: 400000, max_output: 128000}
+gemini:
+  - {id: gemini-3-pro, context_window: 1000000, max_output: 65536}
+  - {id: gemini-3-flash, context_window: 1000000, max_output: 65536}
+local:
+  - {id: gemma3}
+  - {id: qwen3}
+  - {id: llama3.2}
+custom:
+  - {id: deepseek-chat, context_window: 128000, max_output: 8192}

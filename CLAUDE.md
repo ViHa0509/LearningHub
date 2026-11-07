@@ -52,7 +52,7 @@ Shell: Git Bash on Windows. Postgres must be up (`docker compose up -d`) before 
 - Tests use the `learninghub_test` database and a temporary storage folder, never dev data.
 - Untrusted HTML is only ever shown in `<iframe sandbox="allow-scripts">` without `allow-same-origin`, served with `Content-Security-Policy: sandbox allow-scripts`.
 - Node ids are `domain/node`, lowercase kebab-case.
-- Agent provider keys come from the Settings page (stored Fernet-encrypted in `provider_configs`, key file `storage/secret.key` or `LH_SECRET_KEY`) or from `backend/.env`; the app value wins. Never put a key in code, tests, logs or API answers (only `key_hint`). Tests and e2e use fake or dummy keys and never call a real provider.
+- LLM calls go only through `app/agent/llm/factory.py` (provider configurations in `ai_providers`, per-agent assignment in `agent_providers`). Keys are Fernet-encrypted (`storage/secret.key` or `LH_SECRET_KEY`). Never put a key in code, tests, logs or API answers (only `key_hint`), and never log prompt or answer text. Mutating API calls need the `X-LearningHub: 1` header. Tests use injected factories; e2e uses the fake LLM server `frontend/e2e/fake_llm.py` (port 8002). Never call a real provider in tests.
 - Text from imported notes is untrusted: the agent sees it only inside `<untrusted_note_content>`; agent tools never delete, and never overwrite a user-written lesson.
 
 ## Workflow
@@ -65,12 +65,13 @@ Shell: Git Bash on Windows. Postgres must be up (`docker compose up -d`) before 
 
 ## Agent team
 
-Plugin `ai-sdlc-kit` 0.2.0. One cycle: `/ai-sdlc-kit:orchestrate [change]`; loop it with `/loop 30m /ai-sdlc-kit:orchestrate`. Ideas: `/loop 12h /ai-sdlc-kit:brainstorm` (reads `docs/VISION.md`, writes `ideas/BACKLOG.md`).
+Plugin `ai-sdlc-kit` 0.3.0. One cycle: `/ai-sdlc-kit:orchestrate [change]`; loop it with `/loop 30m /ai-sdlc-kit:orchestrate`. Ideas: `/loop 12h /ai-sdlc-kit:brainstorm` (reads `docs/VISION.md`, writes `ideas/BACKLOG.md`).
 
 - `scout` (haiku): read-only lookups with file:line answers.
 - `implementer` (sonnet): one task from `tasks.md`, runs the checks.
 - `verifier` (sonnet): runs every check and compares the change with its specs.
 - `qc-ui` (sonnet): runs the e2e command and inspects every screenshot.
+- `qc-e2e` (sonnet): writes black-box Playwright tests from the change's specs and reports product bugs; developers fix, and qc-e2e runs again until the suite passes.
 - `brainstormer` (sonnet): in-scope ideas into `ideas/BACKLOG.md`.
 - Main session (opus): specs, design, migrations, security (sandboxing, agent tools), blocked tasks, final review.
 - Pushing to `main` on GitHub is authorized for this repo (no PR tool here yet); never force-push.

@@ -131,7 +131,7 @@ test('agent panel explains how to configure a provider', async ({ page }) => {
   await page.goto('/#/lesson/backend/graphql')
   const agent = page.getByRole('complementary', { name: 'Agent' })
   await expect(agent.getByRole('status')).toContainText('No AI provider is configured.')
-  await expect(agent.getByText('LH_ANTHROPIC_API_KEY')).toBeVisible()
+  await expect(agent.getByRole('link', { name: 'Open settings' })).toBeVisible()
   await expect(agent.getByRole('textbox', { name: 'Message the agent' })).toHaveCount(0)
   const lesson = page.getByRole('article', { name: 'Lesson: GraphQL' })
   await expect(lesson.getByText(/No lesson yet/)).toBeVisible()
@@ -140,28 +140,41 @@ test('agent panel explains how to configure a provider', async ({ page }) => {
   expect(errors).toEqual([])
 })
 
-test('a key pasted in Settings enables the chat without a restart', async ({ page }) => {
+test('a provider added in Settings enables the chat without a restart', async ({ page, request }) => {
   const errors = watchErrors(page)
+  // With no provider configured the chat is refused with a conflict that points to Settings.
+  const refused = await request.post('http://127.0.0.1:8001/api/agent/chat', {
+    headers: { 'X-LearningHub': '1' },
+    data: { agent_id: 'assistant', messages: [{ role: 'user', content: 'hi' }] },
+  })
+  expect(refused.status()).toBe(409)
+
   await page.goto('/')
   const agent = page.getByRole('complementary', { name: 'Agent' })
   await agent.getByRole('link', { name: 'Open settings' }).click()
   await expect(page).toHaveURL(/#\/settings$/)
+  await expect(page.getByText('No providers yet.')).toBeVisible()
 
-  const anthropic = page.getByRole('article', { name: 'Anthropic (Claude)' })
-  await expect(anthropic.getByRole('status')).toHaveText('Not configured')
-  // A dummy key: saving makes no provider call, and the test never presses "Test".
-  await anthropic.getByLabel('API key').fill('sk-ant-e2e-dummy-key-7777')
-  await anthropic.getByRole('button', { name: 'Save' }).click()
-  await expect(anthropic.getByRole('status')).toHaveText('Saved in app · key …7777')
+  await page.getByRole('link', { name: 'Add provider' }).click()
+  const form = page.getByRole('region', { name: 'Provider configuration' })
+  await form.getByRole('radio', { name: 'Local', exact: true }).check({ force: true })
+  await form.getByLabel('Name', { exact: true }).fill('E2E first provider')
+  await form.getByLabel('Model', { exact: true }).fill('fake-ok')
+  await form.getByLabel('Base URL').fill('http://127.0.0.1:8002/v1')
+  await form.getByRole('button', { name: 'Save Changes' }).click()
+  await expect(page).toHaveURL(/#\/settings\/providers\/[0-9a-f-]+$/)
   await expect(agent.getByRole('textbox', { name: 'Message the agent' })).toBeVisible()
   await shot(page, 'settings-saved')
 
   await page.reload()
-  await expect(page.getByRole('complementary', { name: 'Agent' }).getByRole('combobox', { name: 'Provider' })).toHaveValue(
-    'anthropic',
+  await expect(page.getByRole('complementary', { name: 'Agent' }).getByRole('combobox', { name: 'Provider' })).toContainText(
+    'Agent default (E2E first provider',
   )
-  await page.getByRole('article', { name: 'Anthropic (Claude)' }).getByRole('button', { name: 'Remove' }).click()
-  await expect(page.getByRole('article', { name: 'Anthropic (Claude)' }).getByRole('status')).toHaveText('Not configured')
+  // Remove it again (through the API) so the later files start without a provider.
+  await page.goto('/#/settings')
+  const list = await (await request.get('http://127.0.0.1:8001/api/ai-providers')).json()
+  for (const p of list) await request.delete(`http://127.0.0.1:8001/api/ai-providers/${p.id}`, { headers: { 'X-LearningHub': '1' } })
+  await page.reload()
   await expect(page.getByRole('complementary', { name: 'Agent' }).getByRole('status')).toContainText(
     'No AI provider is configured.',
   )
