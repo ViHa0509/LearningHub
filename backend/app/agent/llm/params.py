@@ -5,6 +5,7 @@ A configuration's ``config`` holds only the parameters the user set; an absent k
 """
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 ProviderType = str  # one of PROVIDER_TYPES
@@ -19,6 +20,12 @@ class TypeInfo:
     default_base_url: str | None
     params: tuple[str, ...]
     capabilities: tuple[str, ...]
+    # Settings that are not model parameters (not listed in ``params``).
+    settings: tuple[str, ...] = ()
+    allows_extra: bool = True
+    allows_base_url: bool = True
+    # The only kind of key accepted (a prefix), or None for any key.
+    key_prefix: str | None = None
 
 
 # Parameters every type accepts (not sent as model parameters except max_tokens and so on).
@@ -80,9 +87,23 @@ PROVIDER_TYPES: dict[str, TypeInfo] = {
         params=OPENAI_PARAMS,
         capabilities=OPENAI_CAPABILITIES,
     ),
+    "claude-code": TypeInfo(
+        "claude-code",
+        "Claude Code (subscription)",
+        needs_key=False,
+        needs_base_url=False,
+        default_base_url=None,
+        params=("timeout",),
+        capabilities=("chat", "tool calling (app tools over MCP)", "uses your Claude subscription"),
+        settings=("claude_config_dir",),
+        allows_extra=False,
+        allows_base_url=False,
+        key_prefix="sk-ant-oat",
+    ),
 }
 
-ALL_PARAMS = frozenset(ANTHROPIC_PARAMS) | frozenset(OPENAI_PARAMS) | {"extra"}
+ALL_PARAMS = frozenset(ANTHROPIC_PARAMS) | frozenset(OPENAI_PARAMS) | {"extra", "claude_config_dir"}
+MAX_PATH = 500
 
 # name -> (min, max, integer only)
 RANGES: dict[str, tuple[float, float, bool]] = {
@@ -133,8 +154,15 @@ def validate_config(provider_type: str, config: Any) -> list[FieldError]:
         if name not in ALL_PARAMS:
             errors.append(FieldError(name, f"unknown parameter '{name}'"))
             continue
-        if info is not None and name != "extra" and name not in info.params:
-            errors.append(FieldError(name, f"{name} is not supported by {info.label}"))
+        supported = (
+            info is None
+            or (name == "extra" and info.allows_extra)
+            or name in info.params
+            or name in info.settings
+        )
+        if not supported:
+            label = info.label if info is not None else ""
+            errors.append(FieldError(name, f"{name} is not supported by {label}"))
             continue
         message: str | None = None
         if name in RANGES:
@@ -154,6 +182,11 @@ def validate_config(provider_type: str, config: Any) -> list[FieldError]:
                 message = "must be 'text' or 'json'"
         elif name == "extra" and not isinstance(value, dict):
             message = "must be a JSON object"
+        elif name == "claude_config_dir":
+            if not isinstance(value, str) or not 0 < len(value) <= MAX_PATH:
+                message = f"must be a folder path of at most {MAX_PATH} characters"
+            elif not Path(value).is_absolute() or not Path(value).is_dir():
+                message = "must be an existing folder on this machine (an absolute path)"
         if message is not None:
             errors.append(FieldError(name, message))
     return errors

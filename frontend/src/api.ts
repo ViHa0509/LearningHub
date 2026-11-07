@@ -54,7 +54,7 @@ export interface Lesson {
   updated_at: string | null
 }
 
-export type ProviderType = 'openai' | 'anthropic' | 'gemini' | 'local' | 'custom'
+export type ProviderType = 'openai' | 'anthropic' | 'gemini' | 'local' | 'custom' | 'claude-code'
 
 export type TestStatus =
   | 'ok'

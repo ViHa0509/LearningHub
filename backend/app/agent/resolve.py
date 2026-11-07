@@ -8,19 +8,24 @@ request.
 
 import time
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, TypeVar
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.agent.llm.errors import ProviderError
-from app.agent.llm.factory import ChatModel, ChatModelFactory, ProviderSettings
+from app.agent.llm.factory import ChatModel, ChatModelFactory, ProviderSettings, runs_own_loop
 from app.agent.llm.logs import event
+from app.agent.loop import tool_loop
 from app.agent.messages import Message, ToolSpec, Turn
+from app.agent.results import AgentResult
 from app.agent.secrets import SecretBox, SecretUnreadable
+from app.agent.tools import AgentTools
 from app.db import AgentProvider, AIProvider
+
+T = TypeVar("T")
 
 EffectiveReason = Literal["override", "primary", "default", "none"]
 
@@ -90,8 +95,30 @@ def describe(row: AIProvider) -> str:
     return f"{row.name} ({row.model_name})"
 
 
+class HandOver(Exception):
+    """The request switched to a fallback that runs the agent loop the other way."""
+
+
+def merged(before: AgentResult, after: AgentResult) -> AgentResult:
+    """Steps a failed primary already ran stay in the trace before the fallback's."""
+    changed = list(before.changed_lessons)
+    changed += [c for c in after.changed_lessons if c not in changed]
+    return AgentResult(
+        reply=after.reply,
+        steps=[*before.steps, *after.steps],
+        changed_lessons=changed,
+        stopped=after.stopped,
+    )
+
+
 class AgentModel:
-    """A chat model for one request: the chosen provider, then the fallback when allowed."""
+    """A chat model for one request: the chosen provider, then the fallback when allowed.
+
+    ``run`` drives the request: with the app's tool loop for API providers, or as one run
+    for a provider that runs its own loop (Claude Code). Either may fall back to the other.
+    """
+
+    runs_own_loop = True
 
     def __init__(
         self,
@@ -123,17 +150,17 @@ class AgentModel:
             candidate.model = self._factory.create(settings_of(candidate.row, self._box))
         return candidate.model
 
-    def _complete_with(
-        self,
-        candidate: Candidate,
-        system: str,
-        messages: Sequence[Message],
-        tools: Sequence[ToolSpec],
-    ) -> Turn:
+    def _current_runs_own_loop(self) -> bool:
+        try:
+            return runs_own_loop(self._build(self.current))
+        except ProviderError:
+            return False  # the call itself reports the error
+
+    def _call(self, candidate: Candidate, action: Callable[[ChatModel], T]) -> T:
         row = candidate.row
         started = time.monotonic()
         try:
-            turn = self._build(candidate).complete(system, messages, tools)
+            value = action(self._build(candidate))
         except ProviderError as exc:
             event(
                 "llm.call_failed",
@@ -153,12 +180,12 @@ class AgentModel:
             model=row.model_name,
             duration_ms=int((time.monotonic() - started) * 1000),
         )
-        return turn
+        return value
 
-    def complete(self, system: str, messages: Sequence[Message], tools: Sequence[ToolSpec]) -> Turn:
+    def _with_fallback(self, action: Callable[[ChatModel], T], own_loop: bool) -> T:
         if self.current is self.primary:
             try:
-                return self._complete_with(self.primary, system, messages, tools)
+                return self._call(self.primary, action)
             except ProviderError as exc:
                 if not exc.recoverable or self.fallback is None:
                     raise ProviderError(
@@ -176,8 +203,10 @@ class AgentModel:
                 )
                 self.current = self.fallback
                 self.fallback_used = True
+                if self._current_runs_own_loop() != own_loop:
+                    raise HandOver from exc
         try:
-            return self._complete_with(self.current, system, messages, tools)
+            return self._call(self.current, action)
         except ProviderError as exc:
             first = self._primary_error
             primary_part = (
@@ -190,6 +219,35 @@ class AgentModel:
                 f"{exc.category} ({exc})",
                 exc.category,
             ) from exc
+
+    def complete(self, system: str, messages: Sequence[Message], tools: Sequence[ToolSpec]) -> Turn:
+        return self._with_fallback(lambda m: m.complete(system, messages, tools), own_loop=False)
+
+    def run(
+        self,
+        system: str,
+        conversation: Sequence[Message],
+        tools: AgentTools | None,
+        max_steps: int,
+    ) -> AgentResult:
+        if tools is None:
+            raise ValueError("the agent tools are required")
+        done = AgentResult(reply="")
+
+        def own_run(model: ChatModel) -> AgentResult:
+            if not runs_own_loop(model):
+                raise ProviderError("this provider cannot run the agent loop", "invalid_config")
+            return model.run(system, conversation, tools, max_steps)
+
+        # At most one hand-over: the switch to the fallback happens once per request.
+        for _ in range(2):
+            try:
+                if self._current_runs_own_loop():
+                    return merged(done, self._with_fallback(own_run, own_loop=True))
+                return tool_loop(self, system, conversation, tools, max_steps, done)
+            except HandOver:
+                continue
+        raise AssertionError("unreachable: the fallback is chosen only once")
 
     def list_models(self) -> list[str]:
         return self._build(self.current).list_models()

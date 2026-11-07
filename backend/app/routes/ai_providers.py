@@ -196,7 +196,12 @@ class Checked(BaseModel):
 
 
 def check(
-    payload: ProviderIn, resolve: Resolver, *, has_stored_key: bool, require_name: bool = True
+    payload: ProviderIn,
+    resolve: Resolver,
+    *,
+    has_stored_key: bool,
+    require_name: bool = True,
+    stored_key_kind: str | None = None,
 ) -> Checked:
     """Validated, normalized settings, or HTTP 422 with ``detail: [{field, msg}]``."""
     errors: list[FieldError] = []
@@ -222,8 +227,16 @@ def check(
         errors.append(FieldError("api_key", "the key must be one word of at most 500 characters"))
     if info is not None and info.needs_key and api_key is None and not has_stored_key:
         errors.append(FieldError("api_key", f"{info.label} needs an API key"))
+    if info is not None and info.key_prefix is not None:
+        kept_kind = stored_key_kind if has_stored_key else None
+        if (api_key is not None and not api_key.startswith(info.key_prefix)) or (
+            api_key is None and kept_kind is not None and kept_kind != "setup_token"
+        ):
+            errors.append(FieldError("api_key", "only a Claude setup token can be used here"))
     base_url = (payload.base_url or "").strip() or None
-    if base_url is None:
+    if base_url is not None and info is not None and not info.allows_base_url:
+        errors.append(FieldError("base_url", f"{info.label} takes no base URL"))
+    elif base_url is None:
         if info is not None and info.needs_base_url:
             errors.append(FieldError("base_url", f"{info.label} needs a base URL"))
     elif len(base_url) > MAX_URL:
@@ -244,6 +257,13 @@ def check(
         base_url=base_url,
         config=clean_config(payload.config),
     )
+
+
+def stored_kind(row: AIProvider | None) -> str | None:
+    """The kind of the row's saved key ("api_key" for rows from before key kinds)."""
+    if row is None or row.api_key_enc is None:
+        return None
+    return row.key_kind or "api_key"
 
 
 def name_taken(session: Session, name: str, exclude: uuid.UUID | None = None) -> None:
@@ -356,6 +376,7 @@ def test_unsaved(
         resolver_of(request),
         has_stored_key=stored is not None and stored.api_key_enc is not None,
         require_name=False,
+        stored_key_kind=stored_kind(stored),
     )
     key = values.api_key
     if key is None and stored is not None:
@@ -405,7 +426,12 @@ def update_provider(
     session: Annotated[Session, Depends(get_session)],
 ) -> ProviderOut:
     row = get_row(session, provider_id)
-    values = check(payload, resolver_of(request), has_stored_key=row.api_key_enc is not None)
+    values = check(
+        payload,
+        resolver_of(request),
+        has_stored_key=row.api_key_enc is not None,
+        stored_key_kind=stored_kind(row),
+    )
     name_taken(session, values.name, exclude=row.id)
     apply(row, values, box_of(request), payload.is_active)
     commit_or_conflict(session, values.name)

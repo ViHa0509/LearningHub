@@ -200,7 +200,7 @@ test.describe('Only parameters the type supports are offered and sent', () => {
 
     const types = await (await request.get(`${API}/api/ai-providers/types`)).json()
     const byType = Object.fromEntries(types.map((t: { type: string }) => [t.type, t]))
-    expect(Object.keys(byType).sort()).toEqual(['anthropic', 'custom', 'gemini', 'local', 'openai'])
+    expect(Object.keys(byType).sort()).toEqual(['anthropic', 'claude-code', 'custom', 'gemini', 'local', 'openai'])
     expect(byType.anthropic.params).toContain('top_k')
     expect(byType.anthropic.params).not.toContain('frequency_penalty')
     expect(byType.local.params).toContain('frequency_penalty')

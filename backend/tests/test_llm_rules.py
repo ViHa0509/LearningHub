@@ -72,7 +72,9 @@ def fields(provider_type: str, config: Any) -> dict[str, str]:
     ],
 )
 def test_ranges(name: str, bad: Any, good: Any) -> None:
-    for provider_type in PROVIDER_TYPES:
+    supporting = [t for t, info in PROVIDER_TYPES.items() if name in info.params]
+    assert len(supporting) >= 5
+    for provider_type in supporting:
         assert name in fields(provider_type, {name: bad}), (provider_type, name, bad)
         assert fields(provider_type, {name: good}) == {}
 
@@ -127,7 +129,14 @@ def test_other_parameter_rules() -> None:
 
 
 def test_type_table() -> None:
-    assert set(PROVIDER_TYPES) == {"openai", "anthropic", "gemini", "local", "custom"}
+    assert set(PROVIDER_TYPES) == {
+        "openai",
+        "anthropic",
+        "gemini",
+        "local",
+        "custom",
+        "claude-code",
+    }
     assert [t for t, i in PROVIDER_TYPES.items() if i.needs_key] == [
         "openai",
         "anthropic",

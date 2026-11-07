@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse, Response
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.agent.env_import import import_env_providers
+from app.agent.llm.claude_code import ClaudeCodeSetup
 from app.agent.llm.factory import LLMFactory
 from app.agent.ratelimit import RateLimiter
 from app.agent.secrets import SecretBox
@@ -54,7 +55,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.store = LocalFileStore(settings.storage_dir)
     app.state.box = SecretBox.from_settings(settings)
     app.state.url_resolver = socket.getaddrinfo
-    app.state.llm_factory = LLMFactory(resolve=socket.getaddrinfo)
+    app.state.llm_factory = LLMFactory(
+        resolve=socket.getaddrinfo, claude_code_setup=ClaudeCodeSetup.from_settings(settings)
+    )
     app.state.rate_limiter = RateLimiter(settings.agent_rate_per_minute)
 
     @app.exception_handler(RequestValidationError)

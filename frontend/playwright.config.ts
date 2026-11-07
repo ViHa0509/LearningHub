@@ -14,6 +14,8 @@ export const E2E_ENV = {
   LH_OPENAI_API_KEY: '',
   LH_DEEPSEEK_API_KEY: '',
   LH_OLLAMA_URL: '',
+  // The Claude Code provider runs this fake `claude` (a .py path runs with the backend's Python).
+  LH_CLAUDE_BIN: join(import.meta.dirname, 'e2e', 'fake_claude.py'),
 }
 
 export default defineConfig({

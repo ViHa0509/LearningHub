@@ -79,7 +79,7 @@ def errors(response: Any) -> dict[str, str]:
 
 def test_types_describe_parameters_and_presets(client: TestClient) -> None:
     types = {t["type"]: t for t in client.get(f"{BASE}/types").json()}
-    assert list(types) == ["openai", "anthropic", "gemini", "local", "custom"]
+    assert list(types) == ["openai", "anthropic", "gemini", "local", "custom", "claude-code"]
     anthropic = types["anthropic"]
     assert anthropic["label"] == "Anthropic" and anthropic["needs_key"] is True
     assert {"temperature", "max_tokens", "top_p", "top_k", "stop"} <= set(anthropic["params"])
@@ -95,6 +95,12 @@ def test_types_describe_parameters_and_presets(client: TestClient) -> None:
     assert types["local"]["needs_base_url"] is True and types["local"]["needs_key"] is False
     assert types["local"]["default_base_url"] == "http://localhost:11434/v1"
     assert all(t["capabilities"] for t in types.values())
+    claude_code = types["claude-code"]
+    assert claude_code["label"] == "Claude Code (subscription)"
+    assert (claude_code["needs_key"], claude_code["needs_base_url"]) == (False, False)
+    assert claude_code["default_base_url"] is None
+    assert claude_code["params"] == ["timeout"]
+    assert [m["id"] for m in claude_code["models"]] == ["sonnet", "opus", "haiku"]
 
 
 # --- manage configurations ----------------------------------------------------------------
@@ -554,3 +560,165 @@ def test_no_key_has_no_kind(client: TestClient) -> None:
         },
     )
     assert created["key_kind"] is None
+
+
+# --- Claude Code (subscription) ------------------------------------------------------------
+
+SETUP_TOKEN = "sk-ant-oat01-" + "S" * 40
+
+
+def claude_code(**overrides: Any) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "name": "Claude subscription",
+        "provider_type": "claude-code",
+        "model_name": "sonnet",
+    }
+    body.update(overrides)
+    return body
+
+
+def use_claude_code(client: TestClient, runner: Any, **setup_overrides: Any) -> None:
+    from tests.claude_code_fakes import setup
+
+    client.app.state.llm_factory = LLMFactory(  # type: ignore[attr-defined]
+        resolve=fake_resolver(),
+        claude_code_setup=setup(**setup_overrides),
+        claude_code_runner=runner,
+    )
+
+
+# Scenario: Claude Code configuration
+def test_claude_code_configuration(client: TestClient) -> None:
+    created = create(client, claude_code())
+    item = client.get(f"{BASE}/{created['id']}").json()
+    assert (item["provider_type"], item["model_name"], item["has_key"]) == (
+        "claude-code",
+        "sonnet",
+        False,
+    )
+    assert (item["key_hint"], item["key_kind"], item["base_url"]) == (None, None, None)
+    labels = {t["type"]: t["label"] for t in client.get(f"{BASE}/types").json()}
+    assert labels[item["provider_type"]] == "Claude Code (subscription)"
+
+
+# Scenario: Base URL on Claude Code
+def test_base_url_on_claude_code_is_refused(client: TestClient) -> None:
+    assert "base_url" in errors(
+        client.post(BASE, json=claude_code(base_url="https://api.anthropic.com"))
+    )
+    assert client.get(BASE).json() == []
+
+
+# Scenario: No sampling for Claude Code
+@pytest.mark.parametrize(
+    ("name", "value"), [("temperature", 0.2), ("max_tokens", 100), ("top_p", 0.5)]
+)
+def test_no_sampling_for_claude_code(client: TestClient, name: str, value: Any) -> None:
+    found = errors(client.post(BASE, json=claude_code(config={name: value})))
+    assert found == {name: f"{name} is not supported by Claude Code (subscription)"}
+
+
+def test_claude_code_takes_a_timeout_but_no_extra(client: TestClient) -> None:
+    assert create(client, claude_code(config={"timeout": 120}))["config"] == {"timeout": 120}
+    assert "extra" in errors(client.post(BASE, json=claude_code(name="b", config={"extra": {}})))
+
+
+def test_claude_code_key_must_be_a_setup_token(client: TestClient) -> None:
+    refused = errors(client.post(BASE, json=claude_code(api_key="sk-ant-api03-abcdef")))
+    assert refused == {"api_key": "only a Claude setup token can be used here"}
+    created = create(client, claude_code(api_key=SETUP_TOKEN))
+    assert (created["key_kind"], created["key_hint"]) == ("setup_token", "…SSSS")
+    assert SETUP_TOKEN not in str(created)
+
+
+def test_switching_to_claude_code_keeps_no_api_key(client: TestClient) -> None:
+    created = create(client, claude())
+    body = claude_code(name="Claude main")
+    response = client.put(f"{BASE}/{created['id']}", json=body)
+    assert errors(response) == {"api_key": "only a Claude setup token can be used here"}
+    # With a setup token instead, the switch is accepted.
+    switched = client.put(f"{BASE}/{created['id']}", json={**body, "api_key": SETUP_TOKEN})
+    assert switched.status_code == 200, switched.text
+    assert switched.json()["key_kind"] == "setup_token"
+
+
+def test_claude_config_dir_must_be_an_existing_folder(client: TestClient, tmp_path: Any) -> None:
+    missing = str(tmp_path / "missing")
+    assert "claude_config_dir" in errors(
+        client.post(BASE, json=claude_code(config={"claude_config_dir": missing}))
+    )
+    assert "claude_config_dir" in errors(
+        client.post(BASE, json=claude(config={"claude_config_dir": str(tmp_path)}))
+    )
+    created = create(client, claude_code(config={"claude_config_dir": str(tmp_path)}))
+    assert created["config"] == {"claude_config_dir": str(tmp_path)}
+
+
+def test_claude_code_connection_test_ok(client: TestClient) -> None:
+    from tests.claude_code_fakes import ReplayRunner, fixture_lines
+
+    runner = ReplayRunner(fixture_lines("connection_ok.jsonl"))
+    use_claude_code(client, runner)
+    created = create(client, claude_code(api_key=SETUP_TOKEN))
+    result = client.post(f"{BASE}/{created['id']}/test").json()
+    assert (result["status"], result["ok"]) == ("ok", True)
+    assert result["message"] == "The model answered: OK"
+    argv = runner.last["argv"]
+    assert "--mcp-config" not in argv and "--allowedTools" not in argv
+    assert argv[argv.index("--tools") + 1] == ""
+    assert runner.last["env"]["CLAUDE_CODE_OAUTH_TOKEN"] == SETUP_TOKEN
+    assert SETUP_TOKEN not in str(result)
+    unsaved = client.post(f"{BASE}/test", json=claude_code(name="")).json()
+    assert unsaved["status"] == "ok"
+
+
+# Scenario: CLI not installed
+def test_claude_code_connection_test_without_the_cli(client: TestClient) -> None:
+    from tests.claude_code_fakes import ReplayRunner
+
+    runner = ReplayRunner()
+    use_claude_code(client, runner, claude_bin="no-such-claude-binary-xyz")
+    created = create(client, claude_code())
+    result = client.post(f"{BASE}/{created['id']}/test").json()
+    assert (result["status"], result["ok"]) == ("invalid_config", False)
+    assert result["message"] == "Claude Code is not installed (claude not found)"
+    assert runner.calls == []
+    stored = client.get(f"{BASE}/{created['id']}").json()["last_test"]
+    assert stored["status"] == "invalid_config"
+
+
+@pytest.mark.parametrize(
+    ("fixture", "status"),
+    [("not_logged_in.jsonl", "auth_failed"), ("usage_limit.jsonl", "rate_limited")],
+)
+def test_claude_code_connection_test_categories(
+    client: TestClient, fixture: str, status: str
+) -> None:
+    from tests.claude_code_fakes import ReplayRunner, fixture_lines
+
+    use_claude_code(client, ReplayRunner(fixture_lines(fixture), returncode=1))
+    created = create(client, claude_code())
+    result = client.post(f"{BASE}/{created['id']}/test").json()
+    assert result["status"] == status
+
+
+def test_claude_code_connection_test_timeout(client: TestClient) -> None:
+    from tests.claude_code_fakes import ReplayRunner
+
+    use_claude_code(client, ReplayRunner(timed_out=True))
+    created = create(client, claude_code(config={"timeout": 5}))
+    result = client.post(f"{BASE}/{created['id']}/test").json()
+    assert (result["status"], result["message"]) == (
+        "timeout",
+        "Claude Code did not answer within 5 s",
+    )
+
+
+def test_claude_code_models_are_the_catalog(client: TestClient) -> None:
+    from tests.claude_code_fakes import ReplayRunner
+
+    use_claude_code(client, ReplayRunner())
+    created = create(client, claude_code())
+    assert client.get(f"{BASE}/{created['id']}/models").json() == {
+        "models": ["sonnet", "opus", "haiku"]
+    }

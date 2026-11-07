@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     agent_rate_per_minute: int = 20
     # Encrypts provider keys saved in the app; default: a key file in storage_dir.
     secret_key: SecretStr | None = None
+    # The Claude Code CLI for the claude-code provider type; default: `claude` on the PATH.
+    # A .py file runs with this Python (the e2e fake).
+    claude_bin: str | None = None
 
 
 @lru_cache

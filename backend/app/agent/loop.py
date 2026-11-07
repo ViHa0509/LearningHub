@@ -1,10 +1,12 @@
 """The agent loop: call the model, run the tools it asks for, repeat until it answers."""
 
-from dataclasses import dataclass, field
-from typing import Any, Literal
+from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Literal
 
-from app.agent.llm.factory import ChatModel
+from app.agent.llm.factory import ChatModel, runs_own_loop
 from app.agent.messages import Message
+from app.agent.results import AgentResult, Step, stopped_reply
 from app.agent.tools import AgentTools
 from app.roadmaps import RoadmapCatalog
 
@@ -56,19 +58,7 @@ def describe_page(page: Page, catalog: RoadmapCatalog) -> str:
     return "the home page"
 
 
-@dataclass
-class Step:
-    tool: str
-    input: dict[str, Any]
-    summary: str
-
-
-@dataclass
-class AgentResult:
-    reply: str
-    steps: list[Step] = field(default_factory=list)
-    changed_lessons: list[str] = field(default_factory=list)
-    stopped: bool = False
+__all__ = ["AgentResult", "Page", "Step", "run_agent", "system_prompt", "tool_loop"]
 
 
 def system_prompt(page: Page, catalog: RoadmapCatalog, instructions: str = "") -> str:
@@ -88,10 +78,28 @@ def run_agent(
     max_steps: int,
     instructions: str = "",
 ) -> AgentResult:
-    """Raises ProviderError when the provider fails; tool problems go back to the model."""
+    """Raises ProviderError when the provider fails; tool problems go back to the model.
+
+    A model that runs its own agent loop (Claude Code) gets the whole request.
+    """
     system = system_prompt(page, catalog, instructions)
+    if runs_own_loop(chat_model):
+        return chat_model.run(system, conversation, tools, max_steps)
+    return tool_loop(chat_model, system, conversation, tools, max_steps)
+
+
+def tool_loop(
+    chat_model: ChatModel,
+    system: str,
+    conversation: Sequence[Message],
+    tools: AgentTools,
+    max_steps: int,
+    result: AgentResult | None = None,
+) -> AgentResult:
+    """Call the model and run the tools it asks for; steps are added to ``result`` as they
+    happen, so a caller that catches a ProviderError keeps the steps already done."""
     messages = list(conversation)
-    result = AgentResult(reply="")
+    result = result if result is not None else AgentResult(reply="")
     for _ in range(max_steps):
         turn = chat_model.complete(system, messages, tools.specs())
         if not turn.tool_calls:
@@ -105,8 +113,5 @@ def run_agent(
                 result.changed_lessons.append(outcome.changed_lesson)
             messages.append(Message(role="tool", text=outcome.result, tool_call_id=call.id))
     result.stopped = True
-    result.reply = (
-        f"I stopped after {max_steps} steps without a final answer. "
-        "The tools I used are listed below; ask again more narrowly."
-    )
+    result.reply = stopped_reply(max_steps)
     return result

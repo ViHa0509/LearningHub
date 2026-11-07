@@ -65,7 +65,7 @@ describe('create a provider', () => {
     const { user } = renderApp('#/settings/providers/new')
     const form = await page()
     const group = within(form).getByRole('radiogroup', { name: 'Provider type' })
-    expect(within(group).getAllByRole('radio')).toHaveLength(5)
+    expect(within(group).getAllByRole('radio')).toHaveLength(6)
     expect(within(group).getByRole('radio', { name: 'OpenAI' })).toBeChecked()
     expect(within(form).getByLabelText('Base URL')).toHaveValue('https://api.openai.com/v1')
     await user.click(within(group).getByRole('radio', { name: 'Local (Ollama, LM Studio)' }))
@@ -113,6 +113,63 @@ describe('create a provider', () => {
     await user.type(within(form).getByLabelText('Base URL'), 'http://169.254.169.254/v1')
     await user.click(within(form).getByRole('button', { name: 'Save Changes' }))
     expect(await within(form).findByText(/only allowed for Local/)).toBeInTheDocument()
+  })
+})
+
+// Spec: ai-providers - Claude Code (subscription) provider type.
+describe('Claude Code provider', () => {
+  const pick = async () => {
+    const state = installFakeApi()
+    const view = renderApp('#/settings/providers/new')
+    const form = await page()
+    await view.user.click(within(form).getByRole('radio', { name: 'Claude Code (subscription)' }))
+    return { state, form, user: view.user }
+  }
+
+  it('saves without a key and lists the provider with its type label', async () => {
+    const { state, form, user } = await pick()
+    expect(within(form).getByText('Uses Claude Code on this machine')).toBeInTheDocument()
+    expect(within(form).getByLabelText('Model')).toHaveValue('sonnet')
+    await user.type(within(form).getByLabelText('Name'), 'Claude sub')
+    await user.click(within(form).getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() => expect(window.location.hash).toBe('#/settings/providers/p1'))
+    expect(posted(state, 'POST', '/api/ai-providers')).toEqual({
+      name: 'Claude sub',
+      provider_type: 'claude-code',
+      model_name: 'sonnet',
+      is_active: true,
+      config: {},
+    })
+    await user.click(await screen.findByRole('link', { name: /Back to providers/ }))
+    const row = (await screen.findByRole('heading', { name: 'Claude sub' })).closest('li, article, div') as HTMLElement
+    expect(await within(row.parentElement ?? row).findByText(/Claude Code \(subscription\)/)).toBeInTheDocument()
+  })
+
+  it('hides the base URL and the sampling and advanced fields, keeping the timeout', async () => {
+    const { form } = await pick()
+    expect(within(form).queryByLabelText('Base URL')).toBeNull()
+    for (const label of ['Temperature', 'Max tokens', 'Top p', 'Context window (tokens)', 'Frequency penalty', 'Top k']) {
+      expect(within(form).queryByLabelText(label)).toBeNull()
+    }
+    expect(within(form).queryByText('Advanced parameters')).toBeNull()
+    expect(within(form).getByLabelText('Timeout (seconds)')).toBeInTheDocument()
+  })
+
+  it('labels the key "Setup token (optional)" and explains it', async () => {
+    const { form } = await pick()
+    const key = within(form).getByLabelText('Setup token (optional)')
+    expect(key).toHaveAccessibleDescription(/Optional: a token from `claude setup-token`\. Without it, the machine's Claude Code login is used\./)
+  })
+
+  it('shows the refusal of a key that is not a setup token under the key field', async () => {
+    const { form, user } = await pick()
+    await user.type(within(form).getByLabelText('Name'), 'Claude sub')
+    const key = within(form).getByLabelText('Setup token (optional)')
+    await user.type(key, 'sk-ant-api03-notatoken')
+    await user.click(within(form).getByRole('button', { name: 'Save Changes' }))
+    expect(await within(form).findByText('only a Claude setup token can be used here')).toBeInTheDocument()
+    expect(key).toHaveAttribute('aria-invalid', 'true')
+    expect(key).toHaveAccessibleDescription(/only a Claude setup token can be used here/)
   })
 })
 

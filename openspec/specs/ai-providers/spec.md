@@ -6,7 +6,7 @@ Lets the user manage named LLM provider configurations - type, model, encrypted 
 ## Requirements
 
 ### Requirement: Manage provider configurations
-The system SHALL let the user list, create, read, update and delete named provider configurations. A configuration has a unique name, a type (`openai`, `anthropic`, `gemini`, `local`, `custom`), a model id, an optional API key, an optional base URL, parameters (temperature, max tokens, top p, timeout, and advanced parameters), an active switch, and its last test result. Several configurations of the same type MAY exist.
+The system SHALL let the user list, create, read, update and delete named provider configurations. A configuration has a unique name, a type (`openai`, `anthropic`, `gemini`, `local`, `custom`, `claude-code`), a model id, an optional API key, an optional base URL, parameters (temperature, max tokens, top p, timeout, and advanced parameters), an active switch, and its last test result. Several configurations of the same type MAY exist.
 
 #### Scenario: Create and list
 - **WHEN** the user creates "Claude main" of type `anthropic` with model `claude-sonnet-5-5` and a key
@@ -24,8 +24,12 @@ The system SHALL let the user list, create, read, update and delete named provid
 - **WHEN** the user switches a configuration off
 - **THEN** no agent uses it until it is switched on again, and the configuration and its key are kept
 
+#### Scenario: Claude Code configuration
+- **WHEN** the user creates "Claude subscription" of type `claude-code` with model `sonnet` and no key
+- **THEN** it is saved and listed with the type "Claude Code (subscription)"
+
 ### Requirement: Required fields and parameter ranges are validated
-The system SHALL reject a configuration that lacks a name or model, lacks a key for `openai`, `anthropic` or `gemini`, or lacks a base URL for `local` or `custom`. It SHALL also reject parameters outside these ranges: temperature 0-2, top p 0-1, max tokens 1-200000, timeout 1-600 seconds. The error MUST name the field.
+The system SHALL reject a configuration that lacks a name or model, lacks a key for `openai`, `anthropic` or `gemini`, or lacks a base URL for `local` or `custom`. A `claude-code` configuration needs no key and MUST NOT have a base URL. The system SHALL also reject parameters outside these ranges: temperature 0-2, top p 0-1, max tokens 1-200000, timeout 1-600 seconds. The error MUST name the field.
 
 #### Scenario: Missing key
 - **WHEN** the user saves a new `openai` configuration without a key
@@ -35,8 +39,12 @@ The system SHALL reject a configuration that lacks a name or model, lacks a key 
 - **WHEN** the user saves a temperature of 3
 - **THEN** the system refuses it and names the temperature field
 
+#### Scenario: Base URL on Claude Code
+- **WHEN** the user saves a `claude-code` configuration with a base URL
+- **THEN** the system refuses it and names the base URL field
+
 ### Requirement: Only parameters the type supports are offered and sent
-The system SHALL describe, for each provider type, which parameters it supports. Anthropic supports temperature, max tokens, top p, top k and stop sequences. OpenAI, Gemini, Local and Custom support temperature, max tokens, top p, frequency penalty, presence penalty, stop sequences, seed and JSON response format. The system MUST send to the provider only the parameters that are supported and set. Provider-specific extra parameters MAY be given as a JSON object, which is passed through.
+The system SHALL describe, for each provider type, which parameters it supports. Anthropic supports temperature, max tokens, top p, top k and stop sequences. OpenAI-compatible types (OpenAI, Gemini, Local, Custom) support temperature, max tokens, top p, penalties, stop sequences, seed and JSON response format. Claude Code supports only the timeout. Only supported, set parameters MUST be sent. Extra parameters MAY be given as a JSON object and are passed through (not for Claude Code).
 
 #### Scenario: Unset parameters are not sent
 - **GIVEN** a configuration with only temperature 0.2 set
@@ -46,6 +54,10 @@ The system SHALL describe, for each provider type, which parameters it supports.
 #### Scenario: Unsupported parameter
 - **WHEN** the user saves an `anthropic` configuration with a frequency penalty
 - **THEN** the system refuses it and says the parameter is not supported by Anthropic
+
+#### Scenario: No sampling for Claude Code
+- **WHEN** the user saves a `claude-code` configuration with a temperature
+- **THEN** the system refuses it and says the parameter is not supported by Claude Code
 
 ### Requirement: API keys are encrypted and never exposed
 API keys SHALL be stored encrypted with the app's secret (`LH_SECRET_KEY` or the key file in the storage folder). No API answer and no log line may contain a key; answers carry only a hint with the last four characters.

@@ -10,17 +10,23 @@ import socket
 import unicodedata
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, TypeGuard
 
 import anthropic
 import openai
 
+from app.agent.llm import claude_code
 from app.agent.llm.adapters import AnthropicChat, OpenAICompatibleChat
+from app.agent.llm.claude_code import ClaudeCodeAgent, ClaudeCodeSetup, ProcessRunner
 from app.agent.llm.errors import ProviderError
 from app.agent.llm.logs import event
 from app.agent.llm.params import PROVIDER_TYPES
 from app.agent.llm.urls import Resolver, validate_base_url
 from app.agent.messages import Message, ToolSpec, Turn
+from app.agent.results import AgentResult
+
+if TYPE_CHECKING:
+    from app.agent.tools import AgentTools
 
 DEFAULT_TIMEOUT = 60.0
 LOCAL_KEY = "local"
@@ -71,6 +77,24 @@ class ChatModel(Protocol):
     def list_models(self) -> list[str]: ...
 
 
+class OwnLoopModel(ChatModel, Protocol):
+    """A chat model that runs the whole agent loop itself (Claude Code)."""
+
+    runs_own_loop: bool
+
+    def run(
+        self,
+        system: str,
+        conversation: Sequence[Message],
+        tools: "AgentTools | None",
+        max_steps: int,
+    ) -> AgentResult: ...
+
+
+def runs_own_loop(model: object) -> TypeGuard[OwnLoopModel]:
+    return getattr(model, "runs_own_loop", False) is True
+
+
 @dataclass(frozen=True)
 class ProviderSettings:
     """Everything needed to build a client. ``key`` never leaves the backend."""
@@ -94,10 +118,42 @@ class LLMFactory:
         resolve: Resolver = socket.getaddrinfo,
         anthropic_client: Callable[..., Any] = anthropic.Anthropic,
         openai_client: Callable[..., Any] = openai.OpenAI,
+        claude_code_setup: ClaudeCodeSetup | None = None,
+        claude_code_runner: ProcessRunner | None = None,
     ) -> None:
         self.resolve = resolve
         self._anthropic_client = anthropic_client
         self._openai_client = openai_client
+        self._claude_code_setup = claude_code_setup
+        self._claude_code_runner = claude_code_runner or claude_code.SubprocessRunner()
+
+    def claude_code_setup(self) -> ClaudeCodeSetup:
+        if self._claude_code_setup is None:
+            from app.config import get_settings
+
+            self._claude_code_setup = ClaudeCodeSetup.from_settings(get_settings())
+        return self._claude_code_setup
+
+    def _claude_code(self, settings: ProviderSettings, key: str | None) -> ClaudeCodeAgent:
+        if (settings.base_url or "").strip():
+            raise ProviderError("Claude Code takes no base URL", "invalid_config")
+        if key is not None and not is_setup_token(key):
+            raise ProviderError("only a Claude setup token can be used here", "invalid_config")
+        config_dir = settings.config.get("claude_config_dir")
+        event(
+            "llm.provider_init",
+            provider_id=settings.id,
+            provider_type=settings.type,
+            model=settings.model,
+        )
+        return ClaudeCodeAgent(
+            settings.model,
+            self.claude_code_setup(),
+            self._claude_code_runner,
+            token=key,
+            timeout=float(settings.config.get("timeout") or claude_code.DEFAULT_TIMEOUT),
+            config_dir=config_dir if isinstance(config_dir, str) and config_dir else None,
+        )
 
     def create(self, settings: ProviderSettings) -> ChatModel:
         """A chat model for the settings; ProviderError(invalid_config) when they cannot work."""
@@ -105,6 +161,8 @@ class LLMFactory:
         if info is None:
             raise ProviderError(f"unknown provider type '{settings.type}'", "invalid_config")
         key = (settings.key or "").strip() or None
+        if settings.type == claude_code.PROVIDER_TYPE:
+            return self._claude_code(settings, key)
         if info.needs_key and key is None:
             raise ProviderError(f"{info.label} needs an API key", "invalid_config")
         base_url = (settings.base_url or "").strip() or None

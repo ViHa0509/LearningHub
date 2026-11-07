@@ -65,7 +65,7 @@ export const TYPES: ProviderTypeInfo[] = [
     needs_key: true,
     needs_base_url: false,
     default_base_url: 'https://api.openai.com/v1',
-    params: ['temperature', 'max_tokens', 'top_p', 'frequency_penalty', 'presence_penalty', 'stop', 'seed', 'response_format'],
+    params: ['temperature', 'max_tokens', 'top_p', 'timeout', 'context_window', 'frequency_penalty', 'presence_penalty', 'stop', 'seed', 'response_format'],
     capabilities: ['Chat', 'Tool use', 'JSON mode'],
     models: [{ id: 'gpt-5.5', context_window: 400000, max_output: 128000 }],
   },
@@ -75,7 +75,7 @@ export const TYPES: ProviderTypeInfo[] = [
     needs_key: true,
     needs_base_url: false,
     default_base_url: null,
-    params: ['temperature', 'max_tokens', 'top_p', 'top_k', 'stop'],
+    params: ['temperature', 'max_tokens', 'top_p', 'timeout', 'context_window', 'top_k', 'stop'],
     capabilities: ['Chat', 'Tool use'],
     models: [
       { id: 'claude-sonnet-5-5', context_window: 200000, max_output: 64000 },
@@ -88,7 +88,7 @@ export const TYPES: ProviderTypeInfo[] = [
     needs_key: true,
     needs_base_url: false,
     default_base_url: 'https://generativelanguage.googleapis.com/v1beta/openai/',
-    params: ['temperature', 'max_tokens', 'top_p', 'frequency_penalty', 'presence_penalty', 'stop', 'seed', 'response_format'],
+    params: ['temperature', 'max_tokens', 'top_p', 'timeout', 'context_window', 'frequency_penalty', 'presence_penalty', 'stop', 'seed', 'response_format'],
     capabilities: ['Chat', 'Tool use'],
     models: [{ id: 'gemini-3-pro', context_window: 1000000, max_output: 64000 }],
   },
@@ -98,7 +98,7 @@ export const TYPES: ProviderTypeInfo[] = [
     needs_key: false,
     needs_base_url: true,
     default_base_url: 'http://localhost:11434/v1',
-    params: ['temperature', 'max_tokens', 'top_p', 'frequency_penalty', 'presence_penalty', 'stop', 'seed', 'response_format'],
+    params: ['temperature', 'max_tokens', 'top_p', 'timeout', 'context_window', 'frequency_penalty', 'presence_penalty', 'stop', 'seed', 'response_format'],
     capabilities: ['Chat'],
     models: [{ id: 'gemma3', context_window: null, max_output: null }],
   },
@@ -108,9 +108,23 @@ export const TYPES: ProviderTypeInfo[] = [
     needs_key: false,
     needs_base_url: true,
     default_base_url: null,
-    params: ['temperature', 'max_tokens', 'top_p', 'frequency_penalty', 'presence_penalty', 'stop', 'seed', 'response_format'],
+    params: ['temperature', 'max_tokens', 'top_p', 'timeout', 'context_window', 'frequency_penalty', 'presence_penalty', 'stop', 'seed', 'response_format'],
     capabilities: ['Chat'],
     models: [],
+  },
+  {
+    type: 'claude-code',
+    label: 'Claude Code (subscription)',
+    needs_key: false,
+    needs_base_url: false,
+    default_base_url: null,
+    params: ['timeout'],
+    capabilities: ['Chat'],
+    models: [
+      { id: 'sonnet', context_window: null, max_output: null },
+      { id: 'opus', context_window: null, max_output: null },
+      { id: 'haiku', context_window: null, max_output: null },
+    ],
   },
 ]
 
@@ -284,6 +298,13 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
     if (!body.model_name?.trim()) errors.push({ field: 'model_name', msg: 'Model is required' })
     const stored = find(selfId)
     if (info?.needs_key && !body.api_key && !stored?.has_key) errors.push({ field: 'api_key', msg: 'An API key is required' })
+    if (body.provider_type === 'claude-code') {
+      if (body.api_key && !body.api_key.startsWith('sk-ant-oat')) {
+        errors.push({ field: 'api_key', msg: 'only a Claude setup token can be used here' })
+      }
+      if (body.base_url) errors.push({ field: 'base_url', msg: 'A base URL cannot be set for this provider type' })
+      return errors
+    }
     if (info?.needs_base_url && !body.base_url) errors.push({ field: 'base_url', msg: 'A base URL is required' })
     if (body.provider_type !== 'local' && body.base_url && !/^https:\/\//.test(body.base_url)) {
       errors.push({ field: 'base_url', msg: 'Private and link-local addresses are only allowed for Local' })
