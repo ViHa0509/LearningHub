@@ -78,7 +78,7 @@ Each chat request SHALL carry the page the user is on (home, a roadmap, a lesson
 - **THEN** the agent's instructions name `backend/graphql` as the current lesson
 
 ### Requirement: Chat panel
-The right panel SHALL show the chat. Its header has an agent menu (the agents defined in code), Clear chat and a Settings link. The conversation shows user messages on the right and answers on the left, with Markdown (including tables, never raw HTML), code blocks with Copy, each answer's tool trace and the provider, model and effort that answered (marked when a fallback answered), and Copy and Retry under each answer. The composer has the provider picker, Enter to send and Shift+Enter for a new line. With no active configuration it MUST link to Settings instead.
+The right panel SHALL show the chat: a header with the agent menu, Clear chat and Settings; user messages right and answers left, in Markdown with tables but never raw HTML, code blocks with Copy, and under each answer its tool trace, provider, model and effort (fallback marked), Copy and Retry; a composer with the provider picker, Enter to send, Shift+Enter for a new line. With no active configuration it MUST link to Settings instead.
 
 #### Scenario: Ask a question
 - **GIVEN** an active provider configuration
