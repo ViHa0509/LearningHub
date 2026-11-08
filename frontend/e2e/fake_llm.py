@@ -16,12 +16,17 @@ POST /roadmap-control {"fail": true} makes the tree listing answer 500 until swi
 """
 
 import asyncio
+import base64
+import hashlib
+import secrets
 import time
 from pathlib import Path
 
 import yaml
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse, PlainTextResponse
+from urllib.parse import parse_qs, urlencode
+
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
 
 app = FastAPI()
 
@@ -52,6 +57,50 @@ def _roadmap_files() -> dict[str, str]:
                 lines.append("- [@video@Synthetic video frontend html](https://example.test/frontend-html-video)")
             files[path] = "\n".join(lines) + "\n"
     return files
+
+
+# --- fake GitHub OAuth (owner-auth e2e) --------------------------------------------------------
+# Approves at once and redirects back with a code; the token endpoint checks PKCE like GitHub.
+# POST /oauth-control {"email": ...} sets the verified primary email the next sign-in reports.
+OWNER_EMAIL = "owner@example.test"
+github_state: dict = {"email": OWNER_EMAIL, "user_id": 4242}
+github_codes: dict[str, str] = {}  # code -> PKCE challenge
+
+
+@app.post("/oauth-control")
+def oauth_control(payload: dict) -> dict:
+    github_state["email"] = str(payload.get("email") or OWNER_EMAIL)
+    github_state["user_id"] = int(payload.get("user_id") or 4242)
+    return github_state
+
+
+@app.get("/oauth/github/authorize")
+def github_authorize(redirect_uri: str, state: str, code_challenge: str = "") -> RedirectResponse:
+    code = secrets.token_urlsafe(16)
+    github_codes[code] = code_challenge
+    return RedirectResponse(f"{redirect_uri}?{urlencode({'code': code, 'state': state})}", status_code=302)
+
+
+@app.post("/oauth/github/token")
+async def github_token(request: Request) -> JSONResponse:
+    form = parse_qs((await request.body()).decode("ascii"))
+    code = form.get("code", [""])[0]
+    verifier = form.get("code_verifier", [""])[0]
+    challenge = github_codes.pop(code, None)
+    expected = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+    if challenge is None or challenge != expected:
+        return JSONResponse({"error": "bad_verification_code"}, status_code=400)
+    return JSONResponse({"access_token": "fake-github-token", "token_type": "bearer"})
+
+
+@app.get("/github-api/user")
+def github_user() -> dict:
+    return {"id": github_state["user_id"], "login": "e2e-owner", "name": "E2E Owner"}
+
+
+@app.get("/github-api/user/emails")
+def github_emails() -> list:
+    return [{"email": github_state["email"], "primary": True, "verified": True}]
 
 
 @app.post("/roadmap-control")

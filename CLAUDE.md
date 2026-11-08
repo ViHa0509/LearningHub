@@ -2,7 +2,7 @@
 
 ## Project
 
-Learning Hub is a personal web app that keeps research done with Claude (standalone HTML pages) on hand-written learning roadmaps, so past learning is found by where it sits in a domain. Single local user. Correctness and safe handling of untrusted HTML matter more than speed. It is also built as a showcase of an AI-native SDLC: every change goes spec -> plan -> code -> review -> verify.
+Learning Hub is a personal web app that keeps research done with Claude (standalone HTML pages) on hand-written learning roadmaps, so past learning is found by where it sits in a domain. One Owner account behind a login (email and password, magic link, GitHub, Google; HttpOnly session cookie; `LH_AUTH_REQUIRED`, on by default). Correctness and safe handling of untrusted HTML matter more than speed. It is also built as a showcase of an AI-native SDLC: every change goes spec -> plan -> code -> review -> verify.
 
 ## Commands
 
@@ -54,6 +54,7 @@ Shell: Git Bash on Windows. Postgres must be up (`docker compose up -d`) before 
 - Node ids are `domain/node`, lowercase kebab-case.
 - LLM calls go only through `app/agent/llm/factory.py` (provider configurations in `ai_providers`, per-agent assignment in `agent_providers`). Keys are Fernet-encrypted (`storage/secret.key` or `LH_SECRET_KEY`). Never put a key in code, tests, logs or API answers (only `key_hint`), and never log prompt or answer text. Mutating API calls need the `X-LearningHub: 1` header. Tests use injected factories; e2e uses the fake LLM server `frontend/e2e/fake_llm.py` (port 8002) and the fake `claude` `frontend/e2e/fake_claude.py` (`LH_CLAUDE_BIN`). Never call a real provider or the real `claude` CLI in tests; the `claude-code` type runs the CLI isolated (no built-in tools, no settings or hooks, only the app tools over `app/agent/mcp_server.py`).
 - Every edit UI has an explicit **Save** button (and Cancel). Save stays disabled until something changed; Enter may save a single-line field and Escape cancels; never save silently on blur or on leaving; unsaved changes ask before they are discarded.
+- Every data route needs a session (`app/auth/sessions.py`); only health and `/api/auth/*` are open. Passwords are scrypt hashes, session and email tokens are stored only as SHA-256 hashes; never log a password, token, emailed link or OAuth secret. Tests run signed in by default; e2e signs in once in `frontend/e2e/owner.setup.ts` and never calls GitHub, Google or a mail server (fake provider on the fake server, emails in `<storage>/outbox`).
 - Text from imported notes is untrusted: the agent sees it only inside `<untrusted_note_content>`; agent tools never delete, and never overwrite a user-written lesson.
 
 ## Workflow

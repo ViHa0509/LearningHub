@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 import type { ChatRequest } from '../api'
 import { SKILLS } from '../lib/skills'
 import { installFakeApi, makeProvider, twoProviders } from '../test/fakeApi'
-import { renderApp } from '../test/render'
+import { renderAppReady } from '../test/render'
 
 const panel = () => screen.getByRole('complementary', { name: 'Agent' })
 
@@ -23,7 +23,7 @@ describe('agent panel', () => {
   it('links to Settings when no provider is active', async () => {
     const state = installFakeApi()
     state.providers = [makeProvider('Off', 'anthropic', 'claude-sonnet-5-5', { is_active: false })]
-    renderApp()
+    await renderAppReady()
     const status = await within(panel()).findByRole('status')
     expect(status).toHaveTextContent('No AI provider is configured.')
     expect(within(status).getByRole('link', { name: 'Open settings' })).toHaveAttribute('href', '#/settings')
@@ -39,7 +39,7 @@ describe('agent panel', () => {
         { tool: 'read_note', input: { note_id: 'n1' }, summary: "Read note 'Redis eviction'" },
       ],
     })
-    const { user } = renderApp('#/roadmap/backend')
+    const { user } = await renderAppReady('#/roadmap/backend')
     const box = await within(panel()).findByRole('textbox', { name: 'Message the agent' })
     // No provider or model picker: the agent's assignment decides (Settings -> Agents).
     expect(within(panel()).queryByRole('combobox')).not.toBeInTheDocument()
@@ -69,7 +69,7 @@ describe('agent panel', () => {
     const state = withProviders()
     state.assignments.assistant = { primary: 'p2', fallback: null }
     localStorage.setItem('learninghub.agent', JSON.stringify({ provider_id: 'p1' }))
-    const { user } = renderApp()
+    const { user } = await renderAppReady()
     const box = await within(panel()).findByRole('textbox', { name: 'Message the agent' })
     expect(within(panel()).queryByRole('combobox', { name: 'Provider' })).not.toBeInTheDocument()
     expect(within(panel()).getByRole('button', { name: 'Agent: Learning assistant' })).toHaveTextContent(
@@ -90,7 +90,7 @@ describe('agent panel', () => {
       provider: { id: 'p2', name: 'Local qwen', model: 'qwen3' },
       fallback_used: true,
     })
-    const { user } = renderApp()
+    const { user } = await renderAppReady()
     await user.type(await within(panel()).findByRole('textbox', { name: 'Message the agent' }), 'hi{Enter}')
     expect(await within(panel()).findByText('From the spare.')).toBeInTheDocument()
     expect(within(panel()).getByText('Local qwen · qwen3 (fallback)')).toBeInTheDocument()
@@ -100,7 +100,7 @@ describe('agent panel', () => {
     const state = withProviders()
     let n = 0
     state.chat = () => ({ reply: `answer ${++n}` })
-    const { user } = renderApp()
+    const { user } = await renderAppReady()
     const box = await within(panel()).findByRole('textbox', { name: 'Message the agent' })
     await user.type(box, 'line one{Shift>}{Enter}{/Shift}line two')
     expect(box).toHaveValue('line one\nline two')
@@ -119,7 +119,7 @@ describe('agent panel', () => {
   it('shows an error under the question and lets the user send again', async () => {
     const state = withProviders()
     state.chat = () => ({ status: 502, detail: 'Claude main: auth_failed' })
-    const { user } = renderApp()
+    const { user } = await renderAppReady()
     const box = await within(panel()).findByRole('textbox', { name: 'Message the agent' })
     await user.type(box, 'hello{Enter}')
     expect(await within(panel()).findByRole('alert')).toHaveTextContent('auth_failed')
@@ -135,7 +135,7 @@ describe('agent panel', () => {
 
   it('clears the chat', async () => {
     withProviders()
-    const { user } = renderApp()
+    const { user } = await renderAppReady()
     await user.type(await within(panel()).findByRole('textbox', { name: 'Message the agent' }), 'hi{Enter}')
     await within(panel()).findByText('ok')
     await user.click(within(panel()).getByRole('button', { name: 'Clear chat' }))
@@ -152,7 +152,7 @@ describe('chat panel layout', () => {
   it('shows the error in its own row under the question with Retry, which sends it again', async () => {
     const state = withProviders()
     state.chat = () => ({ status: 502, detail: 'Claude main: auth_failed' })
-    const { user } = renderApp()
+    const { user } = await renderAppReady()
     await user.type(await within(panel()).findByRole('textbox', { name: 'Message the agent' }), 'hello{Enter}')
     const alert = await within(panel()).findByRole('alert')
     expect(alert).toHaveTextContent('auth_failed')
@@ -174,7 +174,7 @@ describe('chat panel layout', () => {
     const state = withProviders()
     let n = 0
     state.chat = () => ({ reply: `take ${++n}` })
-    const { user } = renderApp()
+    const { user } = await renderAppReady()
     await user.type(await within(panel()).findByRole('textbox', { name: 'Message the agent' }), 'explain{Enter}')
     await within(panel()).findByText('take 1')
     await user.click(within(panel()).getByRole('button', { name: 'Retry' }))
@@ -186,7 +186,7 @@ describe('chat panel layout', () => {
   it('lets the user pick the agent that answers; the header shows it', async () => {
     const state = withProviders()
     state.assignments['lesson-writer'] = { primary: 'p2', fallback: null }
-    const { user } = renderApp()
+    const { user } = await renderAppReady()
     const menu = await within(panel()).findByRole('button', { name: 'Agent: Learning assistant' })
     expect(menu).toHaveAttribute('aria-haspopup', 'listbox')
     await user.click(menu)
@@ -211,7 +211,7 @@ describe('chat panel layout', () => {
 
   it('opens the agent menu with the keyboard and closes it with Escape', async () => {
     withProviders()
-    const { user } = renderApp()
+    const { user } = await renderAppReady()
     const menu = await within(panel()).findByRole('button', { name: 'Agent: Learning assistant' })
     menu.focus()
     await user.keyboard('{Enter}')
@@ -229,7 +229,7 @@ describe('chat panel layout', () => {
 
   it('links to Settings from the header', async () => {
     withProviders()
-    renderApp()
+    await renderAppReady()
     expect(await within(panel()).findByRole('link', { name: 'Agent settings' })).toHaveAttribute('href', '#/settings')
   })
 
@@ -238,7 +238,7 @@ describe('chat panel layout', () => {
     state.chat = () => ({
       reply: '| Policy | Picks |\n|---|---|\n| allkeys-lru | least recent |\n\nUse <b>care</b> here.',
     })
-    const { user } = renderApp()
+    const { user } = await renderAppReady()
     await user.type(await within(panel()).findByRole('textbox', { name: 'Message the agent' }), 'policies?{Enter}')
     const log = within(panel()).getByRole('log', { name: 'Conversation' })
     const table = await within(log).findByRole('table')
@@ -251,7 +251,7 @@ describe('chat panel layout', () => {
   it('copies a code block and an answer', async () => {
     const state = withProviders()
     state.chat = () => ({ reply: 'Set it:\n\n```conf\nmaxmemory 512mb\n```' })
-    const { user } = renderApp()
+    const { user } = await renderAppReady()
     await user.type(await within(panel()).findByRole('textbox', { name: 'Message the agent' }), 'config?{Enter}')
     const log = within(panel()).getByRole('log', { name: 'Conversation' })
     expect(await within(log).findByText('maxmemory 512mb')).toBeInTheDocument()
@@ -267,7 +267,7 @@ describe('chat panel layout', () => {
 
   it('offers starters in an empty chat that fill the input', async () => {
     withProviders()
-    const { user } = renderApp()
+    const { user } = await renderAppReady()
     const log = await within(panel()).findByRole('log', { name: 'Conversation' })
     expect(within(log).getByText('What are we learning today?')).toBeInTheDocument()
     const starters = within(log).getAllByRole('button')
@@ -279,7 +279,7 @@ describe('chat panel layout', () => {
 
   it('disables Send until there is text or a file', async () => {
     withProviders()
-    const { user } = renderApp()
+    const { user } = await renderAppReady()
     const send = await within(panel()).findByRole('button', { name: 'Send' })
     expect(send).toBeDisabled()
     await user.type(box(), '  ')
@@ -292,7 +292,7 @@ describe('chat panel layout', () => {
 describe('skills in the composer', () => {
   it('suggests skills for "/qu" and Enter puts "/quiz " in the input without sending', async () => {
     const state = withProviders()
-    const { user } = renderApp()
+    const { user } = await renderAppReady()
     await user.type(await within(panel()).findByRole('textbox', { name: 'Message the agent' }), '/qu')
     const list = within(panel()).getByRole('listbox', { name: 'Skills' })
     expect(within(list).getAllByRole('option').map((o) => o.textContent)).toEqual([
@@ -307,7 +307,7 @@ describe('skills in the composer', () => {
 
   it('moves through the skills with the arrow keys and closes with Escape', async () => {
     withProviders()
-    const { user } = renderApp()
+    const { user } = await renderAppReady()
     await user.type(await within(panel()).findByRole('textbox', { name: 'Message the agent' }), '/')
     const list = within(panel()).getByRole('listbox', { name: 'Skills' })
     const options = () => within(list).getAllByRole('option')
@@ -325,7 +325,7 @@ describe('skills in the composer', () => {
 
   it('opens all skills from the Skills button and picks one with a click', async () => {
     withProviders()
-    const { user } = renderApp()
+    const { user } = await renderAppReady()
     const button = await within(panel()).findByRole('button', { name: 'Skills' })
     await user.click(button)
     expect(button).toHaveAttribute('aria-expanded', 'true')
@@ -338,7 +338,7 @@ describe('skills in the composer', () => {
 
   it('sends a skill message as the instruction plus the text, and shows what the user typed', async () => {
     const state = withProviders()
-    const { user } = renderApp()
+    const { user } = await renderAppReady()
     await user.type(await within(panel()).findByRole('textbox', { name: 'Message the agent' }), '/quiz JWT{Enter}')
     const log = within(panel()).getByRole('log', { name: 'Conversation' })
     expect(await within(log).findByText('/quiz JWT')).toBeInTheDocument()
@@ -354,7 +354,7 @@ describe('skills in the composer', () => {
 describe('effort per message', () => {
   it('sends the chosen effort, remembers it and shows it in the caption', async () => {
     const state = withProviders()
-    const { user, unmount } = renderApp()
+    const { user, unmount } = await renderAppReady()
     const group = await within(panel()).findByRole('group', { name: 'Effort' })
     const buttons = within(group).getAllByRole('button')
     expect(buttons.map((b) => [b.textContent, b.getAttribute('title')])).toEqual([
@@ -376,7 +376,7 @@ describe('effort per message', () => {
     expect(within(log).getByText('Low')).toBeInTheDocument()
 
     unmount()
-    renderApp()
+    await renderAppReady()
     const again = await within(panel()).findByRole('group', { name: 'Effort' })
     expect(within(again).getByRole('button', { name: 'Low' })).toHaveAttribute('aria-pressed', 'true')
   })
@@ -384,7 +384,7 @@ describe('effort per message', () => {
   it('falls back to Medium when the stored effort is unknown', async () => {
     localStorage.setItem('learninghub.effort', 'extreme')
     withProviders()
-    renderApp()
+    await renderAppReady()
     const group = await within(panel()).findByRole('group', { name: 'Effort' })
     expect(within(group).getByRole('button', { name: 'Medium' })).toHaveAttribute('aria-pressed', 'true')
   })
@@ -393,7 +393,7 @@ describe('effort per message', () => {
 describe('text attachments', () => {
   it('attaches a file, sends its name and text with the message, clears the chip and shows the file', async () => {
     const state = withProviders()
-    const { user } = renderApp()
+    const { user } = await renderAppReady()
     await within(panel()).findByRole('textbox', { name: 'Message the agent' })
     await user.upload(fileInput(), mdFile('jwt.md', '# JWT\n\nTokens expire.'))
     const chips = await within(panel()).findByRole('list', { name: 'Attachments' })
@@ -420,7 +420,7 @@ describe('text attachments', () => {
   it('sends a message with only a file, and Retry resends the same file', async () => {
     const state = withProviders()
     state.chat = () => ({ status: 502, detail: 'Claude main: unavailable' })
-    const { user } = renderApp()
+    const { user } = await renderAppReady()
     await within(panel()).findByRole('textbox', { name: 'Message the agent' })
     await user.upload(fileInput(), mdFile('notes.txt', 'plain'))
     const send = within(panel()).getByRole('button', { name: 'Send' })
@@ -437,7 +437,7 @@ describe('text attachments', () => {
 
   it('shows a dropped unsupported file as an error chip and sends nothing for it', async () => {
     const state = withProviders()
-    const { user } = renderApp()
+    const { user } = await renderAppReady()
     const input = await within(panel()).findByRole('textbox', { name: 'Message the agent' })
     const pdf = new File(['%PDF'], 'diagram.pdf', { type: 'application/pdf' })
 
@@ -458,7 +458,7 @@ describe('text attachments', () => {
 
   it('refuses a sixth file and a file over 100 KB, and removes a chip', async () => {
     const state = withProviders()
-    const { user } = renderApp()
+    const { user } = await renderAppReady()
     await within(panel()).findByRole('textbox', { name: 'Message the agent' })
     const six = Array.from({ length: 6 }, (_, i) => mdFile(`n${i + 1}.md`, `note ${i + 1}`))
     await user.upload(fileInput(), six)
@@ -494,7 +494,7 @@ describe('draft with agent', () => {
       expect(body.page).toEqual({ kind: 'lesson', domain: 'backend', node: 'caching' })
       return { reply: 'Drafted.', changed_lessons: ['backend/caching'] }
     }
-    const { user } = renderApp('#/lesson/backend/caching')
+    const { user } = await renderAppReady('#/lesson/backend/caching')
     const lesson = await screen.findByRole('article', { name: 'Lesson: Caching' })
     await user.click(await within(lesson).findByRole('button', { name: 'Draft with agent' }))
 
@@ -508,7 +508,7 @@ describe('draft with agent', () => {
 
   it('offers no draft button without an active provider', async () => {
     installFakeApi()
-    renderApp('#/lesson/backend/apis')
+    await renderAppReady('#/lesson/backend/apis')
     const lesson = await screen.findByRole('article', { name: 'Lesson: APIs' })
     await within(lesson).findByText(/No lesson yet/)
     await within(panel()).findByRole('status')

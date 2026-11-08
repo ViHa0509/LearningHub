@@ -1,4 +1,4 @@
-import { reportFailure } from './lib/failures'
+import { reportFailure, reportUnauthorized } from './lib/failures'
 
 export interface DomainSummary {
   id: string
@@ -321,6 +321,28 @@ export interface ChatRequest {
   attachments?: ChatAttachment[]
 }
 
+export type OAuthProvider = 'github' | 'google'
+
+/** GET /api/auth/status: public, decides between the app and the auth pages. */
+export interface AuthStatus {
+  auth_required: boolean
+  has_owner: boolean
+  providers: Record<OAuthProvider, { configured: boolean }>
+  mail: { mode: 'smtp' | 'outbox' }
+}
+
+/** The signed-in Owner (GET /api/auth/me). */
+export interface Me {
+  id: string
+  email: string
+  email_verified: boolean
+  display_name: string | null
+  bio: string | null
+  avatar_url: string | null
+  has_password: boolean
+  linked: string[]
+}
+
 export class ApiError extends Error {
   status: number
   /** Field errors of a 422 answer (`detail[].field`), with any `config.` prefix removed. */
@@ -346,6 +368,8 @@ async function watchedFetch(path: string, init?: RequestInit): Promise<Response>
     throw error
   }
   if (response.status >= 500) reportFailure()
+  // The session ended: the gate shows the login page. Auth routes answer 401 as part of their job.
+  else if (response.status === 401 && !path.startsWith('/api/auth/')) reportUnauthorized()
   return response
 }
 
@@ -485,6 +509,30 @@ export const api = {
   },
   newsRefreshStatus: () => request<NewsRefreshStatus>('/api/news/refresh'),
   startNewsRefresh: () => request<NewsRefreshStatus>('/api/news/refresh', { method: 'POST' }),
+  authStatus: () => request<AuthStatus>('/api/auth/status'),
+  /** The signed-in Owner, or null without a session (401). */
+  me: async (): Promise<Me | null> => {
+    try {
+      return await request<Me>('/api/auth/me')
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) return null
+      throw error
+    }
+  },
+  signup: (body: { email: string; password: string; display_name?: string }) =>
+    request<Me>('/api/auth/signup', json('POST', body)),
+  login: (email: string, password: string) => request<Me>('/api/auth/login', json('POST', { email, password })),
+  logout: () => request<void>('/api/auth/logout', { method: 'POST' }),
+  forgotPassword: (email: string) => request<{ message: string }>('/api/auth/forgot', json('POST', { email })),
+  resetPassword: (token: string, password: string) =>
+    request<Me>('/api/auth/reset', json('POST', { token, password })),
+  requestMagicLink: (email: string) => request<{ message: string }>('/api/auth/magic', json('POST', { email })),
+  consumeMagicLink: (token: string) => request<Me>('/api/auth/magic/consume', json('POST', { token })),
+  verifyEmail: (token: string) => request<{ email_verified: boolean }>('/api/auth/verify', json('POST', { token })),
+  resendVerification: () => request<{ message: string }>('/api/auth/verify/resend', { method: 'POST' }),
+  /** Where Continue with GitHub/Google goes; the server redirects back to `next` (an app hash). */
+  oauthStartUrl: (provider: OAuthProvider, next: string) =>
+    `/api/auth/oauth/${provider}/start?next=${encodeURIComponent(next)}`,
 }
 
 export const queryKeys = {
@@ -507,4 +555,8 @@ export const queryKeys = {
   news: ['news'] as const,
   newsList: (filters: NewsFilters) => ['news', 'list', filters.source ?? '', filters.q ?? ''] as const,
   newsRefresh: ['news-refresh'] as const,
+  /** Every auth query (prefix of the two below). */
+  auth: ['auth'] as const,
+  authStatus: ['auth', 'status'] as const,
+  me: ['auth', 'me'] as const,
 }

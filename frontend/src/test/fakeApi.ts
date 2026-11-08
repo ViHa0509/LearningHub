@@ -257,6 +257,52 @@ export interface FakeState {
    */
   newsRefreshOutcome: { items: NewsItem[]; failures?: Record<string, string> }
   newsRefreshPolls: number
+  /** The login model; by default no session is required, so the app shows as before. */
+  auth: FakeAuth
+}
+
+export interface FakeOwner {
+  email: string
+  password: string | null
+  display_name: string | null
+  email_verified: boolean
+  avatar_url: string | null
+}
+
+export interface FakeAuthToken {
+  purpose: 'reset_password' | 'magic_link' | 'verify_email'
+  token: string
+  used: boolean
+}
+
+export interface FakeAuth {
+  /** GET /api/auth/status `auth_required`: with true, every app route answers 401 without a session. */
+  required: boolean
+  owner: FakeOwner | null
+  /** This browser has a valid session cookie. */
+  signedIn: boolean
+  providers: { github: boolean; google: boolean }
+  mail: 'smtp' | 'outbox'
+  /** Tokens "emailed" so far (and ones a test seeds); each works once. */
+  tokens: FakeAuthToken[]
+  /** When set, every auth POST answers 429 with this detail. */
+  limited: string | null
+}
+
+/** The Owner a signed-in test starts with. */
+export const OWNER: FakeOwner = {
+  email: 'me@example.test',
+  password: 'correct horse battery',
+  display_name: 'Ada Lovelace',
+  email_verified: true,
+  avatar_url: null,
+}
+
+/** Makes the fake API require a session; `signedIn` says whether this browser has one. */
+export function requireLogin(state: FakeState, options: { signedIn?: boolean; owner?: FakeOwner | null } = {}) {
+  state.auth.required = true
+  state.auth.owner = options.owner === undefined ? { ...OWNER } : options.owner
+  state.auth.signedIn = options.signedIn ?? false
 }
 
 export const NEWS_SOURCES = [
@@ -359,6 +405,111 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
     newsJob: { state: 'idle', started_at: null, finished_at: null, error: null, sources: [] },
     newsRefreshOutcome: { items: [] },
     newsRefreshPolls: 1,
+    auth: {
+      required: false,
+      owner: null,
+      signedIn: false,
+      providers: { github: false, google: false },
+      mail: 'smtp',
+      tokens: [],
+      limited: null,
+    },
+  }
+  let tokenSeq = 0
+  const me = (owner: FakeOwner) => ({
+    id: 'u1',
+    email: owner.email,
+    email_verified: owner.email_verified,
+    display_name: owner.display_name,
+    bio: null,
+    avatar_url: owner.avatar_url,
+    has_password: owner.password !== null,
+    linked: [],
+  })
+  const issue = (purpose: FakeAuthToken['purpose']) => {
+    tokenSeq += 1
+    state.auth.tokens.push({ purpose, token: `${purpose}-${tokenSeq}`, used: false })
+  }
+  const take = (purpose: FakeAuthToken['purpose'], token: string) => {
+    const found = state.auth.tokens.find((t) => t.purpose === purpose && t.token === token && !t.used)
+    if (found) found.used = true
+    return found
+  }
+  const INVALID_LINK = 'This link is invalid or has expired. Ask for a new one.'
+  /** Answers /api/auth/...; null for an unknown auth route. */
+  const authRoute = (url: string, method: string, body: Record<string, string> | undefined) => {
+    const auth = state.auth
+    if (url === '/api/auth/status') {
+      return respond({
+        auth_required: auth.required,
+        has_owner: auth.owner !== null,
+        providers: { github: { configured: auth.providers.github }, google: { configured: auth.providers.google } },
+        mail: { mode: auth.mail },
+      })
+    }
+    if (url === '/api/auth/me') {
+      return auth.signedIn && auth.owner ? respond(me(auth.owner)) : respond({ detail: 'Sign in to continue' }, 401)
+    }
+    if (method !== 'POST') return null
+    if (auth.limited) return respond({ detail: auth.limited }, 429)
+    const email = (body?.email ?? '').trim().toLowerCase()
+    switch (url) {
+      case '/api/auth/signup': {
+        if (auth.owner) return respond({ detail: 'This app has an owner already' }, 403)
+        if ((body?.password ?? '').length < 10) {
+          return respond({ detail: 'Use at least 10 characters for the password.' }, 400)
+        }
+        auth.owner = {
+          email,
+          password: body?.password ?? '',
+          display_name: body?.display_name ?? null,
+          email_verified: false,
+          avatar_url: null,
+        }
+        auth.signedIn = true
+        issue('verify_email')
+        return respond(me(auth.owner), 201)
+      }
+      case '/api/auth/login':
+        if (!auth.owner || auth.owner.email !== email || auth.owner.password !== body?.password) {
+          return respond({ detail: 'Wrong email or password' }, 401)
+        }
+        auth.signedIn = true
+        return respond(me(auth.owner))
+      case '/api/auth/logout':
+        auth.signedIn = false
+        return respond(null, 204)
+      case '/api/auth/forgot':
+        if (auth.owner?.email === email) issue('reset_password')
+        return respond({ message: 'If that email belongs to the owner, a reset link is on its way.' })
+      case '/api/auth/magic':
+        if (auth.owner?.email === email && auth.owner.email_verified) issue('magic_link')
+        return respond({ message: 'If that email belongs to the owner, a sign-in link is on its way.' })
+      case '/api/auth/reset': {
+        if ((body?.password ?? '').length < 10) {
+          return respond({ detail: 'Use at least 10 characters for the password.' }, 400)
+        }
+        if (!auth.owner || !take('reset_password', body?.token ?? '')) return respond({ detail: INVALID_LINK }, 400)
+        auth.owner.password = body?.password ?? ''
+        auth.owner.email_verified = true
+        auth.signedIn = true
+        return respond(me(auth.owner))
+      }
+      case '/api/auth/magic/consume':
+        if (!auth.owner || !take('magic_link', body?.token ?? '')) return respond({ detail: INVALID_LINK }, 400)
+        auth.signedIn = true
+        return respond(me(auth.owner))
+      case '/api/auth/verify':
+        if (!auth.owner || !take('verify_email', body?.token ?? '')) return respond({ detail: INVALID_LINK }, 400)
+        auth.owner.email_verified = true
+        return respond({ email_verified: true })
+      case '/api/auth/verify/resend':
+        if (!auth.signedIn || !auth.owner) return respond({ detail: 'Sign in to continue' }, 401)
+        if (auth.owner.email_verified) return respond({ message: 'Your email is verified already.' })
+        issue('verify_email')
+        return respond({ message: 'A verification link is on its way.' })
+    }
+    return null
   }
   let newsPollsLeft = 0
   const finishNewsRefresh = () => {
@@ -503,6 +654,12 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
           : respond({ status: 'ok' })
       }
       if (state.down === 'database') return respond({ detail: 'Internal Server Error' }, 500)
+      if (url.startsWith('/api/auth/')) {
+        const answer = authRoute(url, method, body as Record<string, string> | undefined)
+        if (answer) return answer
+      } else if (state.auth.required && !state.auth.signedIn) {
+        return respond({ detail: 'Sign in to continue' }, 401)
+      }
       if (HEADER_REQUIRED.has(method) && headers['X-LearningHub'] !== '1') {
         return respond({ detail: 'missing X-LearningHub header' }, 403)
       }

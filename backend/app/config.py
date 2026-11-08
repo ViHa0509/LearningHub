@@ -36,8 +36,9 @@ class Settings(BaseSettings):
     # The AI news feeds (checked at startup).
     news_sources_file: Path = REPO_ROOT / "news" / "sources.yaml"
 
-    # Owner login. While false, the data routes stay open (the auth routes always work).
-    auth_required: bool = False
+    # Owner login: every data route needs a session. LH_AUTH_REQUIRED=false opens them again,
+    # for a machine nobody else can reach (the auth routes always work).
+    auth_required: bool = True
     # Where the browser opens the app: OAuth redirect URIs and links in emails start here.
     public_url: str = "http://localhost:5173"
     github_client_id: str | None = None

@@ -10,13 +10,13 @@
 
 ## 2. Frontend
 
-- [ ] 2.1 Session gate (`GET /api/auth/me`), 401 handling in `api.ts`, return to the same route after login
-- [ ] 2.2 Pages: login, create owner, forgot and reset password, magic link sent and open, verify email; provider buttons with the not-configured state; tokens taken from the URL and posted to the API
-- [ ] 2.3 Avatar menu in the top bar (avatar or initials, display name, Settings, Log out)
-- [ ] 2.4 Vitest for every scenario
+- [x] 2.1 Session gate (`GET /api/auth/me`), 401 handling in `api.ts`, return to the same route after login
+- [x] 2.2 Pages: login, create owner, forgot and reset password, magic link sent and open, verify email; provider buttons with the not-configured state; tokens taken from the URL and posted to the API
+- [x] 2.3 Avatar menu in the top bar (avatar or initials, display name, Settings, Log out)
+- [x] 2.4 Vitest for every scenario
 
 ## 3. E2E and docs
 
-- [ ] 3.1 Playwright global setup creates the Owner and saves the session; existing tests keep passing
-- [ ] 3.2 qc-e2e: create owner, log out and in, wrong password, magic link through the outbox, GitHub through a fake provider, sessions; loop until the suite passes
-- [ ] 3.3 CLAUDE.md and README: single Owner behind a login, `.env` settings for OAuth and SMTP
+- [x] 3.1 Playwright global setup creates the Owner and saves the session; existing tests keep passing
+- [x] 3.2 qc-e2e: create owner, log out and in, wrong password, magic link through the outbox, GitHub through a fake provider, sessions; loop until the suite passes
+- [x] 3.3 CLAUDE.md and README: single Owner behind a login, `.env` settings for OAuth and SMTP

@@ -7,11 +7,33 @@ export const LEAVE_MESSAGE = 'You have unsaved changes. Leave this page and disc
  * reloaded, and a confirm() on in-app navigation (a hash change), which is undone when the user
  * cancels. `markClean` lets a save navigate away without being asked.
  */
+const open = new Set<{ current: boolean }>()
+
+/**
+ * Asks once before something other than a hash change (logging out) discards unsaved changes.
+ * True when nothing is unsaved or the user agreed; the pages are then treated as clean.
+ */
+export function confirmUnsaved(): boolean {
+  const dirty = [...open].filter((ref) => ref.current)
+  if (dirty.length === 0) return true
+  if (!window.confirm(LEAVE_MESSAGE)) return false
+  for (const ref of dirty) ref.current = false
+  return true
+}
+
 export function useUnsavedGuard(dirty: boolean): { markClean: () => void } {
   const dirtyRef = useRef(dirty)
   useEffect(() => {
     dirtyRef.current = dirty
   }, [dirty])
+
+  useEffect(() => {
+    const ref = dirtyRef
+    open.add(ref)
+    return () => {
+      open.delete(ref)
+    }
+  }, [])
 
   useEffect(() => {
     const beforeUnload = (event: BeforeUnloadEvent) => {

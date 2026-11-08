@@ -72,6 +72,13 @@ export function setLeaveGuard(guard: (() => boolean) | null) {
   leaveGuard = guard
 }
 
+/** Asks the open page whether it may be left (unsaved edits); true when nothing stops it. */
+export function mayLeave(): boolean {
+  if (leaveGuard && !leaveGuard()) return false
+  leaveGuard = null
+  return true
+}
+
 export function navigate(route: Route) {
   if (leaveGuard && !leaveGuard()) return
   // Confirmed once; the hash change that follows must not ask again.

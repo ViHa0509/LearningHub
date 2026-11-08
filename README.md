@@ -64,6 +64,18 @@ After pulling new code: run `.venv/Scripts/pip install -r requirements-dev.txt` 
 | An error about a missing table or column | Run `.venv/Scripts/alembic upgrade head` in `backend`, then restart the backend. |
 | The server refuses to start with a roadmap error | A file in `roadmaps/` is invalid; the message names the file and the node. |
 
+### First sign-in
+
+The app has one Owner account. On the first visit it asks you to **create the owner account** (email and password, or GitHub/Google once configured); after that, sign-up is closed and every page needs a login. Optional settings in `backend/.env`:
+
+| Setting | What it does |
+|---|---|
+| `LH_GITHUB_CLIENT_ID`, `LH_GITHUB_CLIENT_SECRET` | GitHub sign-in. Callback URL: `<LH_PUBLIC_URL>/api/auth/oauth/github/callback` |
+| `LH_GOOGLE_CLIENT_ID`, `LH_GOOGLE_CLIENT_SECRET` | Google sign-in. Callback URL: `<LH_PUBLIC_URL>/api/auth/oauth/google/callback` |
+| `LH_PUBLIC_URL` | Where the browser opens the app (default `http://localhost:5173`); used for OAuth callbacks and links in emails |
+| `LH_SMTP_HOST`, `LH_SMTP_PORT`, `LH_SMTP_USER`, `LH_SMTP_PASSWORD`, `LH_SMTP_FROM` | Send emails (verification, password reset, magic link). Without them each email is written to `storage/outbox/` and the server log prints its path |
+| `LH_AUTH_REQUIRED=false` | Turns the login off (only for a machine nobody else can reach) |
+
 To enable the agent, open **Settings** (top bar) -> **Add provider**:
 - Choose a type (OpenAI, Anthropic, Google Gemini, Local such as Ollama, vLLM or LM Studio, or Custom OpenAI-compatible).
 - Enter a model, the API key and, for Local or Custom, a base URL. Optionally set temperature, max tokens, top p, timeout and advanced parameters.

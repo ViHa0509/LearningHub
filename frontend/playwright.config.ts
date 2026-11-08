@@ -22,7 +22,24 @@ export const E2E_ENV = {
   // The news feeds of the e2e run sit on a loopback address, which the safe fetch refuses
   // before connecting: a refresh never reads a real feed.
   LH_NEWS_SOURCES_FILE: join(import.meta.dirname, 'e2e', 'news-sources.e2e.yaml'),
+  // The login is on, as in real use. Links in emails and OAuth redirects point at the e2e Vite.
+  LH_AUTH_REQUIRED: 'true',
+  LH_PUBLIC_URL: 'http://127.0.0.1:5174',
+  // GitHub sign-in goes to the fake provider on the fake server; Google stays unconfigured.
+  LH_GITHUB_CLIENT_ID: 'e2e-github-client',
+  LH_GITHUB_CLIENT_SECRET: 'e2e-github-secret',
+  LH_GITHUB_AUTHORIZE_URL: 'http://127.0.0.1:8002/oauth/github/authorize',
+  LH_GITHUB_TOKEN_URL: 'http://127.0.0.1:8002/oauth/github/token',
+  LH_GITHUB_API_BASE: 'http://127.0.0.1:8002/github-api',
+  LH_GOOGLE_CLIENT_ID: '',
+  LH_GOOGLE_CLIENT_SECRET: '',
+  // No SMTP: emails land in <storage>/outbox, where the tests read the links.
+  LH_SMTP_HOST: '',
 }
+
+/** The Owner the setup project creates; every other test runs signed in as this account. */
+export const OWNER = { email: 'owner@example.test', password: 'e2e-owner-password-1', name: 'E2E Owner' }
+export const OWNER_STATE = join(import.meta.dirname, 'e2e-results', '.auth', 'owner.json')
 
 export default defineConfig({
   testDir: './e2e',
@@ -34,6 +51,11 @@ export default defineConfig({
   retries: 0,
   reporter: [['list']],
   timeout: 30_000,
+  projects: [
+    // Creates the Owner and saves its session before any other test runs.
+    { name: 'setup', testMatch: 'owner.setup.ts' },
+    { name: 'app', dependencies: ['setup'], use: { storageState: OWNER_STATE } },
+  ],
   use: {
     baseURL: 'http://127.0.0.1:5174',
     channel: 'msedge',

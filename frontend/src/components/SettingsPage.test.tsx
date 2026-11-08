@@ -2,7 +2,7 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { installFakeApi, makeProvider, twoProviders } from '../test/fakeApi'
-import { renderApp } from '../test/render'
+import { renderAppReady } from '../test/render'
 
 const panel = () => screen.getByRole('complementary', { name: 'Agent' })
 const card = (name: string) => screen.findByRole('article', { name })
@@ -12,7 +12,7 @@ describe('back from settings', () => {
   it('returns to the last page outside Settings, also after a provider page', async () => {
     const state = installFakeApi()
     state.providers = twoProviders()
-    const { user } = renderApp('#/lesson/devops/docker')
+    const { user } = await renderAppReady('#/lesson/devops/docker')
     await screen.findByRole('article', { name: 'Lesson: Docker' })
 
     await user.click(screen.getByRole('link', { name: 'Settings' }))
@@ -32,7 +32,7 @@ describe('back from settings', () => {
   // Scenario: Settings opened directly
   it('goes home when Settings was opened directly', async () => {
     installFakeApi()
-    renderApp('#/settings')
+    await renderAppReady('#/settings')
     const settings = await screen.findByRole('region', { name: 'Settings' })
     expect(within(settings).getByRole('link', { name: '← Back' })).toHaveAttribute('href', '#/')
   })
@@ -41,7 +41,7 @@ describe('back from settings', () => {
 describe('providers list', () => {
   it('is reachable from the top bar and from the agent panel', async () => {
     installFakeApi()
-    const { user } = renderApp()
+    const { user } = await renderAppReady()
     expect(await within(panel()).findByRole('link', { name: 'Open settings' })).toHaveAttribute('href', '#/settings')
     await user.click(screen.getByRole('link', { name: 'Settings' }))
     expect(await screen.findByRole('region', { name: 'Settings' })).toBeInTheDocument()
@@ -58,7 +58,7 @@ describe('providers list', () => {
       makeProvider('Local qwen', 'local', 'qwen3', { is_active: false }),
     ]
     state.assignments.assistant = { primary: 'p1', fallback: null }
-    renderApp('#/settings')
+    await renderAppReady('#/settings')
     const claude = await card('Claude main')
     expect(claude).toHaveTextContent('Anthropic · claude-sonnet-5-5')
     expect(within(claude).getByText('Active')).toBeInTheDocument()
@@ -75,7 +75,7 @@ describe('providers list', () => {
   it('opens a configuration from its name', async () => {
     const state = installFakeApi()
     state.providers = twoProviders()
-    const { user } = renderApp('#/settings')
+    const { user } = await renderAppReady('#/settings')
     await user.click(within(await card('Local qwen')).getByRole('link', { name: 'Local qwen' }))
     expect(await screen.findByRole('region', { name: 'Provider configuration' })).toBeInTheDocument()
     expect(await screen.findByDisplayValue('Local qwen')).toBeInTheDocument()
@@ -87,7 +87,7 @@ describe('internet search per agent', () => {
   it('is off by default and saved only with the card Save', async () => {
     const state = installFakeApi()
     state.providers = [makeProvider('Claude sub', 'claude-code', 'sonnet')]
-    const { user } = renderApp('#/settings')
+    const { user } = await renderAppReady('#/settings')
     const card = await screen.findByRole('article', { name: 'Learning assistant' })
     const box = within(card).getByRole('checkbox', { name: 'Internet search' })
     expect(box).not.toBeChecked()
@@ -105,7 +105,7 @@ describe('internet search per agent', () => {
   it('says it needs a Claude Code provider for other provider types', async () => {
     const state = installFakeApi()
     state.providers = [makeProvider('GPT', 'openai', 'gpt-5.5')]
-    renderApp('#/settings')
+    await renderAppReady('#/settings')
     const card = await screen.findByRole('article', { name: 'Learning assistant' })
     expect(
       await within(card).findByText('Internet search needs a Claude Code provider; it has no effect with the current one.'),
@@ -117,7 +117,7 @@ describe('agents section', () => {
   it('assigns different providers to the two agents', async () => {
     const state = installFakeApi()
     state.providers = twoProviders()
-    const { user } = renderApp('#/settings')
+    const { user } = await renderAppReady('#/settings')
     const assistant = await card('Learning assistant')
     const writer = await card('Lesson writer')
     expect(within(assistant).getByLabelText('Primary provider')).toHaveValue('')
@@ -147,7 +147,7 @@ describe('agents section', () => {
     const state = installFakeApi()
     state.providers = twoProviders()
     state.assignments.assistant = { primary: 'p1', fallback: 'p2' }
-    const { user } = renderApp('#/settings')
+    const { user } = await renderAppReady('#/settings')
     const assistant = await card('Learning assistant')
     const fallback = within(assistant).getByLabelText('Fallback provider')
     await waitFor(() => expect(fallback).toHaveValue('p2'))
@@ -165,7 +165,7 @@ describe('agents section', () => {
       }),
       makeProvider('Local qwen', 'local', 'qwen3', { is_active: false }),
     ]
-    renderApp('#/settings')
+    await renderAppReady('#/settings')
     const assistant = await card('Learning assistant')
     const primary = await within(assistant).findByLabelText('Primary provider')
     expect(within(primary).getAllByRole('option').map((o) => o.textContent)).toEqual([
@@ -183,7 +183,7 @@ describe('agents section', () => {
       makeProvider('Claude sub', 'claude-code', 'sonnet'),
     ]
     state.assignments.assistant = { primary: 'p2', fallback: 'p1' }
-    renderApp('#/settings')
+    await renderAppReady('#/settings')
     const writer = await card('Lesson writer')
     await waitFor(() => expect(writer).toHaveTextContent('Uses Claude sub · sonnet (same as the Learning assistant)'))
     const assistant = await card('Learning assistant')
@@ -197,7 +197,7 @@ describe('agents section', () => {
     state.providers = [makeProvider('Claude sub', 'claude-code', 'sonnet'), makeProvider('Local qwen', 'local', 'qwen3')]
     state.assignments.assistant = { primary: 'p1', fallback: null }
     state.assignments['lesson-writer'] = { primary: 'p2', fallback: null }
-    renderApp('#/settings')
+    await renderAppReady('#/settings')
     const writer = await card('Lesson writer')
     await waitFor(() => expect(writer).toHaveTextContent('Uses Local qwen · qwen3'))
     expect(writer).not.toHaveTextContent('same as the Learning assistant')

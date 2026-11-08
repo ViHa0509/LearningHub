@@ -14,3 +14,18 @@ export function onFailure(listener: Listener): () => void {
     listeners.delete(listener)
   }
 }
+
+/** A 401 from an app route: the session ended. The session gate listens and shows the login page. */
+const unauthorizedListeners = new Set<Listener>()
+
+export function reportUnauthorized() {
+  for (const listener of [...unauthorizedListeners]) listener()
+}
+
+/** Calls `listener` on every 401 from a non-auth route; returns the unsubscribe function. */
+export function onUnauthorized(listener: Listener): () => void {
+  unauthorizedListeners.add(listener)
+  return () => {
+    unauthorizedListeners.delete(listener)
+  }
+}

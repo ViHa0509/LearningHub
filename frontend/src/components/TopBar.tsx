@@ -1,9 +1,13 @@
+import type { Me } from '../api'
 import type { Theme } from '../lib/theme'
+import { AccountMenu } from './AccountMenu'
 import { Icon, type IconName } from './Icon'
 
 interface Props {
   theme: Theme
   onThemeChange: (theme: Theme) => void
+  /** The signed-in Owner: the avatar menu (with Settings) replaces the Settings link. */
+  user?: Me | null
 }
 
 const THEMES: { value: Theme; label: string; icon: IconName }[] = [
@@ -12,7 +16,7 @@ const THEMES: { value: Theme; label: string; icon: IconName }[] = [
   { value: 'dark', label: 'Dark', icon: 'moon' },
 ]
 
-export function TopBar({ theme, onThemeChange }: Props) {
+export function TopBar({ theme, onThemeChange, user = null }: Props) {
   return (
     <header className="top-bar">
       <a className="brand" href="#/">
@@ -25,10 +29,12 @@ export function TopBar({ theme, onThemeChange }: Props) {
           <Icon name="news" />
           News
         </a>
-        <a href="#/settings">
-          <Icon name="settings" />
-          Settings
-        </a>
+        {!user && (
+          <a href="#/settings">
+            <Icon name="settings" />
+            Settings
+          </a>
+        )}
       </nav>
       <div className="theme-switch" role="radiogroup" aria-label="Theme">
         {THEMES.map((t) => (
@@ -44,6 +50,7 @@ export function TopBar({ theme, onThemeChange }: Props) {
           </button>
         ))}
       </div>
+      {user && <AccountMenu user={user} />}
     </header>
   )
 }

@@ -733,3 +733,58 @@ details.provider-section[open] > summary { margin-bottom: 10px; }
 .news-ask { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; padding: 3px 10px; border-color: var(--border); }
 .news-ask:hover { border-color: var(--secondary); color: var(--secondary-text); background: var(--secondary-soft); }
 .news-more { display: block; margin: 20px auto 0; }
+
+/* Auth pages: a centered card on the app background (login, create owner, links from emails). */
+.auth-page { flex: 1; min-height: 0; overflow: auto; display: grid; place-items: center; padding: 48px 16px; }
+.auth-card {
+  width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 12px;
+  padding: 32px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; box-shadow: var(--shadow-pop);
+}
+.auth-mark { width: 56px; height: 56px; align-self: center; }
+.auth-mark.for-light { display: var(--brand-light); }
+.auth-mark.for-dark { display: var(--brand-dark); }
+.auth-brand { margin: 0; text-align: center; font-weight: 700; color: var(--muted); }
+.auth-card h1 { font-size: 22px; margin: 0 0 4px; text-align: center; }
+.auth-card p { margin: 0; }
+.auth-lead { text-align: center; }
+.auth-form { display: flex; flex-direction: column; gap: 12px; }
+.auth-field { display: flex; flex-direction: column; gap: 4px; font-weight: 600; font-size: 13px; }
+.auth-field input { font-weight: 400; padding: 8px 10px; }
+.auth-field input:focus { border-color: var(--accent); }
+.auth-hint { font-size: 12px; }
+.auth-form button.primary { padding: 8px 18px; }
+.auth-form button:disabled { opacity: 0.7; cursor: default; }
+.auth-message { padding: 8px 12px; border: 1px solid var(--danger-border); border-radius: var(--radius); background: var(--danger-soft); }
+.auth-sent { padding: 10px 14px; border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: var(--radius); background: var(--surface-2); display: flex; flex-direction: column; gap: 6px; }
+.auth-links { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
+.auth-links a { color: var(--accent); }
+.auth-or { text-align: center; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+.auth-providers { display: flex; flex-direction: column; gap: 8px; }
+.auth-provider { display: block; width: 100%; text-align: center; padding: 8px 12px; color: var(--text); background: var(--surface); border: 1px solid var(--border-strong); border-radius: 6px; }
+a.auth-provider:hover { border-color: var(--accent); color: var(--accent); }
+button.auth-provider:disabled { color: var(--muted); border-color: var(--border); background: var(--surface-2); cursor: not-allowed; }
+.auth-provider-off p { font-size: 12px; margin-top: 2px; text-align: center; }
+
+/* Avatar menu in the top bar (signed in). */
+.account { position: relative; }
+.account-button { display: inline-flex; align-items: center; gap: 8px; padding: 3px 10px 3px 3px; border-color: var(--border); border-radius: 999px; }
+.account-name { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.avatar {
+  width: 28px; height: 28px; border-radius: 50%; flex: none; display: inline-grid; place-items: center;
+  background: var(--brand-mark); border: 1px solid var(--brand-mark-ring); color: var(--text);
+  font-size: 12px; font-weight: 700; object-fit: cover;
+}
+.account-popover {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; min-width: 220px; padding: 6px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-pop);
+}
+.account-email { margin: 0; padding: 6px 10px 8px; font-size: 12px; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.account-popover [role='menu'] { display: flex; flex-direction: column; padding-top: 4px; }
+.account-popover [role='menuitem'] {
+  display: flex; align-items: center; width: 100%; text-align: left; padding: 6px 10px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--text); text-decoration: none; font: inherit;
+}
+.account-popover [role='menuitem']:hover { background: var(--surface-2); }
+.account-popover .account-verify[role='menuitem'] { color: var(--warn); }
+.account-note { margin: 4px 0 0; padding: 6px 10px; font-size: 12px; }

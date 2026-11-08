@@ -31,7 +31,9 @@ test('Back to the lesson after opening Settings and a provider page', async ({ p
   await page.goto('/#/lesson/devops/helm')
   await expect(page.getByRole('article', { name: 'Lesson: Helm' })).toBeVisible()
 
-  await page.getByRole('navigation', { name: 'App' }).getByRole('link', { name: 'Settings' }).click()
+  // Signed in, Settings sits in the account menu of the top bar (owner-auth: avatar menu).
+  await page.getByRole('button', { name: /^Account menu: / }).click()
+  await page.getByRole('menu', { name: 'Account' }).getByRole('menuitem', { name: 'Settings' }).click()
   await expect(page).toHaveURL(/#\/settings$/)
   const settings = page.getByRole('region', { name: 'Settings' })
   await expect(settings.getByRole('link', { name: '← Back', exact: true })).toBeVisible()

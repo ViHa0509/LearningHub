@@ -1,10 +1,22 @@
-import { useState } from 'react'
-import type { ChatPage, Note } from '../api'
-import { useAllRoadmaps, useArchivedNotes, useDomains, useNotes, useProviders, useRefreshNotes, useServiceHealth } from '../hooks'
+import { useEffect, useState } from 'react'
+import type { ChatPage, Me, Note } from '../api'
+import {
+  useAllRoadmaps,
+  useArchivedNotes,
+  useDomains,
+  useNotes,
+  useProviders,
+  useRefreshNotes,
+  useServiceHealth,
+  type ServiceHealth,
+} from '../hooks'
+import { useAuth } from '../lib/auth'
+import { forgetReturn, parseAuthRoute, rememberReturn, returnRoute, useHash } from '../lib/authRoute'
 import { domainOf } from '../lib/grouping'
 import { navigate, useRoute } from '../lib/route'
-import { useTheme } from '../lib/theme'
+import { useTheme, type Theme } from '../lib/theme'
 import { AgentPanel, type AgentRequest } from './AgentPanel'
+import { AuthPages } from './AuthPages'
 import { HomePage } from './HomePage'
 import { ImportDialog } from './ImportDialog'
 import { LearnedList } from './LearnedList'
@@ -17,15 +29,80 @@ import { ServiceUnavailable } from './ServiceUnavailable'
 import { SettingsPage } from './SettingsPage'
 import { TopBar } from './TopBar'
 
+/**
+ * The session gate. Without a required session (auth_required false) the app shows as it always
+ * did. With one, `GET /api/auth/me` decides: no session shows the login page in place of the app,
+ * on the same address, so signing in returns to the same page. `#/auth/...` addresses always show
+ * the auth pages (links from emails, OAuth errors).
+ */
 export function AppShell() {
-  const route = useRoute()
+  const hash = useHash()
   const [theme, setTheme] = useTheme()
+  const health = useServiceHealth()
+  const auth = useAuth()
+  const authRoute = parseAuthRoute(hash)
+  const signedInUser = auth.me ?? null
+
+  // An app page without a session: the login page shows in its place; come back here after.
+  const needsLogin = auth.required && auth.me === null && !authRoute
+  useEffect(() => {
+    if (needsLogin) rememberReturn(hash)
+  }, [needsLogin, hash])
+
+  // Signed in already on the login or create page: go on to the app.
+  const onEntryPage = authRoute?.page === 'login' || authRoute?.page === 'create'
+  useEffect(() => {
+    if (onEntryPage && signedInUser) {
+      const target = returnRoute()
+      forgetReturn()
+      window.location.hash = target
+    }
+  }, [onEntryPage, signedInUser])
+
+  // Nothing of the app shows (and no data is asked for) until the status, and the session when
+  // one is required, are known.
+  const statusLoading = !auth.status && !auth.statusFailed
+  const meLoading = auth.required && auth.me === undefined && !auth.meFailed
+  // Auth pages wait only for the status (owner, providers, mail): a page that posts a token
+  // must not be unmounted and mounted again while `me` loads.
+  const loading = statusLoading || (!authRoute && meLoading)
+
+  if (authRoute || needsLogin || loading) {
+    return (
+      <div className="app-frame">
+        {health.state === 'down' ? (
+          <ServiceUnavailable health={health} />
+        ) : loading ? (
+          <main className="auth-page" aria-busy="true" aria-label="Loading" />
+        ) : (
+          <AuthPages
+            route={authRoute ?? { page: auth.status?.has_owner === false ? 'create' : 'login', params: new URLSearchParams() }}
+            status={auth.status}
+            next={authRoute ? returnRoute() : hash || '#/'}
+          />
+        )}
+      </div>
+    )
+  }
+
+  return <MainApp theme={theme} onThemeChange={setTheme} health={health} user={signedInUser} />
+}
+
+interface MainProps {
+  theme: Theme
+  onThemeChange: (theme: Theme) => void
+  health: ServiceHealth
+  /** The signed-in Owner when the app requires a session; null otherwise (no avatar menu). */
+  user: Me | null
+}
+
+function MainApp({ theme, onThemeChange, health, user }: MainProps) {
+  const route = useRoute()
   const domains = useDomains()
   const notes = useNotes()
   const archived = useArchivedNotes()
   const { roadmaps, ready: roadmapsReady } = useAllRoadmaps()
   const refresh = useRefreshNotes()
-  const health = useServiceHealth()
 
   const [leftOpen, setLeftOpen] = useState(true)
   const [rightOpen, setRightOpen] = useState(true)
@@ -137,7 +214,7 @@ export function AppShell() {
 
   return (
     <div className="app-frame">
-      <TopBar theme={theme} onThemeChange={setTheme} />
+      <TopBar theme={theme} onThemeChange={onThemeChange} user={user} />
       {health.state === 'down' && <ServiceUnavailable health={health} />}
       {/* Hidden, not unmounted, during an outage: open drafts and the chat survive until it is back. */}
       <div className="app-shell" style={{ gridTemplateColumns: columns.join(' ') }} hidden={health.state === 'down'}>

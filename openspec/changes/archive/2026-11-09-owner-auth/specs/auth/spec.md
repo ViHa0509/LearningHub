@@ -52,7 +52,7 @@ The system SHALL offer GitHub and Google sign-in through the authorization code 
 - **THEN** Continue with Google is disabled with a note saying it is not configured
 
 ### Requirement: Magic link and email verification
-The system SHALL send a single-use sign-in link valid 15 minutes to the Owner's verified email on request, and a verification link after sign-up and after an email change. Requests for unknown emails MUST answer the same as for the Owner's. Without SMTP configured, messages are written to the local outbox folder and the page says so.
+The system SHALL send a single-use sign-in link valid 15 minutes to the Owner's verified email on request, and a verification link after sign-up (after an email change: see the settings capability). Requests for unknown emails MUST answer the same as for the Owner's. Without SMTP configured, messages are written to the local outbox folder and the page says so.
 
 #### Scenario: Magic link
 - **WHEN** the Owner requests a magic link and opens it within 15 minutes
