@@ -1,8 +1,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from 'react'
-import type { Effort, ProviderOut } from '../../api'
-import { DEFAULT_PROVIDER, EFFORTS } from '../../lib/agentPrefs'
+import type { Effort } from '../../api'
+import { EFFORTS } from '../../lib/agentPrefs'
 import { ACCEPT, extensionOf, formatSize, type Attachment } from '../../lib/attachments'
-import { providerLabel } from '../../lib/providers'
 import { SKILLS, suggestSkills } from '../../lib/skills'
 import { Icon } from '../Icon'
 
@@ -15,12 +14,6 @@ interface Props {
   onRemoveAttachment: (id: number) => void
   effort: Effort
   onEffort: (effort: Effort) => void
-  providers: ProviderOut[]
-  providerId: string
-  onProvider: (id: string) => void
-  defaultProvider: { name: string; model_name: string } | null
-  /** Set when the chosen agent does not use the chat's provider choice. */
-  providerLocked: string | null
   busy: boolean
   canSend: boolean
   dropping: boolean
@@ -194,24 +187,6 @@ export function Composer(props: Props) {
             </button>
           ))}
         </div>
-        <span className="chip chip-select" title={props.providerLocked ?? undefined}>
-          <select
-            aria-label="Provider"
-            value={props.providerId}
-            disabled={props.providerLocked !== null}
-            onChange={(e) => props.onProvider(e.target.value)}
-          >
-            <option value={DEFAULT_PROVIDER}>
-              {props.defaultProvider ? `Agent default (${providerLabel(props.defaultProvider)})` : 'Agent default'}
-            </option>
-            {props.providers.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-          <Icon name="chevron-down" size={14} />
-        </span>
       </div>
 
       <div className="composer-card" data-dropping={props.dropping || undefined}>

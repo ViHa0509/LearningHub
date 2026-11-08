@@ -85,3 +85,34 @@ class LessonOut(BaseModel):
 class LessonWrite(BaseModel):
     body: str
     source: LessonSource = "user"
+
+
+class ResourceItem(BaseModel):
+    url: str
+    title: str
+    type: str
+    source_ref: str
+
+
+class NodeResourcesOut(BaseModel):
+    node_id: str
+    source: str
+    commit: str | None
+    synced_at: datetime | None
+    source_url: str
+    items: list[ResourceItem]
+
+
+class ResourceSyncRequest(BaseModel):
+    domain: str
+
+
+class ResourceSyncStatus(BaseModel):
+    domain: str
+    state: Literal["idle", "running", "done", "failed"]
+    commit: str | None
+    nodes: int | None
+    links: int | None
+    error: str | None
+    started_at: datetime | None
+    finished_at: datetime | None

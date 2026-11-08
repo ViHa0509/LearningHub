@@ -1,10 +1,7 @@
 import type { Effort } from '../api'
 
 /** Per-browser choices of the agent panel, kept in localStorage (guarded: storage may be blocked). */
-const CHOICE_KEY = 'learninghub.agent'
 const EFFORT_KEY = 'learninghub.effort'
-
-export const DEFAULT_PROVIDER = ''
 
 export const EFFORTS: { id: Effort; label: string; tip: string }[] = [
   { id: 'low', label: 'Low', tip: 'Fast, saves tokens' },
@@ -14,23 +11,6 @@ export const EFFORTS: { id: Effort; label: string; tip: string }[] = [
 
 export function effortLabel(effort: Effort): string {
   return EFFORTS.find((e) => e.id === effort)?.label ?? effort
-}
-
-export function readProviderChoice(): string {
-  try {
-    const value = (JSON.parse(localStorage.getItem(CHOICE_KEY) ?? '{}') as { provider_id?: unknown }).provider_id
-    return typeof value === 'string' ? value : DEFAULT_PROVIDER
-  } catch {
-    return DEFAULT_PROVIDER
-  }
-}
-
-export function saveProviderChoice(providerId: string) {
-  try {
-    localStorage.setItem(CHOICE_KEY, JSON.stringify({ provider_id: providerId }))
-  } catch {
-    // storage blocked: the choice lasts for this page only
-  }
 }
 
 export function readEffort(): Effort {

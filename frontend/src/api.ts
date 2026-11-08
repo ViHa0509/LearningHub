@@ -1,3 +1,5 @@
+import { reportFailure } from './lib/failures'
+
 export interface DomainSummary {
   id: string
   title: string
@@ -235,9 +237,38 @@ export class ApiError extends Error {
   }
 }
 
+/** fetch that reports network errors and 5xx answers, so the health check runs at once. */
+async function watchedFetch(path: string, init?: RequestInit): Promise<Response> {
+  let response: Response
+  try {
+    response = await fetch(path, init)
+  } catch (error) {
+    reportFailure()
+    throw error
+  }
+  if (response.status >= 500) reportFailure()
+  return response
+}
+
+export type HealthReason = 'server' | 'database'
+export type Health = { state: 'ok' } | { state: 'down'; reason: HealthReason }
+
+/** Checks `/api/health`; never throws. Any answer but 200 `{status: ok}` counts as down. */
+async function health(): Promise<Health> {
+  try {
+    const response = await fetch('/api/health', { headers: { 'X-LearningHub': '1' } })
+    const body = (await response.json().catch(() => null)) as { status?: unknown; reason?: unknown } | null
+    if (response.ok && body?.status === 'ok') return { state: 'ok' }
+    if (response.status === 503 && body?.reason === 'database') return { state: 'down', reason: 'database' }
+    return { state: 'down', reason: 'server' }
+  } catch {
+    return { state: 'down', reason: 'server' }
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // The backend refuses changes without this header, so other origins (imported pages) cannot make them.
-  const response = await fetch(path, {
+  const response = await watchedFetch(path, {
     ...init,
     headers: { ...(init?.headers as Record<string, string> | undefined), 'X-LearningHub': '1' },
   })
@@ -274,6 +305,7 @@ const json = (method: string, body: unknown): RequestInit => ({
 })
 
 export const api = {
+  health,
   domains: () => request<DomainSummary[]>('/api/domains'),
   roadmap: (domain: string) => request<Roadmap>(`/api/domains/${domain}/roadmap`),
   counts: (domain: string) => request<NodeCounts>(`/api/domains/${domain}/counts`),
@@ -297,7 +329,7 @@ export const api = {
   note: (id: string) => request<NoteDetail>(`/api/notes/${id}`),
   /** The page's HTML source, for the editor. */
   noteSource: async (id: string) => {
-    const response = await fetch(`/api/notes/${id}/original`)
+    const response = await watchedFetch(`/api/notes/${id}/original`)
     if (!response.ok) throw new ApiError(response.status, `${response.status} ${response.statusText}`)
     return response.text()
   },
@@ -328,6 +360,7 @@ export const api = {
 }
 
 export const queryKeys = {
+  health: ['health'] as const,
   domains: ['domains'] as const,
   roadmap: (domain: string) => ['roadmap', domain] as const,
   counts: (domain: string) => ['counts', domain] as const,

@@ -41,9 +41,8 @@ describe('agent panel', () => {
     })
     const { user } = renderApp('#/roadmap/backend')
     const box = await within(panel()).findByRole('textbox', { name: 'Message the agent' })
-    const picker = within(panel()).getByRole('combobox', { name: 'Provider' })
-    expect(picker).toHaveValue('')
-    expect(within(panel()).queryByRole('combobox', { name: 'Model' })).not.toBeInTheDocument()
+    // No provider or model picker: the agent's assignment decides (Settings -> Agents).
+    expect(within(panel()).queryByRole('combobox')).not.toBeInTheDocument()
 
     await user.type(box, 'what about redis?{Enter}')
 
@@ -65,39 +64,23 @@ describe('agent panel', () => {
     })
   })
 
-  it('offers "Agent default" with the resolved provider, and the active configurations', async () => {
-    const state = installFakeApi()
-    state.providers = [...twoProviders(), makeProvider('Old', 'openai', 'gpt-5.5', { is_active: false })]
-    state.assignments.assistant = { primary: 'p2', fallback: null }
-    renderApp()
-    const picker = await within(panel()).findByRole('combobox', { name: 'Provider' })
-    await waitFor(() =>
-      expect(within(picker).getAllByRole('option')[0]).toHaveTextContent('Agent default (Local qwen · qwen3)'),
-    )
-    expect(within(picker).getAllByRole('option').map((o) => o.textContent)).toEqual([
-      'Agent default (Local qwen · qwen3)',
-      'Claude main',
-      'Local qwen',
-    ])
-  })
-
-  it('answers from the chosen provider for this conversation without changing the assignment', async () => {
+  // Scenario: The panel follows the assignment
+  it('has no provider picker and answers from the assigned provider', async () => {
     const state = withProviders()
-    state.assignments.assistant = { primary: 'p1', fallback: null }
+    state.assignments.assistant = { primary: 'p2', fallback: null }
+    localStorage.setItem('learninghub.agent', JSON.stringify({ provider_id: 'p1' }))
     const { user } = renderApp()
-    const picker = await within(panel()).findByRole('combobox', { name: 'Provider' })
-    await user.selectOptions(picker, 'Local qwen')
-    expect(JSON.parse(localStorage.getItem('learninghub.agent') ?? '{}')).toEqual({ provider_id: 'p2' })
+    const box = await within(panel()).findByRole('textbox', { name: 'Message the agent' })
+    expect(within(panel()).queryByRole('combobox', { name: 'Provider' })).not.toBeInTheDocument()
+    expect(within(panel()).getByRole('button', { name: 'Agent: Learning assistant' })).toHaveTextContent(
+      'via Local qwen',
+    )
 
-    await user.type(within(panel()).getByRole('textbox', { name: 'Message the agent' }), 'hi{Enter}')
+    await user.type(box, 'hi{Enter}')
     expect(await within(panel()).findByText('Local qwen · qwen3')).toBeInTheDocument()
-    expect(chats(state)[0].body).toMatchObject({ agent_id: 'assistant', provider_id: 'p2' })
-    expect(state.assignments.assistant).toEqual({ primary: 'p1', fallback: null })
-
-    await user.selectOptions(picker, picker.querySelector('option') as HTMLOptionElement)
-    await user.type(within(panel()).getByRole('textbox', { name: 'Message the agent' }), 'again{Enter}')
-    await waitFor(() => expect(chats(state)).toHaveLength(2))
-    expect(chats(state)[1].body).not.toHaveProperty('provider_id')
+    // An old saved choice is ignored: the request names no provider.
+    expect(chats(state)[0].body).not.toHaveProperty('provider_id')
+    expect(state.assignments.assistant).toEqual({ primary: 'p2', fallback: null })
   })
 
   it('marks an answer that came from the fallback', async () => {
@@ -219,8 +202,6 @@ describe('chat panel layout', () => {
     expect(within(panel()).queryByRole('listbox', { name: 'Choose agent' })).not.toBeInTheDocument()
     const current = within(panel()).getByRole('button', { name: 'Agent: Lesson writer' })
     expect(current).toHaveTextContent('via Local qwen')
-    // The provider choice is for the assistant only.
-    expect(within(panel()).getByRole('combobox', { name: 'Provider' })).toBeDisabled()
 
     await user.type(box(), 'draft caching{Enter}')
     await within(panel()).findByText('ok')

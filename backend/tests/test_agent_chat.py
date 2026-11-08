@@ -103,6 +103,8 @@ def test_read_note_wraps_text_as_untrusted(client: TestClient, tools: AgentTools
         "list_roadmap",
         "read_lesson",
         "write_lesson",
+        "list_node_resources",
+        "fetch_reference",
     }
 
 

@@ -11,7 +11,7 @@ from tests.conftest import TEST_DATABASE_URL, alembic_config
 def test_downgrade_base_then_upgrade_head() -> None:
     config = alembic_config()
     engine = create_engine(TEST_DATABASE_URL)
-    tables = {"notes", "lessons", "ai_providers", "agent_providers"}
+    tables = {"notes", "lessons", "ai_providers", "agent_providers", "node_resources"}
     try:
         command.downgrade(config, "base")
         assert not tables & set(inspect(engine).get_table_names())
@@ -21,6 +21,27 @@ def test_downgrade_base_then_upgrade_head() -> None:
         columns = {c["name"] for c in inspect(engine).get_columns("notes")}
         assert {"id", "title", "body_text", "content_sha256", "storage_key", "node_id"} <= columns
         assert "archived_at" in columns
+        resources = {c["name"] for c in inspect(engine).get_columns("node_resources")}
+        assert {
+            "id",
+            "node_id",
+            "url",
+            "title",
+            "type",
+            "source",
+            "source_ref",
+            "commit",
+            "fetched_at",
+        } == resources
+        uniques = inspect(engine).get_unique_constraints("node_resources")
+        assert [u["column_names"] for u in uniques] == [["node_id", "url"]]
+        indexes = inspect(engine).get_indexes("node_resources")
+        assert {"name": "ix_node_resources_node_id", "column_names": ["node_id"]}.items() <= next(
+            i for i in indexes if i["name"] == "ix_node_resources_node_id"
+        ).items()
+        command.downgrade(config, "0006")
+        assert "node_resources" not in inspect(engine).get_table_names()
+        assert "notes" in inspect(engine).get_table_names()
         command.downgrade(config, "0004")
         assert "archived_at" not in {c["name"] for c in inspect(engine).get_columns("notes")}
     finally:

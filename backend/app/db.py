@@ -13,6 +13,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     create_engine,
     func,
 )
@@ -95,6 +96,23 @@ class AgentProvider(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class NodeResource(Base):
+    """A reference link of one roadmap node, synced from a source at a pinned commit."""
+
+    __tablename__ = "node_resources"
+    __table_args__ = (UniqueConstraint("node_id", "url", name="uq_node_resources_node_url"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    node_id: Mapped[str] = mapped_column(Text, index=True)
+    url: Mapped[str] = mapped_column(Text)
+    title: Mapped[str] = mapped_column(Text)
+    type: Mapped[str] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(Text)
+    source_ref: Mapped[str] = mapped_column(Text)
+    commit: Mapped[str] = mapped_column(Text)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 def make_engine(database_url: str) -> Engine:

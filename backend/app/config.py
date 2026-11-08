@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     # The Claude Code CLI for the claude-code provider type; default: `claude` on the PATH.
     # A .py file runs with this Python (the e2e fake).
     claude_bin: str | None = None
+    # Where reference links are synced from (roadmap.sh's repository on GitHub); tests point
+    # these at a local fake server.
+    roadmap_api_base: str = "https://api.github.com"
+    roadmap_raw_base: str = "https://raw.githubusercontent.com"
 
 
 @lru_cache

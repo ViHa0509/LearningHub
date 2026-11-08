@@ -1,5 +1,7 @@
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, queryKeys, type Roadmap } from './api'
+import { useCallback, useEffect, useRef } from 'react'
+import { api, queryKeys, type HealthReason, type Roadmap } from './api'
+import { onFailure } from './lib/failures'
 
 export function useDomains() {
   return useQuery({ queryKey: queryKeys.domains, queryFn: api.domains })
@@ -66,5 +68,73 @@ export function useRefreshProviders() {
       }),
       client.invalidateQueries({ queryKey: queryKeys.agents }),
     ])
+  }
+}
+
+/** How often the health check runs while the service answers, and while it does not. */
+export const HEALTH_INTERVAL_OK = 30_000
+export const HEALTH_INTERVAL_DOWN = 5_000
+
+export interface ServiceHealth {
+  /** `ok` until a health check has actually failed, so one slow request never shows the outage page. */
+  state: 'ok' | 'down'
+  reason: HealthReason
+  /** When the last health check finished; null before the first one. */
+  lastChecked: Date | null
+  /** When the next automatic check runs; null before the first one. */
+  nextRetryAt: Date | null
+  /** A health check is running now. */
+  checking: boolean
+  retryNow: () => void
+}
+
+/**
+ * The service's health: checked when the app starts, every 30 s while it answers, every 5 s while it
+ * does not, and at once after any API request fails with a network error or a 5xx answer. When it
+ * comes back, every other query is refetched.
+ */
+export function useServiceHealth(): ServiceHealth {
+  const client = useQueryClient()
+  const { data, dataUpdatedAt, isFetching, refetch } = useQuery({
+    queryKey: queryKeys.health,
+    queryFn: api.health,
+    // The timer below decides when to check again.
+    staleTime: Infinity,
+    gcTime: Infinity,
+    retry: false,
+    refetchOnWindowFocus: false,
+  })
+  const down = data?.state === 'down'
+  const interval = down ? HEALTH_INTERVAL_DOWN : HEALTH_INTERVAL_OK
+
+  // A running check is joined, not restarted.
+  const check = useCallback(() => {
+    void refetch({ cancelRefetch: false })
+  }, [refetch])
+
+  useEffect(() => {
+    if (!dataUpdatedAt) return
+    const timer = setTimeout(check, Math.max(0, dataUpdatedAt + interval - Date.now()))
+    return () => clearTimeout(timer)
+  }, [dataUpdatedAt, interval, check])
+
+  useEffect(() => onFailure(check), [check])
+
+  const wasDown = useRef(false)
+  useEffect(() => {
+    if (down) wasDown.current = true
+    else if (data?.state === 'ok' && wasDown.current) {
+      wasDown.current = false
+      void client.invalidateQueries({ predicate: (q) => q.queryKey[0] !== queryKeys.health[0] })
+    }
+  }, [down, data, client])
+
+  return {
+    state: down ? 'down' : 'ok',
+    reason: data?.state === 'down' ? data.reason : 'server',
+    lastChecked: dataUpdatedAt ? new Date(dataUpdatedAt) : null,
+    nextRetryAt: dataUpdatedAt ? new Date(dataUpdatedAt + interval) : null,
+    checking: isFetching,
+    retryNow: check,
   }
 }

@@ -208,6 +208,12 @@ export interface FakeState {
   calls: { method: string; url: string; body?: unknown }[]
   /** The request headers of each call, in the same order as `calls`. */
   headers: Record<string, string>[]
+  /**
+   * An outage: `server` makes every request fail with a network error; `proxy` makes every request
+   * answer a plain-text 500 (the dev proxy with no backend behind it); `database` makes the health
+   * check answer 503 (reason database) and every other request 500. null (the default) is healthy.
+   */
+  down: null | 'server' | 'proxy' | 'database'
 }
 
 const respond = (body: unknown, status = 200) =>
@@ -248,6 +254,7 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
     chat: () => ({ reply: 'ok', steps: [], changed_lessons: [], stopped: false }),
     calls: [],
     headers: [],
+    down: null,
   }
   // Catalog order: Frontend, Backend, DevOps, QA, Data Engineer, AI Engineer.
   const roadmaps: Record<string, Roadmap> = {
@@ -332,6 +339,14 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
       const headers = (init?.headers ?? {}) as Record<string, string>
       state.calls.push({ method, url, body })
       state.headers.push(headers)
+      if (state.down === 'server') throw new TypeError('Failed to fetch')
+      if (state.down === 'proxy') return new Response('Proxy error', { status: 500 })
+      if (url === '/api/health') {
+        return state.down === 'database'
+          ? respond({ status: 'unavailable', reason: 'database' }, 503)
+          : respond({ status: 'ok' })
+      }
+      if (state.down === 'database') return respond({ detail: 'Internal Server Error' }, 500)
       if (HEADER_REQUIRED.has(method) && headers['X-LearningHub'] !== '1') {
         return respond({ detail: 'missing X-LearningHub header' }, 403)
       }

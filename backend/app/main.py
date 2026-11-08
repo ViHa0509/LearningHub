@@ -7,6 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
+from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.agent.env_import import import_env_providers
@@ -16,8 +17,10 @@ from app.agent.ratelimit import RateLimiter
 from app.agent.secrets import SecretBox
 from app.config import Settings, get_settings
 from app.db import make_engine, make_session_factory
+from app.resources.mapping import load_mappings
+from app.resources.sync import SyncJobs, http_get
 from app.roadmaps import RoadmapCatalog
-from app.routes import agent, agents, ai_providers, domains, lessons, notes
+from app.routes import agent, agents, ai_providers, domains, lessons, notes, resources
 from app.storage import LocalFileStore
 
 # Routes whose 422 answers use ``detail: [{field, msg}]`` (the provider settings forms).
@@ -50,6 +53,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="Learning Hub API", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings
     app.state.catalog = RoadmapCatalog.load(settings.roadmaps_dir)
+    # Invalid mappings (roadmaps/sources) raise RoadmapError too.
+    app.state.resource_mappings = load_mappings(settings.roadmaps_dir, app.state.catalog)
+    app.state.resource_sync = SyncJobs()
+    app.state.resource_getter = http_get
     app.state.engine = make_engine(settings.database_url)
     app.state.session_factory = make_session_factory(app.state.engine)
     app.state.store = LocalFileStore(settings.storage_dir)
@@ -71,8 +78,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return JSONResponse(status_code=422, content={"detail": detail})
 
     @app.get("/api/health")
-    def health() -> dict[str, str]:
-        return {"status": "ok"}
+    def health() -> JSONResponse:
+        """The app's outage page polls this; a database that does not answer is an outage."""
+        try:
+            with app.state.engine.connect() as connection:
+                connection.execute(text("SELECT 1"))
+        except SQLAlchemyError:
+            return JSONResponse(
+                status_code=503, content={"status": "unavailable", "reason": "database"}
+            )
+        return JSONResponse(content={"status": "ok"})
 
     app.include_router(domains.router)
     app.include_router(notes.router)
@@ -80,6 +95,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(agent.router)
     app.include_router(ai_providers.router)
     app.include_router(agents.router)
+    app.include_router(resources.router)
     return app
 
 

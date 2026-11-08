@@ -6,7 +6,7 @@ Gives the user an agent in the right panel that answers from their own notes and
 ## Requirements
 
 ### Requirement: Providers are configured on the backend
-The agent SHALL call models only through provider configurations managed in the app (see `ai-providers`), resolved per agent (see `agent-providers`). The chat request MUST name the agent (default `assistant`) and MAY name a provider configuration to use for this conversation. The request MUST NOT carry keys.
+The agent SHALL call models only through provider configurations managed in the app (see `ai-providers`), resolved per agent (see `agent-providers`). The chat request MUST name the agent (default `assistant`) and MAY name a provider configuration to use for that request; the chat panel never does, so in the app the agent's assignment decides. The request MUST NOT carry keys.
 
 #### Scenario: No provider configured
 - **GIVEN** no active provider configuration exists
@@ -20,12 +20,17 @@ The agent SHALL call models only through provider configurations managed in the 
 
 #### Scenario: Override for one conversation
 - **GIVEN** the assistant uses "Claude main" and "Local qwen" is active
-- **WHEN** the user picks "Local qwen" in the chat panel and asks a question
+- **WHEN** a client sends a chat naming "Local qwen"
 - **THEN** the answer comes from "Local qwen", and the assistant's assignment is unchanged
 
 #### Scenario: Chat with an unavailable provider
 - **WHEN** a client sends a chat naming a provider configuration that is switched off or does not exist
 - **THEN** the system answers with a conflict or not-found error and calls no model
+
+#### Scenario: The panel follows the assignment
+- **GIVEN** the assistant is assigned "Claude main"
+- **WHEN** the user asks a question in the chat panel
+- **THEN** the request names no provider, "Claude main" answers, and the panel has no provider picker
 
 ### Requirement: The agent answers with tools over the user's data
 For each chat request the system SHALL run the agent loop: call the chosen model with the conversation and the tools (search notes, read a note, list a roadmap, read a lesson, write a lesson), run the tools it calls, and repeat until it answers without a tool call or the step limit is reached. The answer MUST include the final text and each tool call with its name, input and a short result summary.
@@ -78,7 +83,7 @@ Each chat request SHALL carry the page the user is on (home, a roadmap, a lesson
 - **THEN** the agent's instructions name `backend/graphql` as the current lesson
 
 ### Requirement: Chat panel
-The right panel SHALL show the chat: a header with the agent menu, Clear chat and Settings; user messages right and answers left, in Markdown with tables but never raw HTML, code blocks with Copy, and under each answer its tool trace, provider, model and effort (fallback marked), Copy and Retry; a composer with the provider picker, Enter to send, Shift+Enter for a new line. With no active configuration it MUST link to Settings instead.
+The right panel SHALL show the chat: a header with the agent menu, Clear chat and Settings; user messages right and answers left, in Markdown with tables but never raw HTML, code blocks with Copy, and under each answer its tool trace, provider, model and effort (fallback marked), Copy and Retry; a composer with Enter to send and Shift+Enter for a new line, without a provider picker. With no active configuration it MUST link to Settings instead.
 
 #### Scenario: Ask a question
 - **GIVEN** an active provider configuration

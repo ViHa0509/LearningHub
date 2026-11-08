@@ -159,6 +159,8 @@ test.describe('Limits and errors are categorized: Test Connection', () => {
 })
 
 test.describe('The agent can run on the Claude Code CLI', () => {
+  // Each answer starts the fake CLI and the app's tool server: slow on a loaded machine.
+  test.slow()
   test('Answer from notes through the CLI shows the tool trace', async ({ page, request }) => {
     const imported = await request.post(`${API}/api/notes/import`, {
       headers: H,
@@ -178,7 +180,7 @@ test.describe('The agent can run on the Claude Code CLI', () => {
     const box = agent.getByRole('textbox', { name: 'Message the agent' })
     await box.fill('what did I learn about redis eviction?')
     await box.press('Enter')
-    await expect(agent.getByText('FAKE-CLAUDE-ANSWER')).toBeVisible({ timeout: 25_000 })
+    await expect(agent.getByText('FAKE-CLAUDE-ANSWER')).toBeVisible({ timeout: 60_000 })
     await expect(agent.getByText(`${p.name} · sonnet`, { exact: true })).toBeVisible()
     await agent.getByText('Used 2 tools').click()
     await expect(agent.getByText(/Searched notes for 'redis'/)).toBeVisible()
@@ -192,7 +194,7 @@ test.describe('The agent can run on the Claude Code CLI', () => {
     await page.goto(`/#/lesson/${LESSON}`)
     await page.getByRole('button', { name: 'Draft with agent' }).click()
     const agent = page.getByRole('complementary', { name: 'Agent' })
-    await expect(agent.getByText(`I wrote the lesson for ${LESSON}.`)).toBeVisible({ timeout: 25_000 })
+    await expect(agent.getByText(`I wrote the lesson for ${LESSON}.`)).toBeVisible({ timeout: 60_000 })
     await expect(page.getByTestId('lesson-body')).toContainText('Drafted by the fake CLI')
     const lesson = await (await request.get(`${API}/api/lessons/${LESSON}`)).json()
     expect(lesson.source).toBe('agent')
@@ -221,6 +223,7 @@ test.describe('The agent can run on the Claude Code CLI', () => {
 })
 
 test.describe('Limits and errors are categorized: chat', () => {
+  test.slow()
   test('Usage limit with a fallback assigned: the fallback answers and is marked', async ({ page, request }) => {
     const primary = await makeClaude(request, 'Claude limited', 'fake-429')
     const fallback = await makeLocal(request, 'Backup', 'fake-ok')
@@ -230,7 +233,7 @@ test.describe('Limits and errors are categorized: chat', () => {
     const box = agent.getByRole('textbox', { name: 'Message the agent' })
     await box.fill('hello')
     await box.press('Enter')
-    await expect(agent.getByText('OK from fake')).toBeVisible({ timeout: 25_000 })
+    await expect(agent.getByText('OK from fake')).toBeVisible({ timeout: 60_000 })
     await expect(agent.getByText(`${fallback.name} · fake-ok (fallback)`)).toBeVisible()
     await shot(page, 'claude-code-fallback')
   })
@@ -250,7 +253,7 @@ test.describe('Limits and errors are categorized: chat', () => {
     await box.fill('hello')
     await box.press('Enter')
     await expect(agent.getByRole('alert').filter({ hasText: /timeout|did not answer/i })).toBeVisible({
-      timeout: 25_000,
+      timeout: 60_000,
     })
     await shot(page, 'claude-code-timeout')
   })

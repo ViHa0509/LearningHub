@@ -224,7 +224,8 @@ async function openEditor(page: Page, article: Locator, title: string) {
   await article.getByRole('button', { name: 'Edit page' }).click()
   const editor = page.getByRole('region', { name: 'Edit page' })
   await expect(editor).toBeVisible()
-  await expect(editingFrame(page, title).locator('h1')).toHaveAttribute('contenteditable', 'true')
+  // The frame loads the stored page first; under load that can take longer than the default 5 s.
+  await expect(editingFrame(page, title).locator('h1')).toHaveAttribute('contenteditable', 'true', { timeout: 20_000 })
   return editor
 }
 

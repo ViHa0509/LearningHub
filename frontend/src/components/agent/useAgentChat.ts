@@ -26,13 +26,11 @@ export interface Entry {
 let seq = 0
 
 interface Options {
-  /** The provider override for the assistant ('' = the agent default). */
-  providerId: string
   effort: Effort
   page: ChatPage
 }
 
-export function useAgentChat({ providerId, effort, page }: Options) {
+export function useAgentChat({ effort, page }: Options) {
   const client = useQueryClient()
   const [entries, setEntries] = useState<Entry[]>([])
   const [busy, setBusy] = useState(false)
@@ -47,8 +45,6 @@ export function useAgentChat({ providerId, effort, page }: Options) {
     try {
       const answer = await api.chat({
         agent_id: turn.agentId,
-        // The picker is for the chat; other agents use their own assignment.
-        ...(turn.agentId === 'assistant' && providerId ? { provider_id: providerId } : {}),
         messages: [...history, { role: 'user', content: turn.content }],
         page,
         effort,

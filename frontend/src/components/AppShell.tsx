@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { ChatPage, Note } from '../api'
-import { useAllRoadmaps, useArchivedNotes, useDomains, useNotes, useProviders, useRefreshNotes } from '../hooks'
+import { useAllRoadmaps, useArchivedNotes, useDomains, useNotes, useProviders, useRefreshNotes, useServiceHealth } from '../hooks'
 import { domainOf } from '../lib/grouping'
 import { navigate, useRoute } from '../lib/route'
 import { useTheme } from '../lib/theme'
@@ -12,6 +12,7 @@ import { LessonPage } from './LessonPage'
 import { NoteView } from './NoteView'
 import { RoadmapMap } from './RoadmapMap'
 import { ProviderPage } from './ProviderPage'
+import { ServiceUnavailable } from './ServiceUnavailable'
 import { SettingsPage } from './SettingsPage'
 import { TopBar } from './TopBar'
 
@@ -23,6 +24,7 @@ export function AppShell() {
   const archived = useArchivedNotes()
   const { roadmaps, ready: roadmapsReady } = useAllRoadmaps()
   const refresh = useRefreshNotes()
+  const health = useServiceHealth()
 
   const [leftOpen, setLeftOpen] = useState(true)
   const [rightOpen, setRightOpen] = useState(true)
@@ -127,7 +129,9 @@ export function AppShell() {
   return (
     <div className="app-frame">
       <TopBar theme={theme} onThemeChange={setTheme} />
-      <div className="app-shell" style={{ gridTemplateColumns: columns.join(' ') }}>
+      {health.state === 'down' && <ServiceUnavailable health={health} />}
+      {/* Hidden, not unmounted, during an outage: open drafts and the chat survive until it is back. */}
+      <div className="app-shell" style={{ gridTemplateColumns: columns.join(' ') }} hidden={health.state === 'down'}>
         <aside className="pane left" aria-label="Learned items" data-collapsed={!leftOpen}>
           <div className="pane-header">
             {leftOpen && <h2>Learned</h2>}
@@ -157,12 +161,12 @@ export function AppShell() {
           {leftOpen && !notes.isError && !(notes.data && roadmapsReady) && (
             <p className="list-loading muted">Loading your notes…</p>
           )}
-          {leftOpen && notes.isError && <p className="error">Could not load notes. Is the backend running?</p>}
+          {leftOpen && notes.isError && <p className="error">Could not load notes.</p>}
         </aside>
 
         <main className="pane center" aria-label="Content">
           {center}
-          {domains.isError && <p className="error">Could not load roadmaps. Is the backend running?</p>}
+          {domains.isError && <p className="error">Could not load roadmaps.</p>}
         </main>
 
         <AgentPanel open={rightOpen} onToggle={() => setRightOpen(!rightOpen)} page={page} request={agentRequest} />

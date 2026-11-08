@@ -108,11 +108,12 @@ def test_list_agents(client: TestClient) -> None:
     assert body["fallback"]["name"] == "Local qwen"
     assert (body["effective"]["id"], body["effective_reason"]) == (claude, "primary")
     assert client.get("/api/agents/assistant/provider").json() == body
+    # The writer has no assignment of its own, so it follows the assistant.
     writer = client.get("/api/agents/lesson-writer/provider").json()
     assert (writer["primary"], writer["effective"]["id"], writer["effective_reason"]) == (
         None,
         claude,
-        "default",
+        "assistant",
     )
     assert client.get("/api/agents/nobody/provider").status_code == 404
     assert assign(client, "nobody", claude).status_code == 404
@@ -207,6 +208,34 @@ def test_no_assignment_uses_the_only_active_provider(client: TestClient) -> None
     add(client, "Claude main")
     answer = chat(client, "lesson-writer").json()
     assert answer["provider"]["name"] == "Claude main"
+
+
+# Scenario: Unassigned agent follows the assistant
+def test_unassigned_agent_uses_the_assistants_primary_and_fallback(client: TestClient) -> None:
+    fake = factory(client)
+    main = add(client, "Claude main")  # created first: the old default
+    sub = add(client, "Claude sub")
+    assign(client, "assistant", sub, main)
+    fake.script("Claude sub", ProviderError("slow", "timeout"))
+    fake.script("Claude main", Turn("from the fallback"))
+    answer = chat(client, "lesson-writer").json()
+    assert answer["provider"]["name"] == "Claude main"
+    assert answer["fallback_used"] is True
+    agent = client.get("/api/agents/lesson-writer/provider").json()
+    assert (agent["effective"]["id"], agent["effective_reason"]) == (sub, "assistant")
+
+
+# Scenario: Own assignment wins
+def test_own_assignment_wins_over_the_assistants(client: TestClient) -> None:
+    factory(client)
+    sub = add(client, "Claude sub")
+    local = add_local(client)
+    assign(client, "assistant", sub)
+    assign(client, "lesson-writer", local)
+    answer = chat(client, "lesson-writer").json()
+    assert answer["provider"]["name"] == "Local qwen"
+    agent = client.get("/api/agents/lesson-writer/provider").json()
+    assert (agent["effective"]["id"], agent["effective_reason"]) == (local, "primary")
 
 
 # Scenario: Primary switched off

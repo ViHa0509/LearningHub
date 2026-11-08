@@ -32,7 +32,7 @@ class AgentOut(BaseModel):
     primary: ProviderRef | None
     fallback: ProviderRef | None
     effective: ProviderRef | None
-    effective_reason: Literal["override", "primary", "default", "none"]
+    effective_reason: Literal["override", "primary", "assistant", "default", "none"]
 
 
 class AssignmentIn(BaseModel):

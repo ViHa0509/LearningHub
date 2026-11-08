@@ -547,15 +547,6 @@ details.provider-section[open] > summary { margin-bottom: 10px; }
 .effort-bars span:nth-child(2) { height: 7px; }
 .effort-bars span:nth-child(3) { height: 10px; }
 .effort-bars[data-level='1'] span:nth-child(n + 2), .effort-bars[data-level='2'] span:nth-child(3) { opacity: 0.3; }
-.agent-pane .chip-select { margin-left: auto; position: relative; padding: 0; gap: 0; color: var(--muted); max-width: 100%; min-width: 0; }
-.agent-pane .chip-select select {
-  appearance: none; border: 0; background: transparent; color: inherit; font-size: 12px; height: 28px;
-  padding: 0 26px 0 10px; border-radius: 999px; max-width: 220px; min-width: 0; text-overflow: ellipsis; cursor: pointer;
-}
-.agent-pane .chip-select select option { color: var(--text); background: var(--surface); }
-.agent-pane .chip-select .icon { position: absolute; right: 8px; pointer-events: none; }
-.agent-pane .chip-select:has(select:disabled) { opacity: 0.4; }
-.agent-pane .chip-select:has(select:disabled) select:disabled { opacity: 1; }
 
 .composer-card {
   position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: 20px;
@@ -620,3 +611,23 @@ details.provider-section[open] > summary { margin-bottom: 10px; }
   background: var(--secondary-soft); color: var(--secondary-text); font: 600 13px ui-monospace, Consolas, monospace;
 }
 .skill-none { margin: 0; padding: 10px; font-size: 12.5px; color: var(--muted); }
+
+/* Service unavailable: replaces the panels while the health check fails; the top bar stays. */
+.app-shell[hidden] { display: none; }
+.outage { flex: 1; min-height: 0; overflow: auto; display: grid; place-items: center; padding: 48px 16px; }
+.outage-card {
+  width: 100%; max-width: 480px; display: flex; flex-direction: column; align-items: center; gap: 12px;
+  padding: 40px 32px 32px; text-align: center; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; box-shadow: var(--shadow-pop);
+}
+.outage-mark { width: 72px; height: 72px; margin-bottom: 8px; }
+.outage-mark.for-light { display: var(--brand-light); }
+.outage-mark.for-dark { display: var(--brand-dark); }
+.outage-card h1 { font-size: 24px; margin: 0; }
+.outage-card p { margin: 0; }
+.outage-reason { font-size: 16px; }
+.outage-card code { font: 13px ui-monospace, Consolas, monospace; background: var(--code-bg); border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; }
+.outage-card .outage-countdown { margin-top: 12px; font-variant-numeric: tabular-nums; color: var(--text); }
+.outage-card button.primary { min-width: 140px; padding: 8px 18px; }
+.outage-card button:disabled { opacity: 0.7; cursor: default; }
+.outage-checked { font-size: 12px; font-variant-numeric: tabular-nums; }

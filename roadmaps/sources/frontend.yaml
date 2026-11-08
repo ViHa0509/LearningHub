@@ -1,0 +1,118 @@
+# Which roadmap.sh nodes feed each app node's References (links only; see openspec spec node-resources).
+# Only our node ids and roadmap.sh slugs live here: synced titles and URLs stay in the local database.
+# "<roadmap>/<slug>" matches every file <slug>@*.md of that roadmap; "<roadmap>/*" takes the whole roadmap.
+domain: frontend
+source: roadmap.sh
+commit: d922417
+nodes:
+  web-basics:
+    - frontend/internet
+    - frontend/how-does-the-internet-work
+    - frontend/what-is-http
+    - frontend/browsers-and-how-they-work
+    - frontend/dns-and-how-it-works
+    - frontend/what-is-domain-name
+    - frontend/what-is-hosting
+  html:
+    - frontend/html
+    - html/*
+  accessibility:
+    - frontend/accessibility
+    - html/accessibility
+    - css/accessibility
+  css:
+    - frontend/css
+    - frontend/css-frameworks
+    - frontend/tailwind
+    - css/*
+  layout:
+    - css/box-model
+    - css/display
+    - css/flexbox
+    - css/grid
+    - css/position
+    - css/flow-layout
+    - css/floating-elements
+    - css/multicolumn-layout
+    - css/z-index--stacking-context
+  responsive:
+    - css/media-queries
+    - css/container-queries
+    - css/responsive-typography
+    - css/css-units
+  javascript:
+    - frontend/javascript
+    - javascript/*
+  dom:
+    - frontend/web-apis
+    - javascript/dom-apis
+    - javascript/working-with-apis
+  async-js:
+    - javascript/asynchronous-javascript
+    - javascript/callbacks
+    - javascript/callback-hell
+    - javascript/promises
+    - javascript/asyncawait
+    - javascript/event-loop
+    - javascript/fetch
+    - javascript/settimeout
+    - javascript/setinterval
+  typescript:
+    - frontend/type-checkers
+    - typescript/*
+  frameworks:
+    - frontend/learn-a-framework
+    - frontend/angular
+    - frontend/vuejs
+    - frontend/svelte
+    - frontend/solid-js
+  react:
+    - frontend/react
+    - frontend/react-router
+    - frontend/nextjs
+    - react/*
+  state-management:
+    - react/state-management
+    - react/context
+    - react/usereducer
+    - react/zustand
+    - react/jotai
+    - react/mobx
+    - react/tanstack-query
+    - react/rtk-query
+  tooling:
+    - frontend/package-managers
+    - frontend/npm
+    - frontend/pnpm
+    - frontend/yarn
+    - frontend/linters--formatters
+    - frontend/eslint
+    - frontend/prettier
+    - frontend/biome
+    - frontend/version-control
+    - frontend/git
+  bundlers:
+    - frontend/module-bundlers
+    - frontend/vite
+    - frontend/esbuild
+    - frontend/rollup
+    - frontend/parcel
+    - frontend/swc
+    - frontend/rolldown
+  fe-testing:
+    - frontend/testing
+    - react/testing
+  component-tests:
+    - frontend/vitest
+    - frontend/jest
+    - react/react-testing-library
+  e2e-tests:
+    - frontend/playwright
+    - frontend/cypress
+  performance:
+    - frontend/performance
+    - frontend/lighthouse
+    - frontend/devtools-usage
+    - frontend/pwas
+    - frontend/service-workers
+    - css/performance

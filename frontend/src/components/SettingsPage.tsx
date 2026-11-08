@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { api, type AgentOut, type ProviderOut } from '../api'
 import { useAgents, useProviders, useProviderTypes, useRefreshProviders } from '../hooks'
 import { providerLabel, typeLabel } from '../lib/providers'
+import { backFromSettings, routeHash } from '../lib/route'
 import { StatusBadge } from './StatusBadge'
 
 export function SettingsPage() {
@@ -9,6 +10,9 @@ export function SettingsPage() {
   const types = useProviderTypes()
   return (
     <section className="settings-page" aria-label="Settings">
+      <a className="back-link" href={routeHash(backFromSettings())}>
+        ← Back
+      </a>
       <div className="settings-header">
         <h1>AI providers</h1>
         <a className="button-link primary" href="#/settings/providers/new">
@@ -20,7 +24,7 @@ export function SettingsPage() {
         and never sent back to the browser. Usage is billed by the provider: set a spend limit in the
         provider's console.
       </p>
-      {providers.isError && <p className="error">Could not load the providers. Is the backend running?</p>}
+      {providers.isError && <p className="error">Could not load the providers.</p>}
       {providers.data && providers.data.length === 0 && (
         <p className="muted" role="status">
           No providers yet. Add one to use the agent.

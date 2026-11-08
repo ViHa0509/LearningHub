@@ -1,13 +1,7 @@
 import { useEffect, useEffectEvent, useRef, useState, type DragEvent } from 'react'
 import type { ChatPage, Effort } from '../api'
 import { useAgents, useProviders } from '../hooks'
-import {
-  DEFAULT_PROVIDER,
-  readEffort,
-  readProviderChoice,
-  saveEffort,
-  saveProviderChoice,
-} from '../lib/agentPrefs'
+import { readEffort, saveEffort } from '../lib/agentPrefs'
 import { readAttachments, type Attachment, type ReadyAttachment } from '../lib/attachments'
 import { expandSkill } from '../lib/skills'
 import { AgentHeader } from './agent/AgentHeader'
@@ -41,15 +35,9 @@ export function AgentPanel({ open, onToggle, page, request }: Props) {
   const agents = useAgents()
   const available = (providers.data ?? []).filter((p) => p.is_active)
   const ready = available.length > 0
-  // What "Agent default" means right now: the assistant's resolved provider.
-  const defaultProvider = agents.data?.find((a) => a.id === ASSISTANT)?.effective ?? available[0] ?? null
-
-  const [choice, setChoice] = useState(readProviderChoice)
-  // A saved choice that is no longer active falls back to the agent default.
-  const providerId = available.some((p) => p.id === choice) ? choice : DEFAULT_PROVIDER
   const [effort, setEffort] = useState<Effort>(readEffort)
   const [agentId, setAgentId] = useState(ASSISTANT)
-  const chat = useAgentChat({ providerId, effort, page })
+  const chat = useAgentChat({ effort, page })
 
   const [draft, setDraft] = useState('')
   const [attachments, setAttachments] = useState<Attachment[]>([])
@@ -61,17 +49,10 @@ export function AgentPanel({ open, onToggle, page, request }: Props) {
   const agentList = agents.data?.length ? agents.data : FALLBACK_AGENTS
   const files = attachments.filter((a): a is ReadyAttachment => a.kind === 'ok')
 
-  // The header names the provider that answers the chosen agent (the chat's choice applies to the assistant).
+  // The header names the provider assigned to the chosen agent (Settings -> Agents decides).
   const hintProvider =
-    agentId === ASSISTANT
-      ? (available.find((p) => p.id === providerId) ?? defaultProvider)
-      : agents.data?.find((a) => a.id === agentId)?.effective
+    agents.data?.find((a) => a.id === agentId)?.effective ?? (agentId === ASSISTANT ? available[0] : undefined)
   const hint = hintProvider ? `via ${hintProvider.name}` : 'No provider'
-
-  const chooseProvider = (next: string) => {
-    setChoice(next)
-    saveProviderChoice(next)
-  }
 
   const chooseEffort = (next: Effort) => {
     setEffort(next)
@@ -171,15 +152,6 @@ export function AgentPanel({ open, onToggle, page, request }: Props) {
             onRemoveAttachment={(id) => setAttachments((current) => current.filter((a) => a.id !== id))}
             effort={effort}
             onEffort={chooseEffort}
-            providers={available}
-            providerId={providerId}
-            onProvider={chooseProvider}
-            defaultProvider={defaultProvider}
-            providerLocked={
-              agentId === ASSISTANT
-                ? null
-                : 'This agent uses the provider assigned to it in Settings.'
-            }
             busy={chat.busy}
             canSend={draft.trim() !== '' || files.length > 0}
             dropping={dropping}

@@ -503,10 +503,15 @@ test.describe('Chat panel with provider configurations', () => {
     await assign(request, 'assistant', p.id, null)
     await page.goto('/')
     const agent = page.getByRole('complementary', { name: 'Agent' })
-    await expect(agent.getByRole('combobox', { name: 'Provider' })).toContainText(`Agent default (${p.name} · fake-ok)`)
     const box = agent.getByRole('textbox', { name: 'Message the agent' })
+    await expect(box).toBeVisible()
+    // The panel follows the assignment: no provider picker, and the request names no provider.
+    await expect(agent.getByRole('combobox', { name: 'Provider' })).toHaveCount(0)
     await box.fill('What is caching?')
+    const req = page.waitForRequest((r) => r.url().endsWith('/api/agent/chat') && r.method() === 'POST')
     await box.press('Enter')
+    const body = (await req).postDataJSON() as Record<string, unknown>
+    expect(body).not.toHaveProperty('provider_id')
     await expect(agent.getByRole('log', { name: 'Conversation' })).toContainText('What is caching?')
     await expect(agent.getByText('OK from fake')).toBeVisible({ timeout: 20_000 })
     await expect(agent.getByText(`${p.name} · fake-ok`, { exact: true })).toBeVisible()
@@ -528,18 +533,20 @@ test.describe('Chat panel with provider configurations', () => {
     await shot(page, 'chat-fallback')
   })
 
-  test('Override for one conversation leaves the assignment unchanged', async ({ page, request }) => {
+  test('Override for one conversation leaves the assignment unchanged', async ({ request }) => {
+    // The chat panel has no picker any more; a client can still name a provider for one request.
     const main = await makeProvider(request, 'Claude main', 'fake-401')
     const qwen = await makeProvider(request, 'Local qwen', 'fake-ok')
     await assign(request, 'assistant', main.id, null)
-    await page.goto('/')
-    const agent = page.getByRole('complementary', { name: 'Agent' })
-    await agent.getByRole('combobox', { name: 'Provider' }).selectOption({ label: qwen.name })
-    const box = agent.getByRole('textbox', { name: 'Message the agent' })
-    await box.fill('hello')
-    await box.press('Enter')
-    await expect(agent.getByText('OK from fake')).toBeVisible({ timeout: 20_000 })
-    await expect(agent.getByText(`${qwen.name} · fake-ok`, { exact: true })).toBeVisible()
+    const res = await request.post(`${API}/api/agent/chat`, {
+      headers: H,
+      data: { agent_id: 'assistant', provider_id: qwen.id, messages: [{ role: 'user', content: 'hello' }] },
+    })
+    expect(res.status(), await res.text()).toBe(200)
+    const answer = await res.json()
+    expect(answer.reply).toContain('OK from fake')
+    expect(answer.provider).toEqual({ id: qwen.id, name: qwen.name, model: 'fake-ok' })
+    expect(answer.fallback_used).toBe(false)
     const state = await (await request.get(`${API}/api/agents/assistant/provider`)).json()
     expect(state.primary.id).toBe(main.id)
   })

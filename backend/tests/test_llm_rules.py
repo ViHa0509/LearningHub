@@ -254,3 +254,35 @@ def test_catalog_has_presets_per_type() -> None:
     assert catalog.presets("nonsense") == ()
     sonnet = catalog.preset("anthropic", "claude-sonnet-5-5")
     assert sonnet is not None and sonnet.context_window == 200000
+
+
+# A failure names its cause: Gemini sends its error as a list, which the SDK leaves out.
+def test_gemini_list_body_message_is_shown() -> None:
+    import httpx2
+
+    from tests.agent_fakes import REQUEST
+
+    body = [{"error": {"code": 404, "message": "This model is no longer available to new users."}}]
+    response = httpx2.Response(404, request=REQUEST, json=body)
+    exc = openai.NotFoundError("Error code: 404", response=response, body=body)
+    error = classify_openai(exc)
+    assert error.category == "invalid_model"
+    assert str(error) == "Error code: 404: This model is no longer available to new users."
+
+
+def test_body_message_is_read_from_the_response_when_the_sdk_drops_it() -> None:
+    import httpx2
+
+    from tests.agent_fakes import REQUEST
+
+    body = [{"error": {"code": 400, "message": "API key not valid. Please pass a valid API key."}}]
+    response = httpx2.Response(400, request=REQUEST, json=body)
+    exc = openai.BadRequestError("Error code: 400", response=response, body=None)
+    assert str(classify_openai(exc)).endswith("API key not valid. Please pass a valid API key.")
+
+
+def test_message_already_holding_the_detail_is_not_repeated() -> None:
+    body = {"error": {"message": "Incorrect API key"}}
+    exc = status_error(openai, "AuthenticationError", 401, "Error code: 401 - Incorrect API key")
+    exc.body = body  # type: ignore[attr-defined]
+    assert str(classify_openai(exc)) == "Error code: 401 - Incorrect API key"

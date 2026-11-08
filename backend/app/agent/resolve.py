@@ -1,7 +1,8 @@
 """Which provider an agent uses, and the sticky fallback on recoverable errors.
 
 Order: the override given with the request, then the agent's primary when it is active,
-then the first active configuration by creation time. The agent's fallback is used only
+for an agent without any assignment of its own the assistant's primary (and fallback), then
+the first active configuration by creation time. The agent's fallback is used only
 after a recoverable error (timeout, rate limit, unavailable) and then for the rest of the
 request.
 """
@@ -27,7 +28,10 @@ from app.db import AgentProvider, AIProvider
 
 T = TypeVar("T")
 
-EffectiveReason = Literal["override", "primary", "default", "none"]
+EffectiveReason = Literal["override", "primary", "assistant", "default", "none"]
+
+# Agents without an assignment of their own follow this one (the chat panel's agent).
+DEFAULT_AGENT = "assistant"
 
 NO_PROVIDER = "No active AI provider: add one or switch one on in Settings."
 
@@ -76,11 +80,20 @@ def first_active(session: Session) -> AIProvider | None:
     ).first()
 
 
+def own_or_inherited(session: Session, agent_id: str) -> tuple[dict[str, AIProvider], bool]:
+    """The agent's assignments, or the assistant's when the agent has none (True)."""
+    own = assignments(session, agent_id)
+    if own or agent_id == DEFAULT_AGENT:
+        return own, False
+    return assignments(session, DEFAULT_AGENT), True
+
+
 def effective(session: Session, agent_id: str) -> tuple[AIProvider | None, EffectiveReason]:
     """The provider an agent uses when the request names none."""
-    primary = assignments(session, agent_id).get("primary")
+    assigned, inherited = own_or_inherited(session, agent_id)
+    primary = assigned.get("primary")
     if primary is not None and primary.is_active:
-        return primary, "primary"
+        return primary, "assistant" if inherited else "primary"
     default = first_active(session)
     return (default, "default") if default is not None else (None, "none")
 
@@ -271,7 +284,7 @@ def resolve_chain(
     chosen, _reason = effective(session, agent_id)
     if chosen is None:
         raise ResolveError(409, NO_PROVIDER)
-    fallback = assignments(session, agent_id).get("fallback")
+    fallback = own_or_inherited(session, agent_id)[0].get("fallback")
     if fallback is not None and (not fallback.is_active or fallback.id == chosen.id):
         fallback = None
     return AgentModel(agent_id, chosen, fallback, box, factory)

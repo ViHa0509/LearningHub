@@ -41,6 +41,26 @@ export function routeHash(route: Route): string {
   }
 }
 
+// The last page opened outside Settings and its provider pages: where Settings' Back goes.
+let outsideSettings: Route | null = null
+
+const isSettings = (route: Route) => route.page === 'settings' || route.page === 'provider'
+
+function remember(route: Route): Route {
+  if (!isSettings(route)) outsideSettings = route
+  return route
+}
+
+/** Tests start each app without a remembered page. */
+export function forgetPages() {
+  outsideSettings = null
+}
+
+/** Where Back on the Settings page leads: the last page outside Settings, else home. */
+export function backFromSettings(): Route {
+  return outsideSettings ?? { page: 'home' }
+}
+
 /** Asked before the page changes; returns false to stay (for example, unsaved edits). */
 let leaveGuard: (() => boolean) | null = null
 
@@ -57,7 +77,7 @@ export function navigate(route: Route) {
 
 /** The current page, from the URL hash; follows back/forward and links. */
 export function useRoute(): Route {
-  const [route, setRoute] = useState(() => parseRoute(window.location.hash))
+  const [route, setRoute] = useState(() => remember(parseRoute(window.location.hash)))
   useEffect(() => {
     let current = window.location.hash
     const update = () => {
@@ -70,7 +90,7 @@ export function useRoute(): Route {
         leaveGuard = null
       }
       current = window.location.hash
-      setRoute(parseRoute(current))
+      setRoute(remember(parseRoute(current)))
     }
     window.addEventListener('hashchange', update)
     return () => window.removeEventListener('hashchange', update)

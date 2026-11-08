@@ -39,9 +39,34 @@ class ProviderError(Exception):
         return self.category in RECOVERABLE
 
 
+DETAIL_LIMIT = 300
+
+
+def _body_detail(body: object) -> str | None:
+    """The provider's own error text: OpenAI-style {"error": {"message"}} or, as Gemini sends
+    it, a list holding that object (the SDK then reports only "Error code: N")."""
+    if isinstance(body, list) and body:
+        body = body[0]
+    if isinstance(body, dict):
+        error = body.get("error", body)
+        if isinstance(error, dict) and isinstance(error.get("message"), str):
+            return error["message"].strip() or None
+    return None
+
+
 def _message(exc: Exception) -> str:
-    text = getattr(exc, "message", None) or str(exc)
-    return str(text).strip() or exc.__class__.__name__
+    text = str(getattr(exc, "message", None) or str(exc)).strip()
+    body = getattr(exc, "body", None)
+    if body is None:
+        response = getattr(exc, "response", None)
+        try:
+            body = response.json() if response is not None else None
+        except Exception:  # not JSON: keep the SDK's text
+            body = None
+    detail = _body_detail(body)
+    if detail and detail not in text:
+        text = f"{text}: {detail[:DETAIL_LIMIT]}" if text else detail[:DETAIL_LIMIT]
+    return text or exc.__class__.__name__
 
 
 def _classify(exc: Exception, sdk: ModuleType) -> ProviderError:

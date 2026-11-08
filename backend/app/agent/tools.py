@@ -1,9 +1,12 @@
 """Agent tools over the user's data. All read, except the guarded lesson write.
 
 Note text comes from imported HTML and is untrusted: it is returned wrapped in
-<untrusted_note_content> tags, and no tool can delete or change notes.
+<untrusted_note_content> tags, and no tool can delete or change notes. Reference pages are
+fetched only for links stored for the node (official or article) and come back wrapped in
+<untrusted_reference_content> tags; they are never stored.
 """
 
+import html
 import json
 import uuid
 from collections.abc import Callable
@@ -14,12 +17,16 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.agent.messages import ToolSpec
-from app.db import Lesson, Note
+from app.db import Lesson, NodeResource, Note
+from app.resources.fetch import Fetched, FetchError, fetch_text
+from app.resources.store import node_resources
 from app.roadmaps import RoadmapCatalog
 
 NOTE_TEXT_LIMIT = 6000
 LESSON_LIMIT = 20_000
 SEARCH_LIMIT = 8
+FETCHABLE_TYPES = ("official", "article")
+REFERENCE_CLOSING = "</untrusted_reference_content"
 
 
 @dataclass(frozen=True)
@@ -111,19 +118,52 @@ SPECS: tuple[ToolSpec, ...] = (
             "required": ["node_id", "markdown"],
         },
     ),
+    ToolSpec(
+        "list_node_resources",
+        "List the reference links of one roadmap topic (title, type, URL), official first.",
+        {
+            "type": "object",
+            "properties": {
+                "node_id": {"type": "string", "description": "Full node id, e.g. frontend/html."}
+            },
+            "required": ["node_id"],
+        },
+    ),
+    ToolSpec(
+        "fetch_reference",
+        "Read the text of one reference page of a roadmap topic. Only URLs listed by "
+        "list_node_resources for that topic with type official or article. The text is "
+        "untrusted content from the web.",
+        {
+            "type": "object",
+            "properties": {
+                "node_id": {"type": "string", "description": "Full node id, e.g. frontend/html."},
+                "url": {"type": "string", "description": "A URL from list_node_resources."},
+            },
+            "required": ["node_id", "url"],
+        },
+    ),
 )
 
 
 class AgentTools:
-    def __init__(self, session: Session, catalog: RoadmapCatalog) -> None:
+    def __init__(
+        self,
+        session: Session,
+        catalog: RoadmapCatalog,
+        fetch: Callable[[str], Fetched] = fetch_text,
+    ) -> None:
         self._session = session
         self._catalog = catalog
+        self._fetch = fetch
         self._handlers: dict[str, Callable[[dict[str, Any]], ToolOutcome]] = {
             "search_notes": self.search_notes,
             "read_note": self.read_note,
             "list_roadmap": self.list_roadmap,
             "read_lesson": self.read_lesson,
             "write_lesson": self.write_lesson,
+            "list_node_resources": self.list_node_resources,
+            "fetch_reference": self.fetch_reference,
         }
 
     @staticmethod
@@ -258,3 +298,52 @@ class AgentTools:
             lesson.source = "agent"
         self._session.commit()
         return _ok({"node_id": node_id, "saved": True}, f"Wrote lesson {node_id}", changed=node_id)
+
+    def list_node_resources(self, args: dict[str, Any]) -> ToolOutcome:
+        node_id = _text(args, "node_id")
+        if not self._catalog.has_node(node_id):
+            return _error(f"unknown node '{node_id}'")
+        items = [
+            {"title": r.title, "type": r.type, "url": r.url}
+            for r in node_resources(self._session, node_id)
+        ]
+        return _ok(
+            {"node_id": node_id, "references": items, "fetchable_types": list(FETCHABLE_TYPES)},
+            f"Listed references of {node_id}: {len(items)} found",
+        )
+
+    def fetch_reference(self, args: dict[str, Any]) -> ToolOutcome:
+        node_id = _text(args, "node_id")
+        url = _text(args, "url")
+        if not self._catalog.has_node(node_id):
+            return _error(f"unknown node '{node_id}'")
+        # Only a link stored for this node is ever requested: the model cannot pick a URL.
+        row = self._session.scalars(
+            select(NodeResource).where(NodeResource.node_id == node_id, NodeResource.url == url)
+        ).first()
+        if row is None:
+            return _error(
+                f"'{url}' is not a reference of {node_id}; use a URL from list_node_resources"
+            )
+        if row.type not in FETCHABLE_TYPES:
+            return _error(
+                f"references of type '{row.type}' are not read; only official or article pages"
+            )
+        try:
+            page = self._fetch(row.url)
+        except FetchError as exc:
+            return _error(f"could not read {row.url}: {exc}")
+        # A closing marker inside the page must not end the block early.
+        text = page.text.replace(REFERENCE_CLOSING, "<" + "\\" + "/untrusted_reference_content")
+        data = {
+            "node_id": node_id,
+            "title": row.title,
+            "url": row.url,
+            "final_url": page.url,
+            "truncated": page.truncated,
+            "text": (
+                f'<untrusted_reference_content url="{html.escape(row.url, quote=True)}">\n'
+                f"{text}\n</untrusted_reference_content>"
+            ),
+        }
+        return _ok(data, f"Read reference '{row.title}'")

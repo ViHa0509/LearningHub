@@ -38,7 +38,7 @@ export function ProviderPage({ id }: { id: string }) {
           {missing ? "Provider not found" : "Could not load the provider"}
         </h1>
         <p className="muted">
-          {missing ? "It may have been deleted." : "Is the backend running?"}
+          {missing ? "It may have been deleted." : "The request failed."}
         </p>
         <a href="#/settings">Back to providers</a>
       </section>

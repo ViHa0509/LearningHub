@@ -145,14 +145,16 @@ test.describe('Chat panel', () => {
     await expect(box).toBeEnabled()
     await shot(page, 'agent-chat-error')
 
-    // Switch to a working provider and retry the failed question.
-    await agent.getByRole('combobox', { name: 'Provider' }).selectOption({ label: good.name })
+    // Assign a working provider to the assistant (as in Settings → Agents) and retry the failed question.
+    await expect(agent.getByRole('combobox', { name: 'Provider' })).toHaveCount(0)
+    await assign(request, 'assistant', good.id)
     const req = page.waitForRequest(isChat)
     await errorRow.getByRole('button', { name: 'Retry' }).click()
     const body = (await req).postDataJSON() as ChatBody
-    expect(body.provider_id).toBe(good.id)
+    expect(body).not.toHaveProperty('provider_id')
     expect(body.messages).toEqual([{ role: 'user', content: 'first try' }])
     await expect(log.getByText('OK from fake')).toBeVisible({ timeout: ANSWER_TIMEOUT })
+    await expect(log.locator('.agent-caption')).toContainText(`${good.name} · fake-ok`)
     await expect(log.getByRole('alert')).toHaveCount(0)
     await expect(log.getByText('first try')).toHaveCount(1)
   })
@@ -165,13 +167,13 @@ test.describe('Chat panel', () => {
     await menu.getByRole('option', { name: /Lesson writer/ }).click()
     await expect(menu).toHaveCount(0)
     await expect(agent.getByRole('button', { name: 'Agent: Lesson writer' })).toBeVisible()
-    // The lesson writer uses its own assignment, so the per-chat provider picker is locked.
-    await expect(agent.getByRole('combobox', { name: 'Provider' })).toBeDisabled()
+    // The lesson writer uses its own assignment; the panel has no provider picker.
+    await expect(agent.getByRole('combobox', { name: 'Provider' })).toHaveCount(0)
 
     await box.fill('Draft something short')
     const body = await sendAndCapture(page, box)
     expect(body.agent_id).toBe('lesson-writer')
-    expect(body.provider_id).toBeUndefined()
+    expect(body).not.toHaveProperty('provider_id')
     await expect(agent.getByText('OK from fake')).toBeVisible({ timeout: ANSWER_TIMEOUT })
 
     // Escape closes the menu without changing the agent.
@@ -262,6 +264,8 @@ test.describe('Skills in the composer', () => {
 })
 
 test.describe('Effort per message', () => {
+  // Low and High run full agent loops against the fake model.
+  test.slow()
   test('Low effort is sent, shown in the caption, reaches the model and is remembered', async ({
     page,
     request,

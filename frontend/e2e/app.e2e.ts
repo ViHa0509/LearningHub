@@ -170,6 +170,7 @@ test('agent panel explains how to configure a provider', async ({ page }) => {
 })
 
 test('a provider added in Settings enables the chat without a restart', async ({ page, request }) => {
+  test.slow() // sends one chat to the fake LLM
   const errors = watchErrors(page)
   // With no provider configured the chat is refused with a conflict that points to Settings.
   const refused = await request.post('http://127.0.0.1:8001/api/agent/chat', {
@@ -196,9 +197,14 @@ test('a provider added in Settings enables the chat without a restart', async ({
   await shot(page, 'settings-saved')
 
   await page.reload()
-  await expect(page.getByRole('complementary', { name: 'Agent' }).getByRole('combobox', { name: 'Provider' })).toContainText(
-    'Agent default (E2E first provider',
-  )
+  // After a reload the chat answers with the new provider (no restart, no picker in the panel).
+  const panel = page.getByRole('complementary', { name: 'Agent' })
+  await expect(panel.getByRole('combobox', { name: 'Provider' })).toHaveCount(0)
+  const box = panel.getByRole('textbox', { name: 'Message the agent' })
+  await box.fill('hello')
+  await box.press('Enter')
+  await expect(panel.getByText('OK from fake')).toBeVisible({ timeout: 60_000 })
+  await expect(panel.getByText('E2E first provider · fake-ok', { exact: false })).toBeVisible()
   // Remove it again (through the API) so the later files start without a provider.
   await page.goto('/#/settings')
   const list = await (await request.get('http://127.0.0.1:8001/api/ai-providers')).json()

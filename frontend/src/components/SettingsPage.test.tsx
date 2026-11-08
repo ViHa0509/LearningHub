@@ -7,6 +7,37 @@ import { renderApp } from '../test/render'
 const panel = () => screen.getByRole('complementary', { name: 'Agent' })
 const card = (name: string) => screen.findByRole('article', { name })
 
+describe('back from settings', () => {
+  // Scenario: Back to the lesson
+  it('returns to the last page outside Settings, also after a provider page', async () => {
+    const state = installFakeApi()
+    state.providers = twoProviders()
+    const { user } = renderApp('#/lesson/devops/docker')
+    await screen.findByRole('article', { name: 'Lesson: Docker' })
+
+    await user.click(screen.getByRole('link', { name: 'Settings' }))
+    const settings = await screen.findByRole('region', { name: 'Settings' })
+    await user.click(await within(settings).findByRole('link', { name: 'Claude main' }))
+    await waitFor(() => expect(window.location.hash).toMatch(/^#\/settings\/providers\//))
+    window.location.hash = '#/settings'
+
+    const back = await within(await screen.findByRole('region', { name: 'Settings' })).findByRole('link', {
+      name: '← Back',
+    })
+    expect(back).toHaveAttribute('href', '#/lesson/devops/docker')
+    await user.click(back)
+    expect(await screen.findByRole('article', { name: 'Lesson: Docker' })).toBeInTheDocument()
+  })
+
+  // Scenario: Settings opened directly
+  it('goes home when Settings was opened directly', async () => {
+    installFakeApi()
+    renderApp('#/settings')
+    const settings = await screen.findByRole('region', { name: 'Settings' })
+    expect(within(settings).getByRole('link', { name: '← Back' })).toHaveAttribute('href', '#/')
+  })
+})
+
 describe('providers list', () => {
   it('is reachable from the top bar and from the agent panel', async () => {
     installFakeApi()
