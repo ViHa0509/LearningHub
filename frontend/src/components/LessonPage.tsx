@@ -3,6 +3,7 @@ import { useState } from 'react'
 import Markdown from 'react-markdown'
 import { api, queryKeys, type Note, type RoadmapNode } from '../api'
 import { routeHash } from '../lib/route'
+import { LessonReferences } from './LessonReferences'
 
 interface Props {
   domain: string
@@ -10,9 +11,11 @@ interface Props {
   notes: Note[]
   /** Asks the agent to draft this lesson; absent when no provider is configured. */
   onDraft?: () => void
+  /** Asks the agent to draft this lesson from its references; absent when no provider is configured. */
+  onDraftFromReferences?: () => void
 }
 
-export function LessonPage({ domain, node, notes, onDraft }: Props) {
+export function LessonPage({ domain, node, notes, onDraft, onDraftFromReferences }: Props) {
   const roadmap = useQuery({ queryKey: queryKeys.roadmap(domain), queryFn: () => api.roadmap(domain) })
   const mapLink = routeHash({ page: 'roadmap', domain })
 
@@ -90,6 +93,13 @@ export function LessonPage({ domain, node, notes, onDraft }: Props) {
       </section>
 
       <LessonContent key={current.full_id} domain={domain} node={node} onDraft={onDraft} />
+
+      <LessonReferences
+        key={`refs-${current.full_id}`}
+        domain={domain}
+        node={node}
+        onDraftFromReferences={onDraftFromReferences}
+      />
 
       <p className="further-reading">
         Further reading:{' '}

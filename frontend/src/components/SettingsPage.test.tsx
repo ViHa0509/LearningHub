@@ -1,4 +1,4 @@
-/** Spec: ai-providers (list); agent-providers (assign providers, fallback). */
+/** Spec: ai-providers (list); agent-providers (assign providers, fallback, provider resolution). */
 import { screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { installFakeApi, makeProvider, twoProviders } from '../test/fakeApi'
@@ -142,5 +142,33 @@ describe('agents section', () => {
       'Claude main',
     ])
     expect(within(assistant).getByText('Rate limited')).toBeInTheDocument()
+  })
+
+  // Scenario: Unassigned agent follows the assistant
+  it("shows that an agent without an assignment uses the assistant's provider", async () => {
+    const state = installFakeApi()
+    state.providers = [
+      makeProvider('Claude main', 'anthropic', 'claude-sonnet-5-5'),
+      makeProvider('Claude sub', 'claude-code', 'sonnet'),
+    ]
+    state.assignments.assistant = { primary: 'p2', fallback: 'p1' }
+    renderApp('#/settings')
+    const writer = await card('Lesson writer')
+    await waitFor(() => expect(writer).toHaveTextContent('Uses Claude sub · sonnet (same as the Learning assistant)'))
+    const assistant = await card('Learning assistant')
+    expect(assistant).toHaveTextContent('Uses Claude sub · sonnet')
+    expect(assistant).not.toHaveTextContent('same as the Learning assistant')
+  })
+
+  // Scenario: Own assignment wins
+  it('does not say "same as the Learning assistant" for an agent with its own provider', async () => {
+    const state = installFakeApi()
+    state.providers = [makeProvider('Claude sub', 'claude-code', 'sonnet'), makeProvider('Local qwen', 'local', 'qwen3')]
+    state.assignments.assistant = { primary: 'p1', fallback: null }
+    state.assignments['lesson-writer'] = { primary: 'p2', fallback: null }
+    renderApp('#/settings')
+    const writer = await card('Lesson writer')
+    await waitFor(() => expect(writer).toHaveTextContent('Uses Local qwen · qwen3'))
+    expect(writer).not.toHaveTextContent('same as the Learning assistant')
   })
 })

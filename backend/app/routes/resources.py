@@ -11,6 +11,7 @@ from app.db import get_session
 from app.resources.mapping import ResourceMapping
 from app.resources.store import node_resources
 from app.resources.sync import SOURCE, SyncJob, SyncJobs
+from app.roadmaps import RoadmapCatalog
 from app.routes.guard import require_app_header
 from app.routes.lessons import require_node
 from app.schemas import NodeResourcesOut, ResourceItem, ResourceSyncRequest, ResourceSyncStatus
@@ -65,7 +66,22 @@ def start_sync(payload: ResourceSyncRequest, request: Request) -> ResourceSyncSt
 
 @router.get("/sync/{domain}", response_model=ResourceSyncStatus)
 def sync_status(domain: str, request: Request) -> ResourceSyncStatus:
-    _mapping_of(request, domain)
+    """A roadmap without a mapping is "unavailable" (200, so lesson pages log no error);
+    a domain that is not in the catalog is 404."""
+    if domain not in _mappings(request):
+        catalog: RoadmapCatalog = request.app.state.catalog
+        if not any(d.id == domain for d in catalog.domains()):
+            raise HTTPException(status_code=404, detail=f"unknown domain '{domain}'")
+        return ResourceSyncStatus(
+            domain=domain,
+            state="unavailable",
+            commit=None,
+            nodes=None,
+            links=None,
+            error=None,
+            started_at=None,
+            finished_at=None,
+        )
     return _status(_jobs(request).status(domain))
 
 

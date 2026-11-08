@@ -103,6 +103,11 @@ export function AppShell() {
         node={route.node}
         notes={notes.data ?? []}
         onDraft={agentAvailable ? () => askAgent(`Draft this lesson (${fullId}).`, 'lesson-writer') : undefined}
+        onDraftFromReferences={
+          agentAvailable
+            ? () => askAgent(`Draft this lesson from its references (${fullId}).`, 'lesson-writer')
+            : undefined
+        }
       />
     )
   } else if (openNote) {

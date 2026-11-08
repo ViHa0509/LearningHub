@@ -16,6 +16,9 @@ export const E2E_ENV = {
   LH_OLLAMA_URL: '',
   // The Claude Code provider runs this fake `claude` (a .py path runs with the backend's Python).
   LH_CLAUDE_BIN: join(import.meta.dirname, 'e2e', 'fake_claude.py'),
+  // The reference sync reads a synthetic source on the fake server, never GitHub or roadmap.sh.
+  LH_ROADMAP_API_BASE: 'http://127.0.0.1:8002/roadmap-api',
+  LH_ROADMAP_RAW_BASE: 'http://127.0.0.1:8002/roadmap-raw',
 }
 
 export default defineConfig({

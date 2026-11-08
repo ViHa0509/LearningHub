@@ -125,7 +125,9 @@ function AgentCard({ agent, providers }: { agent: AgentOut; providers: ProviderO
         Primary provider
       </label>
       <select id={`${id}-primary`} value={primary} onChange={(e) => setPrimary(e.target.value)}>
-        <option value="">Default: first active provider</option>
+        <option value="">
+          {agent.id === 'assistant' ? 'Default: first active provider' : 'Same as the Learning assistant'}
+        </option>
         {primaryChoices.map((p) => (
           <option key={p.id} value={p.id}>
             {p.name}
@@ -151,7 +153,11 @@ function AgentCard({ agent, providers }: { agent: AgentOut; providers: ProviderO
         {agent.effective ? (
           <>
             <span className="muted">Uses </span>
-            <strong>{providerLabel(agent.effective)}</strong> <StatusBadge status={agent.effective.last_test_status} />
+            <strong>{providerLabel(agent.effective)}</strong>
+            {agent.effective_reason === 'assistant' && (
+              <span className="muted"> (same as the Learning assistant)</span>
+            )}{' '}
+            <StatusBadge status={agent.effective.last_test_status} />
           </>
         ) : (
           <span className="muted">No active provider, so this agent cannot answer.</span>

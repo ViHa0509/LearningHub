@@ -417,6 +417,52 @@ test.describe('Agents are defined in code and assigned providers', () => {
     await expect(page.getByRole('article', { name: claude.name })).toContainText('Learning assistant (primary)')
   })
 
+  test('Unassigned lesson writer follows the assistant; its own assignment wins', async ({ page, request }) => {
+    // "Claude main" is created first, so the old rule (first active configuration) would pick it.
+    const main = await makeProvider(request, 'Claude main', 'fake-ok')
+    const sub = await makeProvider(request, 'Claude sub', 'fake-ok')
+    await assign(request, 'assistant', sub.id, main.id)
+
+    const agents = await (await request.get(`${API}/api/agents`)).json()
+    const writerApi = agents.find((a: { id: string }) => a.id === 'lesson-writer')
+    expect(writerApi.primary).toBeNull()
+    expect(writerApi.effective.id).toBe(sub.id)
+    expect(writerApi.effective_reason).toBe('assistant')
+
+    await page.goto('/#/settings')
+    const writer = page.getByRole('article', { name: 'Lesson writer' })
+    await expect(writer.getByLabel('Primary provider')).toHaveValue('')
+    const effective = writer.locator('.agent-effective')
+    await expect(effective).toContainText(`Uses ${sub.name}`)
+    await expect(effective).toContainText('(same as the Learning assistant)')
+    const assistantEffective = page.getByRole('article', { name: 'Learning assistant' }).locator('.agent-effective')
+    await expect(assistantEffective).toContainText(`Uses ${sub.name}`)
+    await expect(assistantEffective).not.toContainText('same as the Learning assistant')
+    await writer.scrollIntoViewIfNeeded()
+    await shot(page, 'settings-agents-inherit')
+
+    // Draft with agent on a lesson page is answered by the assistant's primary.
+    await page.goto('/#/lesson/qa/boundary-values')
+    const req = page.waitForRequest((r) => r.url().endsWith('/api/agent/chat') && r.method() === 'POST')
+    await page.getByRole('button', { name: 'Draft with agent' }).click()
+    const body = (await req).postDataJSON() as Record<string, unknown>
+    expect(body.agent_id).toBe('lesson-writer')
+    expect(body).not.toHaveProperty('provider_id')
+    const log = page.getByRole('complementary', { name: 'Agent' }).getByRole('log', { name: 'Conversation' })
+    await expect(log.getByText('OK from fake')).toBeVisible({ timeout: 20_000 })
+    await expect(log.locator('.agent-caption')).toContainText(`${sub.name} · fake-ok`)
+    await expect(log.locator('.agent-caption')).not.toContainText('(fallback)')
+
+    // The lesson writer's own primary wins over the assistant's.
+    // Assigned through the API, so the page is reloaded to read it again.
+    await assign(request, 'lesson-writer', main.id, null)
+    await page.goto('/#/settings')
+    await page.reload()
+    const own = page.getByRole('article', { name: 'Lesson writer' }).locator('.agent-effective')
+    await expect(own).toContainText(`Uses ${main.name}`)
+    await expect(own).not.toContainText('same as the Learning assistant')
+  })
+
   test('Same provider twice and unknown provider are refused, nothing changes', async ({ request }) => {
     const a = await makeProvider(request, 'Same', 'fake-ok')
     const same = await request.put(`${API}/api/agents/assistant/provider`, {

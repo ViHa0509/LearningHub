@@ -10,11 +10,11 @@
 
 ## 2. Frontend
 
-- [ ] 2.1 `api.ts` and fake API for resources and sync
-- [ ] 2.2 References section on the lesson page (groups, links with `noopener noreferrer`, source line, empty state with Sync and progress, Draft lesson from references); CSS on tokens
-- [ ] 2.3 Vitest for the lesson page scenarios
+- [x] 2.1 `api.ts` and fake API for resources and sync
+- [x] 2.2 References section on the lesson page (groups, links with `noopener noreferrer`, source line, empty state with Sync and progress, Draft lesson from references); CSS on tokens
+- [x] 2.3 Vitest for the lesson page scenarios
 
 ## 3. Checks
 
-- [ ] 3.1 License check: no roadmap.sh text or links in the repo (`git grep` over code, tests and fixtures)
-- [ ] 3.2 qc-e2e: References from a seeded database (synthetic links), empty state and Sync against a fake source; loop until the suite passes
+- [x] 3.1 License check: no roadmap.sh text or links in the repo (`git grep` over code, tests and fixtures)
+- [x] 3.2 qc-e2e: References from a seeded database (synthetic links), empty state and Sync against a fake source; loop until the suite passes

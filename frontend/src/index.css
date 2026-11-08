@@ -293,6 +293,14 @@ a { color: var(--accent); }
 .markdown ol { padding-left: 22px; }
 .empty-lesson { margin: 4px 0; }
 .further-reading { margin-top: 24px; font-size: 13px; color: var(--muted); }
+.lesson-references .section-header button, .references-empty button { display: inline-flex; align-items: center; gap: 6px; }
+.reference-group { margin-top: 12px; }
+.reference-group h3 { font-size: 14px; margin: 0 0 4px; color: var(--text); }
+.reference-list li { padding: 3px 0; }
+.reference-host { font-size: 12px; }
+.reference-source { margin-top: 12px; font-size: 13px; }
+.references-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.references-empty p { margin: 0; }
 .markdown h1, .markdown h2, .markdown h3 { text-transform: none; letter-spacing: normal; color: var(--text); margin: 16px 0 6px; }
 .markdown h1 { font-size: 20px; }
 .markdown h2 { font-size: 17px; }

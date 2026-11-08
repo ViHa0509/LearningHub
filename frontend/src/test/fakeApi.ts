@@ -11,6 +11,8 @@ import type {
   ProviderRef,
   ProviderType,
   ProviderTypeInfo,
+  ResourceItem,
+  ResourceSyncStatus,
   Roadmap,
   TestResult,
 } from '../api'
@@ -214,7 +216,44 @@ export interface FakeState {
    * check answer 503 (reason database) and every other request 500. null (the default) is healthy.
    */
   down: null | 'server' | 'proxy' | 'database'
+  /** Node id -> its references (synthetic test links), in API order; a node without an entry has none. */
+  resources: Record<string, ResourceItem[]>
+  /** The sync time of every node with references. */
+  resourcesSyncedAt: string
+  /** Domains with a resource mapping; the sync routes answer 404 for the others. Default: frontend. */
+  resourceMappings: string[]
+  /** Domain -> its sync job; a domain without an entry is idle. */
+  syncJobs: Record<string, ResourceSyncStatus>
+  /**
+   * How a started sync ends, once its status has been read `syncPolls` times while running: it stores
+   * these links (replacing the domain's) and is done, or it fails with this error and keeps the old links.
+   */
+  syncOutcome: { links: Record<string, ResourceItem[]> } | { error: string }
+  syncPolls: number
 }
+
+let resourceSeq = 0
+/** A synthetic reference link (never real roadmap.sh data). */
+export function makeResource(title: string, type: string, url?: string): ResourceItem {
+  resourceSeq += 1
+  return {
+    url: url ?? `https://example.test/${type}/${resourceSeq}`,
+    title,
+    type,
+    source_ref: `frontend/synthetic-${resourceSeq}`,
+  }
+}
+
+const idleJob = (domain: string): ResourceSyncStatus => ({
+  domain,
+  state: 'idle',
+  commit: null,
+  nodes: null,
+  links: null,
+  error: null,
+  started_at: null,
+  finished_at: null,
+})
 
 const respond = (body: unknown, status = 200) =>
   Promise.resolve(
@@ -255,6 +294,32 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
     calls: [],
     headers: [],
     down: null,
+    resources: {},
+    resourcesSyncedAt: '2026-11-08T09:30:00Z',
+    resourceMappings: ['frontend'],
+    syncJobs: {},
+    syncOutcome: { links: {} },
+    syncPolls: 1,
+  }
+  /** Domain -> status reads left before a running sync ends. */
+  const pollsLeft: Record<string, number> = {}
+  const finishSync = (domain: string) => {
+    const job = state.syncJobs[domain]
+    const outcome = state.syncOutcome
+    if ('error' in outcome) {
+      state.syncJobs[domain] = { ...job, state: 'failed', error: outcome.error, finished_at: '2026-11-08T09:31:00Z' }
+      return
+    }
+    for (const id of Object.keys(state.resources)) if (id.startsWith(`${domain}/`)) delete state.resources[id]
+    Object.assign(state.resources, outcome.links)
+    const links = Object.values(outcome.links).reduce((n, items) => n + items.length, 0)
+    state.syncJobs[domain] = {
+      ...job,
+      state: 'done',
+      nodes: Object.keys(outcome.links).length,
+      links,
+      finished_at: '2026-11-08T09:31:00Z',
+    }
   }
   // Catalog order: Frontend, Backend, DevOps, QA, Data Engineer, AI Engineer.
   const roadmaps: Record<string, Roadmap> = {
@@ -276,8 +341,12 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
 
   const find = (id: string | null | undefined) => state.providers.find((p) => p.id === id)
   const effective = (agentId: string): { provider?: ProviderOut; reason: AgentOut['effective_reason'] } => {
-    const primary = find(state.assignments[agentId]?.primary)
-    if (primary?.is_active) return { provider: primary, reason: 'primary' }
+    // Like the backend: an agent without any assignment of its own uses the assistant's.
+    const own = state.assignments[agentId]
+    const hasOwn = !!(own?.primary || own?.fallback)
+    const inherited = !hasOwn && agentId !== 'assistant'
+    const primary = find((inherited ? state.assignments.assistant : own)?.primary)
+    if (primary?.is_active) return { provider: primary, reason: inherited ? 'assistant' : 'primary' }
     const first = state.providers.find((p) => p.is_active)
     return first ? { provider: first, reason: 'default' } : { reason: 'none' }
   }
@@ -380,6 +449,49 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
           } else delete state.lessons[fullId]
         }
         return respond(state.lessons[fullId] ?? { node_id: fullId, body: '', source: null, updated_at: null })
+      }
+      if (url === '/api/resources/sync' && method === 'POST') {
+        const domain = String(body?.domain)
+        if (!state.resourceMappings.includes(domain)) {
+          return respond({ detail: `no resource mapping for domain '${domain}'` }, 404)
+        }
+        if (state.syncJobs[domain]?.state !== 'running') {
+          state.syncJobs[domain] = {
+            ...idleJob(domain),
+            state: 'running',
+            commit: 'abc1234',
+            started_at: '2026-11-08T09:30:00Z',
+          }
+          pollsLeft[domain] = state.syncPolls
+        }
+        return respond(state.syncJobs[domain], 202)
+      }
+      const syncStatus = url.match(/^\/api\/resources\/sync\/([^/]+)$/)
+      if (syncStatus) {
+        const domain = syncStatus[1]
+        // Like the backend: a roadmap without a mapping is 'unavailable' (200, no console error).
+        if (!state.resourceMappings.includes(domain)) return respond({ ...idleJob(domain), state: 'unavailable' })
+        if (state.syncJobs[domain]?.state === 'running') {
+          pollsLeft[domain] = (pollsLeft[domain] ?? 1) - 1
+          if (pollsLeft[domain] <= 0) finishSync(domain)
+        }
+        return respond(state.syncJobs[domain] ?? idleJob(domain))
+      }
+      const resources = url.match(/^\/api\/resources\/([^/]+)\/([^/]+)$/)
+      if (resources) {
+        const fullId = `${resources[1]}/${resources[2]}`
+        if (!roadmaps[resources[1]]?.nodes.some((n) => n.full_id === fullId)) {
+          return respond({ detail: `unknown node '${fullId}'` }, 404)
+        }
+        const items = state.resources[fullId] ?? []
+        return respond({
+          node_id: fullId,
+          source: 'roadmap.sh',
+          commit: items.length ? 'abc1234' : null,
+          synced_at: items.length ? state.resourcesSyncedAt : null,
+          source_url: `https://roadmap.sh/${resources[1]}`,
+          items,
+        })
       }
       let match = url.match(/^\/api\/domains\/([^/]+)\/roadmap$/)
       if (match) return respond(roadmaps[match[1]])

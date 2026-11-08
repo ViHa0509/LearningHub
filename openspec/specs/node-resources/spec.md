@@ -1,4 +1,9 @@
-## ADDED Requirements
+# node-resources Specification
+
+## Purpose
+TBD - created by archiving change roadmap-resources. Update Purpose after archive.
+
+## Requirements
 
 ### Requirement: Resource mapping per domain
 The system SHALL read `roadmaps/sources/<domain>.yaml`, which maps app node ids to roadmap.sh node references (`<roadmap>/<slug>` or `<roadmap>/*`) at a pinned commit. A mapping that names an app node missing from the catalog MUST stop the server from starting, like an invalid roadmap file.
@@ -24,6 +29,10 @@ The system SHALL sync a domain's links from the pinned commit on request: from t
 - **GIVEN** a synced domain
 - **WHEN** a new sync fails part way, or a mapped slug does not exist at that commit
 - **THEN** the status is failed with the reason, and the earlier links are unchanged
+
+#### Scenario: Roadmap without a mapping
+- **WHEN** the sync status of a roadmap without a mapping file is read
+- **THEN** it answers `unavailable` (not an error), and a sync of that roadmap is refused with 404
 
 #### Scenario: Sync needs the app header
 - **WHEN** a sync is requested without `X-LearningHub: 1`

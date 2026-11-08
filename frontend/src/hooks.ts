@@ -53,6 +53,37 @@ export function useAgents() {
   return useQuery({ queryKey: queryKeys.agents, queryFn: api.agents })
 }
 
+/** A node's references (links synced from roadmap.sh). */
+export function useNodeResources(domain: string, node: string) {
+  return useQuery({ queryKey: queryKeys.resources(domain, node), queryFn: () => api.resources(domain, node) })
+}
+
+/** How often the sync status is read while a sync runs. */
+export const RESOURCE_SYNC_POLL_MS = 1_500
+
+/**
+ * The domain's resource sync status (null: the domain has no mapping), read every 1.5 s while a sync
+ * runs. When a running sync ends, the domain's references are refreshed.
+ */
+export function useResourceSync(domain: string, enabled = true) {
+  const client = useQueryClient()
+  const status = useQuery({
+    queryKey: queryKeys.resourceSync(domain),
+    queryFn: () => api.resourceSyncStatus(domain),
+    enabled,
+    refetchInterval: (query) => (query.state.data?.state === 'running' ? RESOURCE_SYNC_POLL_MS : false),
+  })
+  const state = status.data?.state
+  const previous = useRef(state)
+  useEffect(() => {
+    if (previous.current === 'running' && state === 'done') {
+      void client.invalidateQueries({ queryKey: queryKeys.domainResources(domain) })
+    }
+    previous.current = state
+  }, [state, domain, client])
+  return status
+}
+
 /**
  * Refresh providers (list and single) and agents after any change to them. After a delete, pass the
  * deleted id: its detail query is dropped and never refetched.

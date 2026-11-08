@@ -163,7 +163,38 @@ export interface AgentOut {
   primary: ProviderRef | null
   fallback: ProviderRef | null
   effective: ProviderRef | null
-  effective_reason: 'override' | 'primary' | 'default' | 'none'
+  effective_reason: 'override' | 'primary' | 'assistant' | 'default' | 'none'
+}
+
+/** One reference link of a roadmap node, synced from roadmap.sh. */
+export interface ResourceItem {
+  url: string
+  /** Free text from the source; shown as text only. */
+  title: string
+  /** official, course, book, article, opensource, video, roadmap, podcast or another type. */
+  type: string
+  source_ref: string
+}
+
+export interface NodeResources {
+  node_id: string
+  source: string
+  commit: string | null
+  synced_at: string | null
+  source_url: string
+  /** Ordered by type, then title. */
+  items: ResourceItem[]
+}
+
+export interface ResourceSyncStatus {
+  domain: string
+  state: 'idle' | 'running' | 'done' | 'failed' | 'unavailable'
+  commit: string | null
+  nodes: number | null
+  links: number | null
+  error: string | null
+  started_at: string | null
+  finished_at: string | null
 }
 
 export interface AgentAssignment {
@@ -357,6 +388,15 @@ export const api = {
   lesson: (domain: string, node: string) => request<Lesson>(`/api/lessons/${domain}/${node}`),
   saveLesson: (domain: string, node: string, body: string, source: LessonSource = 'user') =>
     request<Lesson>(`/api/lessons/${domain}/${node}`, json('PUT', { body, source })),
+  resources: (domain: string, node: string) => request<NodeResources>(`/api/resources/${domain}/${node}`),
+  /** The domain's sync status; null when the domain has no resource mapping (404). */
+  /** null when the roadmap has no resource mapping (it cannot be synced). */
+  resourceSyncStatus: async (domain: string): Promise<ResourceSyncStatus | null> => {
+    const status = await request<ResourceSyncStatus>(`/api/resources/sync/${domain}`)
+    return status.state === 'unavailable' ? null : status
+  },
+  startResourceSync: (domain: string) =>
+    request<ResourceSyncStatus>('/api/resources/sync', json('POST', { domain })),
 }
 
 export const queryKeys = {
@@ -371,4 +411,8 @@ export const queryKeys = {
   provider: (id: string) => ['ai-providers', id] as const,
   providerTypes: ['ai-provider-types'] as const,
   agents: ['agents'] as const,
+  resources: (domain: string, node: string) => ['resources', domain, node] as const,
+  /** Every node's references of a domain (prefix of `resources`). */
+  domainResources: (domain: string) => ['resources', domain] as const,
+  resourceSync: (domain: string) => ['resource-sync', domain] as const,
 }

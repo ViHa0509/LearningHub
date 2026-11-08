@@ -109,7 +109,8 @@ class ResourceSyncRequest(BaseModel):
 
 class ResourceSyncStatus(BaseModel):
     domain: str
-    state: Literal["idle", "running", "done", "failed"]
+    # "unavailable": the roadmap has no resource mapping, so it cannot be synced.
+    state: Literal["idle", "running", "done", "failed", "unavailable"]
     commit: str | None
     nodes: int | None
     links: int | None

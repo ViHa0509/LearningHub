@@ -137,6 +137,8 @@ def resource_settings(
     roadmaps = tmp_path / "roadmaps"
     (roadmaps / "sources").mkdir(parents=True)
     shutil.copy(REPO_ROOT / "roadmaps" / "frontend.yaml", roadmaps / "frontend.yaml")
+    # A roadmap without a resource mapping.
+    shutil.copy(REPO_ROOT / "roadmaps" / "devops.yaml", roadmaps / "devops.yaml")
     (roadmaps / "sources" / "frontend.yaml").write_text(MAPPING, encoding="utf-8")
     return settings_factory(
         roadmaps_dir=roadmaps,
@@ -294,8 +296,11 @@ def test_sync_without_header_is_refused(api: TestClient) -> None:
 
 
 def test_sync_of_unknown_domain_is_404(api: TestClient) -> None:
-    assert api.post("/api/resources/sync", json={"domain": "backend"}).status_code == 404
-    assert api.get("/api/resources/sync/backend").status_code == 404
+    assert api.post("/api/resources/sync", json={"domain": "devops"}).status_code == 404
+    # A known roadmap without a mapping answers 200 "unavailable"; an unknown one is 404.
+    unmapped = api.get("/api/resources/sync/devops")
+    assert (unmapped.status_code, unmapped.json()["state"]) == (200, "unavailable")
+    assert api.get("/api/resources/sync/not-a-domain").status_code == 404
 
 
 def test_sync_command(

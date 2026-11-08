@@ -7,15 +7,74 @@ fake-ok answers "OK from fake", except when the last user message contains a tri
 [[markdown]] answers with a Markdown table, a code block and an HTML tag; [[echo]] answers
 with one line per fact about what the model received (system prompt and last user message),
 so the UI tests can observe effort lines and attachment wrapping without a real provider.
+
+It also fakes the reference source (GitHub's tree API and raw files of the roadmap repository)
+under /roadmap-api and /roadmap-raw, so the resource sync never reaches GitHub or roadmap.sh.
+The tree lists one synthetic file for every slug of roadmaps/sources/frontend.yaml (and one extra
+file per roadmap for "<roadmap>/*"); every file holds synthetic links on example.test only.
+POST /roadmap-control {"fail": true} makes the tree listing answer 500 until switched back.
 """
 
 import asyncio
 import time
+from pathlib import Path
 
+import yaml
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 app = FastAPI()
+
+MAPPING = Path(__file__).resolve().parents[2] / "roadmaps" / "sources" / "frontend.yaml"
+TREE_DELAY_S = 1.5  # keeps "Syncing references…" on screen long enough to be seen
+roadmap_state = {"fail": False}
+
+
+def _roadmap_files() -> dict[str, str]:
+    """Repository path -> synthetic node file, for every mapped slug."""
+    mapping = yaml.safe_load(MAPPING.read_text(encoding="utf-8"))
+    files: dict[str, str] = {}
+    for refs in mapping["nodes"].values():
+        for ref in refs:
+            roadmap, slug = ref.split("/", 1)
+            if slug == "*":
+                slug = "e2e-extra-topic"
+            path = f"roadmaps/{roadmap}/content/{slug}@e2e{roadmap[:3]}.md"
+            lines = [
+                f"# Synthetic {roadmap} {slug}",
+                "",
+                "Description text that the sync must ignore.",
+                "",
+                f"- [@article@Synthetic article {roadmap} {slug}](https://example.test/{roadmap}-{slug}-article)",
+                f"- [@official@Synthetic official {roadmap} {slug}](https://example.test/{roadmap}-{slug}-official)",
+            ]
+            if (roadmap, slug) == ("frontend", "html"):
+                lines.append("- [@video@Synthetic video frontend html](https://example.test/frontend-html-video)")
+            files[path] = "\n".join(lines) + "\n"
+    return files
+
+
+@app.post("/roadmap-control")
+def roadmap_control(payload: dict) -> dict:
+    roadmap_state["fail"] = bool(payload.get("fail"))
+    return roadmap_state
+
+
+@app.get("/roadmap-api/repos/kamranahmedse/developer-roadmap/git/trees/{commit}")
+async def roadmap_tree(commit: str) -> JSONResponse:
+    await asyncio.sleep(TREE_DELAY_S)
+    if roadmap_state["fail"]:
+        return JSONResponse({"message": "fake source failure"}, status_code=500)
+    tree = [{"path": p, "type": "blob"} for p in sorted(_roadmap_files())]
+    return JSONResponse({"sha": commit, "truncated": False, "tree": tree})
+
+
+@app.get("/roadmap-raw/kamranahmedse/developer-roadmap/{commit}/{path:path}")
+def roadmap_raw(commit: str, path: str) -> PlainTextResponse:
+    text = _roadmap_files().get(path)
+    if text is None:
+        return PlainTextResponse("404: Not Found", status_code=404)
+    return PlainTextResponse(text)
 
 MODELS = ["fake-ok", "fake-401", "fake-404", "fake-429", "fake-500", "fake-slow"]
 
