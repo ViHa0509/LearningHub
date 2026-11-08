@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.main import create_app
+from tests.conftest import signed_in_client
 from tests.test_linking import link, new_note
 
 CACHING = "/api/lessons/backend/caching"
@@ -32,7 +33,7 @@ def test_write_lesson_persists_across_restart(client: TestClient, settings: Sett
     assert body["updated_at"] is not None
 
     restarted = create_app(settings)
-    with TestClient(restarted) as again:
+    with signed_in_client(restarted) as again:
         assert again.get(CACHING).json()["body"] == text
     restarted.state.engine.dispose()
 

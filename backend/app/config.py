@@ -33,6 +33,30 @@ class Settings(BaseSettings):
     # these at a local fake server.
     roadmap_api_base: str = "https://api.github.com"
     roadmap_raw_base: str = "https://raw.githubusercontent.com"
+    # The AI news feeds (checked at startup).
+    news_sources_file: Path = REPO_ROOT / "news" / "sources.yaml"
+
+    # Owner login. While false, the data routes stay open (the auth routes always work).
+    auth_required: bool = False
+    # Where the browser opens the app: OAuth redirect URIs and links in emails start here.
+    public_url: str = "http://localhost:5173"
+    github_client_id: str | None = None
+    github_client_secret: SecretStr | None = None
+    google_client_id: str | None = None
+    google_client_secret: SecretStr | None = None
+    # OAuth endpoints; tests point these at a local fake provider.
+    github_authorize_url: str = "https://github.com/login/oauth/authorize"
+    github_token_url: str = "https://github.com/login/oauth/access_token"
+    github_api_base: str = "https://api.github.com"
+    google_authorize_url: str = "https://accounts.google.com/o/oauth2/v2/auth"
+    google_token_url: str = "https://oauth2.googleapis.com/token"
+    google_userinfo_url: str = "https://openidconnect.googleapis.com/v1/userinfo"
+    # Email: SMTP when a host is set (STARTTLS, or SSL on port 465); else the local outbox.
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_user: str | None = None
+    smtp_password: SecretStr | None = None
+    smtp_from: str | None = None
 
 
 @lru_cache

@@ -88,6 +88,8 @@ class OwnLoopModel(ChatModel, Protocol):
         conversation: Sequence[Message],
         tools: "AgentTools | None",
         max_steps: int,
+        *,
+        web_search: bool = False,
     ) -> AgentResult: ...
 
 

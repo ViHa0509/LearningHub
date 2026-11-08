@@ -4,8 +4,11 @@ Claude Code runs its own agent loop, so ``ClaudeCodeAgent`` takes the whole requ
 (``run``) instead of one model turn. The app's tools reach it only through the MCP server
 ``app.agent.mcp_server``, started by the CLI for the run. The run is isolated: built-in
 tools off, only ``mcp__learninghub__*`` allowed, strict MCP configuration, no setting
-sources, no saved session, a fresh empty working folder. The optional setup token goes into
-the process environment only, never into the arguments, a log or a message.
+sources, no saved session, a fresh empty working folder. With the agent's Internet search
+switch on, the one built-in tool WebSearch is allowed as well (it runs on Anthropic's
+side and returns titles and URLs); WebFetch and every other built-in tool stay off. The
+optional setup token goes into the process environment only, never into the arguments, a log
+or a message.
 
 The process runner is injected so tests replay recorded stream-json output; no test runs
 the real CLI.
@@ -39,6 +42,10 @@ if TYPE_CHECKING:
 PROVIDER_TYPE = "claude-code"
 SERVER_NAME = "learninghub"
 TOOL_PREFIX = f"mcp__{SERVER_NAME}__"
+# The only built-in tool a run may get, and only with the agent's Internet search on.
+WEB_SEARCH_TOOL = "WebSearch"
+WEB_SEARCH_STEP = "web_search"
+MAX_QUERY = 120
 DEFAULT_TIMEOUT = 300.0
 BACKEND_DIR = Path(__file__).resolve().parents[3]
 
@@ -314,7 +321,14 @@ def build_env(
 
 
 def _tool_name(name: str) -> str:
+    if name == WEB_SEARCH_TOOL:
+        return WEB_SEARCH_STEP
     return name[len(TOOL_PREFIX) :] if name.startswith(TOOL_PREFIX) else name
+
+
+def _search_query(args: dict[str, Any]) -> str:
+    query = " ".join(str(args.get("query") or "").split())
+    return query if len(query) <= MAX_QUERY else query[: MAX_QUERY - 1] + "\u2026"
 
 
 class StreamReader:
@@ -380,10 +394,11 @@ class StreamReader:
                     self.over_limit = True
                     return False
                 raw_input = block.get("input")
-                self._pending[str(block.get("id"))] = (
-                    _tool_name(str(block.get("name") or "")),
-                    raw_input if isinstance(raw_input, dict) else {},
-                )
+                args = raw_input if isinstance(raw_input, dict) else {}
+                tool = _tool_name(str(block.get("name") or ""))
+                if tool == WEB_SEARCH_STEP:
+                    args = {"query": _search_query(args)}
+                self._pending[str(block.get("id"))] = (tool, args)
         return True
 
     def _user(self, data: dict[str, Any]) -> None:
@@ -403,6 +418,13 @@ class StreamReader:
             if pending is None:
                 continue
             tool, args = pending
+            if tool == WEB_SEARCH_STEP:
+                # A built-in tool: no app _meta; the result text is untrusted web data.
+                searched = f"Searched the web for '{args['query']}'"
+                if block.get("is_error"):
+                    searched += " (error)"
+                self.steps.append(Step(tool=tool, input=args, summary=searched[:MAX_SUMMARY]))
+                continue
             summary = meta.get("summary")
             if not isinstance(summary, str) or not summary.strip():
                 summary = f"Called {tool}" + (" (error)" if block.get("is_error") else "")
@@ -491,7 +513,11 @@ class ClaudeCodeAgent:
             raise ProviderError(UNSAFE_SCRIPT, "invalid_config")
         return [found]
 
-    def command(self, system: str, mcp_config_path: Path | None) -> list[str]:
+    def command(
+        self, system: str, mcp_config_path: Path | None, web_search: bool = False
+    ) -> list[str]:
+        """No built-in tool, or only WebSearch when ``web_search`` (never WebFetch)."""
+        builtin = WEB_SEARCH_TOOL if web_search else ""
         argv = [
             *self.executable(),
             "-p",
@@ -505,10 +531,15 @@ class ClaudeCodeAgent:
             "--system-prompt",
             system,
             "--tools",
-            "",
+            builtin,
         ]
+        allowed = [WEB_SEARCH_TOOL] if web_search else []
         if mcp_config_path is not None:
-            argv += ["--allowedTools", f"{TOOL_PREFIX}*", "--mcp-config", str(mcp_config_path)]
+            allowed.append(f"{TOOL_PREFIX}*")
+        if allowed:
+            argv += ["--allowedTools", ",".join(allowed)]
+        if mcp_config_path is not None:
+            argv += ["--mcp-config", str(mcp_config_path)]
         argv += [
             "--strict-mcp-config",
             "--setting-sources",
@@ -521,7 +552,12 @@ class ClaudeCodeAgent:
         return argv
 
     def _run(
-        self, system: str, messages: Sequence[Message], max_steps: int, with_tools: bool
+        self,
+        system: str,
+        messages: Sequence[Message],
+        max_steps: int,
+        with_tools: bool,
+        web_search: bool = False,
     ) -> AgentResult:
         if not self.model or self.model.startswith("-"):
             raise ProviderError("the model name cannot start with '-'", "invalid_config")
@@ -534,7 +570,7 @@ class ClaudeCodeAgent:
             if with_tools:
                 config_path = folder / "mcp.json"
                 config_path.write_text(json.dumps(mcp_config(self._setup)), encoding="utf-8")
-            argv = self.command(system, config_path)
+            argv = self.command(system, config_path, web_search)
             env = build_env(
                 os.environ if self._environ is None else self._environ,
                 self._token,
@@ -585,9 +621,18 @@ class ClaudeCodeAgent:
         conversation: Sequence[Message],
         tools: "AgentTools | None",
         max_steps: int,
+        *,
+        web_search: bool = False,
     ) -> AgentResult:
-        """The whole request in one CLI run; the tools come from the MCP server, not ``tools``."""
-        return self._run(system, conversation, max_steps, with_tools=True)
+        """The whole request in one CLI run; the tools come from the MCP server, not ``tools``.
+
+        ``web_search`` (the agent's Internet search switch) adds WebSearch and its prompt.
+        """
+        if web_search:
+            from app.agent.loop import with_web_search  # the loop imports this module
+
+            system = with_web_search(system)
+        return self._run(system, conversation, max_steps, with_tools=True, web_search=web_search)
 
     def complete(self, system: str, messages: Sequence[Message], tools: Sequence[ToolSpec]) -> Turn:
         """One answer without any tool (the connection test)."""

@@ -87,6 +87,7 @@ function AgentCard({ agent, providers }: { agent: AgentOut; providers: ProviderO
   const refresh = useRefreshProviders()
   const [primary, setPrimary] = useState(agent.primary?.id ?? '')
   const [fallback, setFallback] = useState(agent.fallback?.id ?? '')
+  const [webSearch, setWebSearch] = useState(agent.web_search)
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -100,6 +101,7 @@ function AgentCard({ agent, providers }: { agent: AgentOut; providers: ProviderO
         primary_provider_id: primary || null,
         fallback_provider_id: fallback || null,
       })
+      if (webSearch !== agent.web_search) await api.saveAgentSettings(agent.id, { web_search: webSearch })
       setSaved(true)
       await refresh()
     } catch (e) {
@@ -162,6 +164,16 @@ function AgentCard({ agent, providers }: { agent: AgentOut; providers: ProviderO
         ) : (
           <span className="muted">No active provider, so this agent cannot answer.</span>
         )}
+      </p>
+
+      <label className="check-field">
+        <input type="checkbox" checked={webSearch} onChange={(e) => setWebSearch(e.target.checked)} />
+        Internet search
+      </label>
+      <p className="muted small" id={`${id}-web-search-note`}>
+        {agent.effective && agent.effective.provider_type !== 'claude-code'
+          ? 'Internet search needs a Claude Code provider; it has no effect with the current one.'
+          : 'Lets the agent search the web (Claude Code WebSearch: titles and links only) when your notes do not cover a question.'}
       </p>
 
       <div className="provider-actions">

@@ -1,8 +1,9 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import Markdown from 'react-markdown'
 import { api, queryKeys, type Note, type RoadmapNode } from '../api'
 import { routeHash } from '../lib/route'
+import { Icon } from './Icon'
 import { LessonReferences } from './LessonReferences'
 
 interface Props {
@@ -92,7 +93,7 @@ export function LessonPage({ domain, node, notes, onDraft, onDraftFromReferences
         )}
       </section>
 
-      <LessonContent key={current.full_id} domain={domain} node={node} onDraft={onDraft} />
+      <LessonContent key={current.full_id} domain={domain} node={node} title={current.title} onDraft={onDraft} />
 
       <LessonReferences
         key={`refs-${current.full_id}`}
@@ -111,12 +112,25 @@ export function LessonPage({ domain, node, notes, onDraft, onDraftFromReferences
   )
 }
 
-function LessonContent({ domain, node, onDraft }: { domain: string; node: string; onDraft?: () => void }) {
+interface LessonContentProps {
+  domain: string
+  node: string
+  /** The lesson title: the document title (and so the suggested file name) while printing. */
+  title: string
+  onDraft?: () => void
+}
+
+function LessonContent({ domain, node, title, onDraft }: LessonContentProps) {
   const client = useQueryClient()
   const lesson = useQuery({ queryKey: queryKeys.lesson(domain, node), queryFn: () => api.lesson(domain, node) })
   const [draft, setDraft] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [reading, setReading] = useState(false)
+  /** The extraction's warning (no text layer, cut at the limit), shown until the edit ends. */
+  const [pdfNote, setPdfNote] = useState<string | null>(null)
+  const [pdfError, setPdfError] = useState<string | null>(null)
+  const fileInput = useRef<HTMLInputElement>(null)
 
   const save = async () => {
     if (draft === null) return
@@ -126,6 +140,7 @@ function LessonContent({ domain, node, onDraft }: { domain: string; node: string
       const saved = await api.saveLesson(domain, node, draft)
       client.setQueryData(queryKeys.lesson(domain, node), saved)
       setDraft(null)
+      setPdfNote(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Saving failed')
     } finally {
@@ -135,17 +150,110 @@ function LessonContent({ domain, node, onDraft }: { domain: string; node: string
 
   const body = lesson.data?.body ?? ''
 
+  const importPdf = async (file: File) => {
+    setReading(true)
+    setPdfError(null)
+    setPdfNote(null)
+    try {
+      const extracted = await api.extractPdf(file)
+      if (!extracted.markdown.trim()) {
+        setPdfNote(extracted.warning ?? 'The PDF has no text to import.')
+        return
+      }
+      // The editor's text if it is open, else the saved lesson: never replace text without asking.
+      const current = draft ?? body
+      if (current.trim() && !window.confirm(`Replace the lesson text with the text of ${file.name}?`)) return
+      setError(null)
+      setDraft(extracted.markdown)
+      setPdfNote(extracted.warning)
+    } catch (e) {
+      setPdfError(`Could not import ${file.name}: ${e instanceof Error ? e.message : 'the request failed'}`)
+    } finally {
+      setReading(false)
+    }
+  }
+
+  const exportPdf = () => {
+    const root = document.documentElement
+    const previousTitle = document.title
+    let restored = false
+    const restore = () => {
+      if (restored) return
+      restored = true
+      document.title = previousTitle
+      root.classList.remove('printing-lesson')
+      window.removeEventListener('afterprint', restore)
+    }
+    // The browser suggests the document title as the PDF's file name.
+    document.title = title
+    root.classList.add('printing-lesson')
+    window.addEventListener('afterprint', restore)
+    try {
+      window.print()
+    } finally {
+      // print() blocks until the dialog closes in most browsers; afterprint covers the others.
+      restore()
+    }
+  }
+
+  const exportTitle =
+    draft !== null
+      ? 'Save or cancel the edit before exporting'
+      : body
+        ? 'Print the lesson or save it as a PDF'
+        : 'The lesson is empty; write or import it first'
+
   return (
     <section aria-label="Lesson" className="lesson-section lesson-content">
       <div className="section-header">
         <h2>Lesson</h2>
-        {draft === null && lesson.data && (
-          <button type="button" onClick={() => setDraft(body)}>
-            {body ? 'Edit lesson' : 'Write lesson'}
-          </button>
+        {lesson.data && (
+          <div className="section-actions">
+            {draft === null && (
+              <button
+                type="button"
+                onClick={() => {
+                  setPdfNote(null)
+                  setPdfError(null)
+                  setDraft(body)
+                }}
+              >
+                {body ? 'Edit lesson' : 'Write lesson'}
+              </button>
+            )}
+            <input
+              ref={fileInput}
+              type="file"
+              accept="application/pdf,.pdf"
+              aria-label="PDF file"
+              hidden
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                // Cleared, so the same file can be picked again.
+                e.target.value = ''
+                if (file) void importPdf(file)
+              }}
+            />
+            <button type="button" onClick={() => fileInput.current?.click()} disabled={reading || saving}>
+              <Icon name="import" /> Import PDF
+            </button>
+            <button type="button" onClick={exportPdf} disabled={!body || draft !== null} title={exportTitle}>
+              <Icon name="print" /> Export PDF
+            </button>
+          </div>
         )}
       </div>
       {lesson.isError && <p className="error">Could not load the lesson.</p>}
+      {(reading || pdfNote) && (
+        <p className="muted pdf-note" role="status">
+          {reading ? 'Reading PDF…' : pdfNote}
+        </p>
+      )}
+      {pdfError && (
+        <p className="error" role="alert">
+          {pdfError}
+        </p>
+      )}
       {draft !== null ? (
         <div className="lesson-editor">
           <textarea
@@ -160,10 +268,17 @@ function LessonContent({ domain, node, onDraft }: { domain: string; node: string
             </p>
           )}
           <div className="dialog-actions">
-            <button type="button" onClick={() => setDraft(null)} disabled={saving}>
+            <button
+              type="button"
+              onClick={() => {
+                setDraft(null)
+                setPdfNote(null)
+              }}
+              disabled={saving}
+            >
               Cancel
             </button>
-            <button type="button" className="primary" onClick={() => void save()} disabled={saving}>
+            <button type="button" className="primary" onClick={() => void save()} disabled={saving || reading}>
               Save lesson
             </button>
           </div>

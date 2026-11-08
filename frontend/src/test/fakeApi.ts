@@ -3,8 +3,11 @@ import type {
   AgentOut,
   ChatReply,
   ChatRequest,
+  ExtractedPdf,
   ImportOutcome,
   Lesson,
+  NewsItem,
+  NewsRefreshStatus,
   Note,
   ProviderIn,
   ProviderOut,
@@ -192,10 +195,19 @@ export interface FakeState {
   sources: Record<string, string>
   importResults?: ImportOutcome[]
   lessons: Record<string, Lesson>
+  /**
+   * Answers POST /api/lessons/extract-pdf for the uploaded file: the extracted text, or a status and
+   * detail for a refusal. Default: a file named *.pdf gives "Text of <name>", any other a 422.
+   */
+  extractPdf: (
+    file: File,
+  ) => ExtractedPdf | { status: number; detail: string } | Promise<ExtractedPdf | { status: number; detail: string }>
   types: ProviderTypeInfo[]
   providers: ProviderOut[]
   /** Agent id -> assigned provider ids. */
   assignments: Record<string, { primary: string | null; fallback: string | null }>
+  /** Agent id -> Internet search switch. */
+  webSearch: Record<string, boolean>
   /** What Test Connection answers. */
   test: () => Omit<TestResult, 'tested_at' | 'model'> | Promise<Omit<TestResult, 'tested_at' | 'model'>>
   models: string[] | { status: number; detail: string }
@@ -230,6 +242,41 @@ export interface FakeState {
    */
   syncOutcome: { links: Record<string, ResourceItem[]> } | { error: string }
   syncPolls: number
+  /** Stored news items (synthetic), in any order; the list answers them newest first. */
+  news: NewsItem[]
+  /** The configured news sources, in configuration order. */
+  newsSources: { id: string; name: string; homepage: string }[]
+  newsLastRefreshAt: string | null
+  /** What GET /api/news says about staleness; a finished refresh sets it to false. */
+  newsStale: boolean
+  /** The refresh job (idle until one is started). */
+  newsJob: NewsRefreshStatus
+  /**
+   * How a started refresh ends, once its status has been read `newsRefreshPolls` times while running:
+   * it stores these items (once per URL), and every source named in `failures` fails with that reason.
+   */
+  newsRefreshOutcome: { items: NewsItem[]; failures?: Record<string, string> }
+  newsRefreshPolls: number
+}
+
+export const NEWS_SOURCES = [
+  { id: 'openai-news', name: 'OpenAI News', homepage: 'https://openai.example.test/news' },
+  { id: 'mit-news', name: 'MIT News', homepage: 'https://mit.example.test/news' },
+]
+
+let newsSeq = 0
+/** A synthetic news item (never real feed data). */
+export function makeNewsItem(title: string, source: string, publishedAt: Date | string, summary = ''): NewsItem {
+  newsSeq += 1
+  return {
+    id: `news-${newsSeq}`,
+    source,
+    source_name: NEWS_SOURCES.find((s) => s.id === source)?.name ?? source,
+    title,
+    url: `https://${source}.example.test/item/${newsSeq}`,
+    published_at: typeof publishedAt === 'string' ? publishedAt : publishedAt.toISOString(),
+    summary,
+  }
 }
 
 let resourceSeq = 0
@@ -285,9 +332,14 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
     sources: {},
     importResults,
     lessons: {},
+    extractPdf: (file) =>
+      file.name.toLowerCase().endsWith('.pdf')
+        ? { markdown: `Text of ${file.name}`, pages: 1, truncated: false, warning: null }
+        : { status: 422, detail: 'the file is not a PDF' },
     types: TYPES,
     providers: [],
     assignments: {},
+    webSearch: {},
     test: () => ({ status: 'ok', ok: true, message: 'The model answered: OK', latency_ms: 420 }),
     models: ['gpt-5.5', 'gpt-5.5-mini'],
     chat: () => ({ reply: 'ok', steps: [], changed_lessons: [], stopped: false }),
@@ -300,6 +352,40 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
     syncJobs: {},
     syncOutcome: { links: {} },
     syncPolls: 1,
+    news: [],
+    newsSources: NEWS_SOURCES,
+    newsLastRefreshAt: '2026-11-08T09:00:00Z',
+    newsStale: false,
+    newsJob: { state: 'idle', started_at: null, finished_at: null, error: null, sources: [] },
+    newsRefreshOutcome: { items: [] },
+    newsRefreshPolls: 1,
+  }
+  let newsPollsLeft = 0
+  const finishNewsRefresh = () => {
+    const failures = state.newsRefreshOutcome.failures ?? {}
+    const known = new Set(state.news.map((n) => n.url))
+    const added: Record<string, number> = {}
+    for (const item of state.newsRefreshOutcome.items) {
+      if (failures[item.source] || known.has(item.url)) continue
+      known.add(item.url)
+      state.news.push(item)
+      added[item.source] = (added[item.source] ?? 0) + 1
+    }
+    const sources = state.newsSources.map((src) =>
+      failures[src.id]
+        ? { id: src.id, name: src.name, ok: false, items: null, error: failures[src.id] }
+        : { id: src.id, name: src.name, ok: true, items: added[src.id] ?? 0, error: null },
+    )
+    const allFailed = sources.length > 0 && sources.every((src) => !src.ok)
+    state.newsJob = {
+      ...state.newsJob,
+      state: allFailed ? 'failed' : 'done',
+      finished_at: '2026-11-08T10:01:00Z',
+      error: allFailed ? 'every source failed' : null,
+      sources,
+    }
+    state.newsLastRefreshAt = new Date().toISOString()
+    state.newsStale = false
   }
   /** Domain -> status reads left before a running sync ends. */
   const pollsLeft: Record<string, number> = {}
@@ -358,6 +444,7 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
       fallback: ref(find(state.assignments[def.id]?.fallback)),
       effective: ref(eff.provider),
       effective_reason: eff.reason,
+      web_search: state.webSearch[def.id] ?? false,
     }
   }
   const withUse = (p: ProviderOut): ProviderOut => ({
@@ -432,6 +519,12 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
           })),
         )
       }
+      if (url === '/api/lessons/extract-pdf' && method === 'POST') {
+        const file = init?.body instanceof FormData ? init.body.get('file') : null
+        if (!(file instanceof File)) return respond({ detail: [{ msg: 'Field required' }] }, 422)
+        const answer = await state.extractPdf(file)
+        return 'status' in answer ? respond({ detail: answer.detail }, answer.status) : respond(answer)
+      }
       const lesson = url.match(/^\/api\/lessons\/([^/]+)\/([^/]+)$/)
       if (lesson) {
         const fullId = `${lesson[1]}/${lesson[2]}`
@@ -476,6 +569,51 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
           if (pollsLeft[domain] <= 0) finishSync(domain)
         }
         return respond(state.syncJobs[domain] ?? idleJob(domain))
+      }
+      if (url === '/api/news/refresh') {
+        if (method === 'POST') {
+          if (state.newsJob.state !== 'running') {
+            state.newsJob = {
+              state: 'running',
+              started_at: '2026-11-08T10:00:00Z',
+              finished_at: null,
+              error: null,
+              sources: state.newsSources.map((src) => ({ id: src.id, name: src.name, ok: null, items: null, error: null })),
+            }
+            newsPollsLeft = state.newsRefreshPolls
+          }
+          return respond(state.newsJob, 202)
+        }
+        if (state.newsJob.state === 'running') {
+          newsPollsLeft -= 1
+          if (newsPollsLeft <= 0) finishNewsRefresh()
+        }
+        return respond(state.newsJob)
+      }
+      if (url === '/api/news' || url.startsWith('/api/news?')) {
+        const params = new URL(url, 'http://fake.test').searchParams
+        const source = params.get('source')
+        const q = (params.get('q') ?? '').trim().toLowerCase()
+        const before = params.get('before')
+        const limit = Number(params.get('limit') ?? 50)
+        const items = state.news
+          .filter((n) => !source || n.source === source)
+          .filter((n) => !q || n.title.toLowerCase().includes(q) || n.summary.toLowerCase().includes(q))
+          .filter((n) => !before || Date.parse(n.published_at) < Date.parse(before))
+          .sort((a, b) => Date.parse(b.published_at) - Date.parse(a.published_at))
+          .slice(0, limit)
+        return respond({
+          items,
+          sources: state.newsSources.map((src) => ({
+            ...src,
+            count: state.news.filter((n) => n.source === src.id).length,
+            last_ok: null,
+            last_error: null,
+            last_fetched_at: null,
+          })),
+          last_refresh_at: state.newsLastRefreshAt,
+          stale: state.newsStale,
+        })
       }
       const resources = url.match(/^\/api\/resources\/([^/]+)\/([^/]+)$/)
       if (resources) {
@@ -581,6 +719,13 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
         return respond(withUse(target))
       }
       if (url === '/api/agents') return respond(AGENT_DEFS.map(agentOut))
+      const settingsMatch = url.match(/^\/api\/agents\/([^/]+)\/settings$/)
+      if (settingsMatch && method === 'PUT') {
+        const def = AGENT_DEFS.find((d) => d.id === settingsMatch[1])
+        if (!def) return respond({ detail: 'unknown agent' }, 404)
+        state.webSearch[def.id] = Boolean(body.web_search)
+        return respond(agentOut(def))
+      }
       const agentMatch = url.match(/^\/api\/agents\/([^/]+)\/provider$/)
       if (agentMatch) {
         const def = AGENT_DEFS.find((d) => d.id === agentMatch[1])

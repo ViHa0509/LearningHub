@@ -311,3 +311,43 @@ test('Home page: six cards including AI Engineer, archived notes do not count as
   await shot(page, 'curation-home-progress')
   expect(errors).toEqual([])
 })
+
+test('Learned-items list: the filter stays on top and uncovered while the list scrolls', async ({ page, request }) => {
+  const nodes = ['backend/caching', 'devops/docker', 'frontend/html', null]
+  for (let i = 0; i < 30; i++) await createNote(request, `scroll ${i}`, nodes[i % nodes.length])
+  const errors = watchErrors(page)
+  await page.goto('/#/')
+  const list = listOf(page)
+  const filter = list.getByRole('searchbox', { name: 'Filter by title' })
+  await expect(filter).toBeVisible()
+  const scroller = list.locator('.learned-list')
+  const before = await filter.boundingBox()
+
+  for (const where of ['middle', 'bottom']) {
+    await scroller.evaluate((el, w) => {
+      el.scrollTop = w === 'bottom' ? el.scrollHeight : el.scrollHeight / 2
+    }, where)
+    // The list really scrolled, so rows pass under the filter bar.
+    expect(await scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(100)
+    await expect(filter).toBeVisible()
+    const box = (await filter.boundingBox())!
+    // Pinned at the same place as before scrolling.
+    expect(Math.abs(box.y - before!.y)).toBeLessThan(2)
+    // Nothing is painted over the filter: the topmost element at its centre is the input itself.
+    const cx = box.x + box.width / 2
+    const cy = box.y + box.height / 2
+    const topmost = await page.evaluate(
+      `(() => { const e = document.elementFromPoint(${cx}, ${cy}); return e ? e.getAttribute('aria-label') : null })()`,
+    )
+    expect(topmost, `filter covered after scrolling to the ${where}`).toBe('Filter by title')
+    // The row just under the bar is not visible through it either (top edge of the bar).
+    const edge = await page.evaluate(
+      `(() => { const e = document.elementFromPoint(${box.x + 4}, ${box.y - 4}); return !!(e && e.closest('.note-item')) })()`,
+    )
+    expect(edge, 'a note row shows above the filter').toBe(false)
+  }
+  await filter.fill('scroll 29')
+  await expect(list.getByRole('button', { name: /^QC-cur scroll 29 / })).toBeVisible()
+  await page.screenshot({ path: 'e2e-results/screens/learned-filter-sticky.png' })
+  expect(errors).toEqual([])
+})

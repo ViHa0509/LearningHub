@@ -14,6 +14,8 @@ export interface AgentRequest {
   text: string
   /** The agent that should answer; the assistant when absent. */
   agentId?: string
+  /** Put the text in the chat input for the user to send, instead of sending it. */
+  prefill?: boolean
 }
 
 interface Props {
@@ -74,10 +76,22 @@ export function AgentPanel({ open, onToggle, page, request }: Props) {
     setAttachments([])
   }
 
+  // A request to fill the input (e.g. "Ask the agent" on a news item): applied once per id, not sent.
+  const [prefilled, setPrefilled] = useState<number | null>(null)
+  if (request?.prefill && ready && prefilled !== request.id) {
+    setPrefilled(request.id)
+    if (request.agentId) setAgentId(request.agentId)
+    setDraft(request.text)
+  }
+
   // A request from elsewhere in the app (e.g. "Draft with agent"), sent once per id.
   const sendRequest = useEffectEvent((next: AgentRequest) => {
     if (handled.current === next.id) return
     handled.current = next.id
+    if (next.prefill) {
+      inputRef.current?.focus()
+      return
+    }
     void chat.send({ display: next.text, content: next.text, attachments: [], agentId: next.agentId ?? ASSISTANT })
   })
   useEffect(() => {

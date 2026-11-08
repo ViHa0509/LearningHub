@@ -163,7 +163,12 @@ button.icon-only { display: inline-flex; align-items: center; justify-content: c
 .pane[data-collapsed='true'] .pane-header { justify-content: center; padding: 10px 4px; }
 
 .learned-list { overflow: auto; padding: 8px 12px 24px; }
-.list-toolbar { display: flex; gap: 6px; position: sticky; top: 0; background: var(--surface); padding-bottom: 6px; }
+/* Stays on top while the list scrolls: above the (positioned) note rows, below their menus (z-index 5).
+   The negative margin covers the list's top padding so no row shows above the bar. */
+.list-toolbar {
+  display: flex; gap: 6px; position: sticky; top: -8px; z-index: 3; background: var(--surface);
+  margin: -8px -12px 6px; padding: 8px 12px 6px; border-bottom: 1px solid var(--border);
+}
 .list-toolbar input { flex: 1; min-width: 0; }
 .note-item { display: flex; align-items: center; gap: 4px; border-radius: 6px; }
 .note-item.highlighted { background: var(--accent-soft); }
@@ -222,6 +227,7 @@ button.disclosure .icon { width: 16px; height: 16px; flex: none; margin-right: 0
 .note-header select { flex: 0 1 260px; min-width: 0; max-width: 260px; }
 .note-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
 input[type='range'], input[type='checkbox'] { accent-color: var(--accent); }
+.check-field { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-weight: 600; }
 .confirm { display: inline-flex; align-items: center; gap: 6px; }
 .original { flex: 1; width: 100%; border: 0; background: #fff; }
 .title-actions { display: inline-flex; gap: 6px; }
@@ -299,6 +305,59 @@ a { color: var(--accent); }
 .reference-list li { padding: 3px 0; }
 .reference-host { font-size: 12px; }
 .reference-source { margin-top: 12px; font-size: 13px; }
+.section-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.section-actions button { display: inline-flex; align-items: center; }
+.section-actions button:disabled { opacity: 0.6; cursor: default; }
+.pdf-note { margin: 4px 0 8px; font-size: 13px; }
+
+/*
+ * Export PDF: while LessonPage prints, <html> carries .printing-lesson. The printed page holds only
+ * the lesson (breadcrumb, title, description, rendered lesson, references with their URLs), always
+ * in light colors: the print tokens below beat the dark ones (:root[data-theme] has lower specificity).
+ */
+@media print {
+  @page { margin: 18mm; }
+  html:root.printing-lesson {
+    --bg: #ffffff;
+    --surface: #ffffff;
+    --surface-2: #f2f2f5;
+    --border: #c8c8d0;
+    --text: #000000;
+    --muted: #3a3a44;
+    --accent: #000000;
+    --code-bg: #f2f2f5;
+    --glow: none;
+    --particles: none;
+    color-scheme: light;
+  }
+  html.printing-lesson, html.printing-lesson body, html.printing-lesson #root { height: auto; }
+  html.printing-lesson body { background: var(--bg); color: var(--text); font-size: 11pt; }
+  html.printing-lesson body > :not(#root),
+  html.printing-lesson .app-frame > :not(.app-shell),
+  html.printing-lesson .pane.left,
+  html.printing-lesson .pane.right,
+  html.printing-lesson .lesson-page > :not(.breadcrumb, .lesson-header, .lesson-description, .lesson-content, .lesson-references),
+  html.printing-lesson .lesson-page button,
+  html.printing-lesson .lesson-page input,
+  html.printing-lesson .back-link,
+  html.printing-lesson .section-actions,
+  html.printing-lesson .pdf-note,
+  html.printing-lesson .lesson-content .error,
+  html.printing-lesson .lesson-editor,
+  html.printing-lesson .reference-host,
+  html.printing-lesson .reference-source,
+  html.printing-lesson .references-empty { display: none !important; }
+  html.printing-lesson .app-frame, html.printing-lesson .app-shell { display: block; height: auto; }
+  html.printing-lesson .pane.center { overflow: visible; }
+  html.printing-lesson .lesson-page { max-width: none; padding: 0; }
+  html.printing-lesson .lesson-content { border: 0; padding: 0; background: transparent; }
+  html.printing-lesson .lesson-page a { color: var(--text); text-decoration: none; }
+  html.printing-lesson .lesson-references a[href]::after { content: ' (' attr(href) ')'; color: var(--muted); overflow-wrap: anywhere; }
+  html.printing-lesson .markdown pre { overflow: visible; white-space: pre-wrap; border: 1px solid var(--border); }
+  html.printing-lesson .markdown pre, html.printing-lesson .markdown table, html.printing-lesson .markdown blockquote,
+  html.printing-lesson .reference-list li { break-inside: avoid; }
+  html.printing-lesson h1, html.printing-lesson h2, html.printing-lesson h3 { break-after: avoid; }
+}
 .references-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .references-empty p { margin: 0; }
 .markdown h1, .markdown h2, .markdown h3 { text-transform: none; letter-spacing: normal; color: var(--text); margin: 16px 0 6px; }
@@ -639,3 +698,38 @@ details.provider-section[open] > summary { margin-bottom: 10px; }
 .outage-card button.primary { min-width: 140px; padding: 8px 18px; }
 .outage-card button:disabled { opacity: 0.7; cursor: default; }
 .outage-checked { font-size: 12px; font-variant-numeric: tabular-nums; }
+
+/* News page: calm cards like the home page, day headings like lesson sections. */
+.news-page { padding: 32px clamp(16px, 4vw, 48px) 48px; width: 100%; max-width: 860px; margin: 0 auto; }
+.news-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.news-header h1 { font-size: 26px; margin: 0 0 6px; }
+.news-header p { margin: 0 0 4px; }
+.news-header button { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.news-refreshed { font-size: 12px; font-variant-numeric: tabular-nums; }
+.news-status { margin: 12px 0 0; }
+.news-warning { margin-top: 12px; padding: 10px 14px; border: 1px solid var(--border); border-left: 3px solid var(--warn); border-radius: var(--radius); background: var(--surface); color: var(--muted); }
+.news-warning p { margin: 0 0 4px; color: var(--text); }
+.news-warning li { font-size: 13px; overflow-wrap: anywhere; }
+.news-filters { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 20px; }
+.news-chips .chip { cursor: pointer; color: var(--text); }
+.news-chips .chip[aria-pressed='true'] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.news-chips .chip-count { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; margin-left: 2px; }
+.news-chips .chip[aria-pressed='true'] .chip-count { color: inherit; }
+.news-search { display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); color: var(--muted); }
+.news-search input { border: none; padding: 5px 0; min-width: 200px; background: transparent; color: var(--text); outline: none; }
+.news-search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.news-empty { margin-top: 32px; padding: 24px; border: 1px dashed var(--border); border-radius: 12px; text-align: center; }
+.news-empty p { margin: 0 0 4px; }
+.news-day { margin-top: 24px; }
+.news-day > h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 8px; }
+.news-list { display: flex; flex-direction: column; gap: 10px; }
+.news-item { padding: 14px 18px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; transition: border-color 0.15s; }
+.news-item:hover { border-color: var(--border-hover); }
+.news-meta { font-size: 12px; font-variant-numeric: tabular-nums; }
+.news-title { margin: 4px 0; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.news-title a { color: var(--text); text-decoration: none; }
+.news-title a:hover { color: var(--accent); text-decoration: underline; }
+.news-summary { margin: 0 0 8px; color: var(--muted); overflow-wrap: anywhere; }
+.news-ask { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; padding: 3px 10px; border-color: var(--border); }
+.news-ask:hover { border-color: var(--secondary); color: var(--secondary-text); background: var(--secondary-soft); }
+.news-more { display: block; margin: 20px auto 0; }

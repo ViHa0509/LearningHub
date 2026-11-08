@@ -24,7 +24,7 @@ from app.agent.messages import Message, ToolSpec, Turn
 from app.agent.results import AgentResult
 from app.agent.secrets import SecretBox, SecretUnreadable
 from app.agent.tools import AgentTools
-from app.db import AgentProvider, AIProvider
+from app.db import AgentProvider, AgentSetting, AIProvider
 
 T = TypeVar("T")
 
@@ -69,6 +69,12 @@ def assignments(session: Session, agent_id: str) -> dict[str, AIProvider]:
         .where(AgentProvider.agent_id == agent_id)
     )
     return {role: provider for role, provider in rows}
+
+
+def web_search_enabled(session: Session, agent_id: str) -> bool:
+    """The agent's Internet search switch; off when never saved."""
+    row = session.get(AgentSetting, agent_id)
+    return bool(row is not None and row.web_search)
 
 
 def first_active(session: Session) -> AIProvider | None:
@@ -242,7 +248,11 @@ class AgentModel:
         conversation: Sequence[Message],
         tools: AgentTools | None,
         max_steps: int,
+        *,
+        web_search: bool = False,
     ) -> AgentResult:
+        """``web_search`` reaches only a model that runs its own loop (Claude Code); the API
+        tool loop ignores it."""
         if tools is None:
             raise ValueError("the agent tools are required")
         done = AgentResult(reply="")
@@ -250,7 +260,7 @@ class AgentModel:
         def own_run(model: ChatModel) -> AgentResult:
             if not runs_own_loop(model):
                 raise ProviderError("this provider cannot run the agent loop", "invalid_config")
-            return model.run(system, conversation, tools, max_steps)
+            return model.run(system, conversation, tools, max_steps, web_search=web_search)
 
         # At most one hand-over: the switch to the fallback happens once per request.
         for _ in range(2):

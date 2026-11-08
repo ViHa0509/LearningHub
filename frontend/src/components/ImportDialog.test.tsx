@@ -15,7 +15,7 @@ describe('import from the UI', () => {
     )
     const { user } = renderApp('#/roadmap/backend')
     await user.click(await screen.findByRole('button', { name: 'Import' }))
-    const dialog = screen.getByRole('dialog', { name: 'Import HTML files' })
+    const dialog = screen.getByRole('dialog', { name: 'Import HTML or PDF files' })
 
     fireEvent.drop(within(dialog).getByTestId('drop-zone'), {
       dataTransfer: { files: [html('redis-eviction.html')] },
@@ -44,15 +44,15 @@ describe('import from the UI', () => {
       [],
       [
         { filename: 'jwt.html', outcome: 'created', reason: null, note: created },
-        { filename: 'notes.pdf', outcome: 'rejected', reason: 'not an HTML file', note: null },
+        { filename: 'notes.docx', outcome: 'rejected', reason: 'not an HTML or PDF file', note: null },
       ],
     )
     const { user } = renderApp()
-    await user.click(await screen.findByRole('button', { name: 'Import HTML files' }))
+    await user.click(await screen.findByRole('button', { name: 'Import HTML or PDF files' }))
     const dialog = screen.getByRole('dialog')
-    await user.upload(within(dialog).getByLabelText('HTML files'), [html('jwt.html')])
+    await user.upload(within(dialog).getByLabelText('HTML or PDF files'), [html('jwt.html')])
 
-    expect(await within(dialog).findByText('Rejected: not an HTML file')).toBeInTheDocument()
+    expect(await within(dialog).findByText('Rejected: not an HTML or PDF file')).toBeInTheDocument()
     expect(within(dialog).getByText('Imported')).toBeInTheDocument()
     await user.click(within(dialog).getByRole('button', { name: 'Done' }))
 

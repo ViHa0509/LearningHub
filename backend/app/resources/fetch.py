@@ -4,10 +4,14 @@ Rules: http(s) only, no user info in the URL, never YouTube; every hop (the URL 
 most 3 redirects) is resolved and every address must be global; the connection goes to the
 address that was checked (no second lookup that DNS rebinding could change); at most 2 MB in
 10 s, and only text/html or text/plain. Nothing is stored and no cookies are sent.
+
+``fetch_feed`` reads an RSS/Atom feed with the same rules, accepting only XML content types and
+returning the decoded raw text (the caller parses it).
 """
 
 import http.client
 import ipaddress
+import re
 import socket
 import ssl
 import time
@@ -23,6 +27,10 @@ IpCheck = Callable[[str], bool]
 
 REDIRECTS = {301, 302, 303, 307, 308}
 TEXT_TYPES = ("text/html", "text/plain")
+TEXT_ACCEPT = "text/html, text/plain"
+FEED_TYPES = ("application/rss+xml", "application/atom+xml", "application/xml", "text/xml")
+FEED_ACCEPT = ", ".join(FEED_TYPES)
+XML_ENCODING = re.compile(rb"""^\s*<\?xml[^>]*\bencoding\s*=\s*["']([A-Za-z0-9._-]+)["']""")
 BLOCKED_HOSTS = ("youtube.com", "youtu.be")
 USER_AGENT = "LearningHub/0.1 (personal study app)"
 
@@ -113,7 +121,9 @@ def _checked_address(url: str, policy: FetchPolicy) -> tuple[str, str, int, str]
     return parts.scheme, host, port, addresses[0]
 
 
-def _request(url: str, policy: FetchPolicy, deadline: float) -> http.client.HTTPResponse:
+def _request(
+    url: str, policy: FetchPolicy, deadline: float, accept: str = TEXT_ACCEPT
+) -> http.client.HTTPResponse:
     scheme, host, port, address = _checked_address(url, policy)
     remaining = max(0.1, deadline - time.monotonic())
     conn: http.client.HTTPConnection
@@ -127,7 +137,7 @@ def _request(url: str, policy: FetchPolicy, deadline: float) -> http.client.HTTP
         conn.request(
             "GET",
             path,
-            headers={"User-Agent": USER_AGENT, "Accept": "text/html, text/plain"},
+            headers={"User-Agent": USER_AGENT, "Accept": accept},
         )
         return conn.getresponse()
     except (OSError, http.client.HTTPException) as exc:
@@ -156,21 +166,26 @@ def _read_capped(response: http.client.HTTPResponse, policy: FetchPolicy, deadli
         chunks.append(chunk)
 
 
-def _charset(content_type: str) -> str:
+def _charset(content_type: str, default: str = "utf-8") -> str:
     for part in content_type.split(";")[1:]:
         key, _, value = part.strip().partition("=")
         if key.lower() == "charset" and value:
             return value.strip("\"'")
-    return "utf-8"
+    return default
 
 
-def fetch_text(url: str, policy: FetchPolicy | None = None) -> Fetched:
-    """Readable text of one page; FetchError (safe message) when it is refused or fails."""
-    policy = policy or FetchPolicy()
+def _fetch_body(
+    url: str,
+    policy: FetchPolicy,
+    accept: str,
+    types: tuple[str, ...],
+    refused: Callable[[str], str],
+) -> tuple[str, bytes, str]:
+    """Final URL, body and Content-Type, after checked redirects; FetchError otherwise."""
     deadline = time.monotonic() + policy.timeout_s
     current = url
     for _ in range(policy.max_redirects + 1):
-        response = _request(current, policy, deadline)
+        response = _request(current, policy, deadline, accept)
         try:
             if response.status in REDIRECTS:
                 location = response.getheader("Location")
@@ -182,16 +197,54 @@ def fetch_text(url: str, policy: FetchPolicy | None = None) -> Fetched:
                 raise FetchError(f"the page answered with status {response.status}")
             content_type = response.getheader("Content-Type") or ""
             media = content_type.split(";", 1)[0].strip().lower()
-            if media not in TEXT_TYPES:
-                raise FetchError(f"only HTML or plain text pages are read, not '{media or '?'}'")
+            if media not in types:
+                raise FetchError(refused(media or "?"))
             data = _read_capped(response, policy, deadline)
         finally:
             response.close()
-        try:
-            raw = data.decode(_charset(content_type), errors="replace")
-        except LookupError:
-            raw = data.decode("utf-8", errors="replace")
-        text = extract(raw, "page.html").text if media == "text/html" else raw
-        truncated = len(text) > policy.max_chars
-        return Fetched(url=current, text=text[: policy.max_chars], truncated=truncated)
+        return current, data, content_type
     raise FetchError(f"the page redirects more than {policy.max_redirects} times")
+
+
+def _decode(data: bytes, charset: str) -> str:
+    try:
+        return data.decode(charset, errors="replace")
+    except LookupError:
+        return data.decode("utf-8", errors="replace")
+
+
+def fetch_text(url: str, policy: FetchPolicy | None = None) -> Fetched:
+    """Readable text of one page; FetchError (safe message) when it is refused or fails."""
+    policy = policy or FetchPolicy()
+    current, data, content_type = _fetch_body(
+        url,
+        policy,
+        TEXT_ACCEPT,
+        TEXT_TYPES,
+        lambda media: f"only HTML or plain text pages are read, not '{media}'",
+    )
+    media = content_type.split(";", 1)[0].strip().lower()
+    raw = _decode(data, _charset(content_type))
+    text = extract(raw, "page.html").text if media == "text/html" else raw
+    truncated = len(text) > policy.max_chars
+    return Fetched(url=current, text=text[: policy.max_chars], truncated=truncated)
+
+
+def fetch_feed(url: str, policy: FetchPolicy | None = None) -> str:
+    """Raw text of one RSS/Atom feed (same rules as pages, XML content types only).
+
+    The charset is the Content-Type's, else the XML declaration's, else UTF-8.
+    """
+    policy = policy or FetchPolicy()
+    _, data, content_type = _fetch_body(
+        url,
+        policy,
+        FEED_ACCEPT,
+        FEED_TYPES,
+        lambda media: f"only RSS, Atom or XML feeds are read, not '{media}'",
+    )
+    charset = _charset(content_type, default="")
+    if not charset:
+        match = XML_ENCODING.match(data[:200].removeprefix(b"\xef\xbb\xbf"))
+        charset = match.group(1).decode("ascii") if match else "utf-8"
+    return _decode(data, charset).removeprefix("\ufeff")

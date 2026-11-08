@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.config import REPO_ROOT, Settings
+from tests.conftest import signed_in_client
 
 HTML = "text/html"
 
@@ -122,7 +123,7 @@ def test_link_to_removed_node_is_kept_and_flagged(
     from app.main import create_app
 
     restarted = create_app(settings_factory(roadmaps_dir=roadmaps))
-    with TestClient(restarted) as after:
+    with signed_in_client(restarted) as after:
         detail = after.get(f"/api/notes/{note}").json()
         assert detail["node_id"] == "backend/caching"
         assert detail["node_missing"] is True

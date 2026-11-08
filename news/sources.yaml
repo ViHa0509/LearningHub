@@ -1,0 +1,35 @@
+# AI news sources for the News page (RSS or Atom feeds, https only).
+# Checked at startup: an invalid entry stops the server and is named.
+sources:
+  - id: mit-news
+    name: MIT News (AI)
+    homepage: https://news.mit.edu/topic/artificial-intelligence2
+    feed: https://news.mit.edu/rss/topic/artificial-intelligence2
+  - id: google-ai
+    name: Google AI blog
+    homepage: https://blog.google/technology/ai/
+    feed: https://blog.google/technology/ai/rss/
+  - id: openai
+    name: OpenAI News
+    homepage: https://openai.com/news/
+    feed: https://openai.com/news/rss.xml
+  - id: hugging-face
+    name: Hugging Face blog
+    homepage: https://huggingface.co/blog
+    feed: https://huggingface.co/blog/feed.xml
+  - id: mit-tech-review
+    name: MIT Technology Review (AI)
+    homepage: https://www.technologyreview.com/topic/artificial-intelligence/
+    feed: https://www.technologyreview.com/topic/artificial-intelligence/feed
+  - id: bair
+    name: Berkeley AI Research blog
+    homepage: https://bair.berkeley.edu/blog/
+    feed: https://bair.berkeley.edu/blog/feed.xml
+  - id: apple-ml
+    name: Apple Machine Learning Research
+    homepage: https://machinelearning.apple.com/
+    feed: https://machinelearning.apple.com/rss.xml
+  - id: aws-ml
+    name: AWS Machine Learning blog
+    homepage: https://aws.amazon.com/blogs/machine-learning/
+    feed: https://aws.amazon.com/blogs/machine-learning/feed/

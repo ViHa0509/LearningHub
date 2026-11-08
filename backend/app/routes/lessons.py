@@ -1,13 +1,41 @@
 from typing import Annotated, cast
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db import Lesson, get_session
+from app.lesson_pdf import PdfImportError, extract_pdf
 from app.roadmaps import RoadmapCatalog
+from app.routes.guard import require_app_header
 from app.schemas import LessonOut, LessonSource, LessonWrite
 
 router = APIRouter(prefix="/api/lessons", tags=["lessons"])
+
+
+class ExtractedPdfOut(BaseModel):
+    markdown: str
+    pages: int
+    truncated: bool
+    warning: str | None
+
+
+@router.post(
+    "/extract-pdf", response_model=ExtractedPdfOut, dependencies=[Depends(require_app_header)]
+)
+def extract_lesson_pdf(request: Request, file: Annotated[UploadFile, File()]) -> ExtractedPdfOut:
+    """Text of a PDF for the lesson editor; nothing is stored, the user saves the lesson."""
+    limit: int = request.app.state.settings.max_upload_bytes
+    data = file.file.read(limit + 1)
+    if len(data) > limit:
+        raise HTTPException(
+            status_code=422, detail=f"the PDF is larger than {limit // (1024 * 1024)} MB"
+        )
+    try:
+        extracted = extract_pdf(data)
+    except PdfImportError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return ExtractedPdfOut(**extracted.__dict__)
 
 
 def require_node(request: Request, domain_id: str, node_id: str) -> str:

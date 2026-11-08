@@ -61,6 +61,15 @@ export interface Lesson {
   updated_at: string | null
 }
 
+/** The text of a PDF for the lesson editor (POST /api/lessons/extract-pdf); nothing is stored. */
+export interface ExtractedPdf {
+  markdown: string
+  pages: number
+  truncated: boolean
+  /** Set when the PDF has no text layer or the text was cut at the limit. */
+  warning: string | null
+}
+
 export type ProviderType = 'openai' | 'anthropic' | 'gemini' | 'local' | 'custom' | 'claude-code'
 
 export type TestStatus =
@@ -164,6 +173,8 @@ export interface AgentOut {
   fallback: ProviderRef | null
   effective: ProviderRef | null
   effective_reason: 'override' | 'primary' | 'assistant' | 'default' | 'none'
+  /** Internet search (Claude Code WebSearch) for this agent. */
+  web_search: boolean
 }
 
 /** One reference link of a roadmap node, synced from roadmap.sh. */
@@ -195,6 +206,63 @@ export interface ResourceSyncStatus {
   error: string | null
   started_at: string | null
   finished_at: string | null
+}
+
+/** One stored news item; title and summary are untrusted feed text, shown as text only. */
+export interface NewsItem {
+  id: string
+  source: string
+  source_name: string
+  title: string
+  url: string
+  published_at: string
+  /** Plain text, at most 400 characters. */
+  summary: string
+}
+
+export interface NewsSource {
+  id: string
+  name: string
+  homepage: string
+  count: number
+  last_ok: boolean | null
+  last_error: string | null
+  last_fetched_at: string | null
+}
+
+export interface NewsList {
+  items: NewsItem[]
+  sources: NewsSource[]
+  last_refresh_at: string | null
+  /** No refresh for an hour (or never). */
+  stale: boolean
+}
+
+export interface NewsFilters {
+  source?: string
+  q?: string
+}
+
+export interface NewsQuery extends NewsFilters {
+  limit?: number
+  before?: string
+}
+
+export interface NewsSourceResult {
+  id: string
+  name: string
+  /** null while the running refresh has not read the source yet. */
+  ok: boolean | null
+  items: number | null
+  error: string | null
+}
+
+export interface NewsRefreshStatus {
+  state: 'idle' | 'running' | 'done' | 'failed'
+  started_at: string | null
+  finished_at: string | null
+  error: string | null
+  sources: NewsSourceResult[]
 }
 
 export interface AgentAssignment {
@@ -357,6 +425,8 @@ export const api = {
     request<Note>(`/api/notes/${id}`, json('PATCH', { archived })),
   remove: (id: string) => request<void>(`/api/notes/${id}`, { method: 'DELETE' }),
   originalUrl: (id: string) => `/api/notes/${id}/original`,
+  /** The note's page in its own isolated tab, which opens the print dialog (Save as PDF). */
+  printUrl: (id: string) => `/api/notes/${id}/print`,
   note: (id: string) => request<NoteDetail>(`/api/notes/${id}`),
   /** The page's HTML source, for the editor. */
   noteSource: async (id: string) => {
@@ -384,10 +454,17 @@ export const api = {
   agents: () => request<AgentOut[]>('/api/agents'),
   assignAgent: (id: string, body: AgentAssignment) =>
     request<AgentOut>(`/api/agents/${id}/provider`, json('PUT', body)),
+  saveAgentSettings: (id: string, body: { web_search: boolean }) =>
+    request<AgentOut>(`/api/agents/${id}/settings`, json('PUT', body)),
   chat: (body: ChatRequest) => request<ChatReply>('/api/agent/chat', json('POST', body)),
   lesson: (domain: string, node: string) => request<Lesson>(`/api/lessons/${domain}/${node}`),
   saveLesson: (domain: string, node: string, body: string, source: LessonSource = 'user') =>
     request<Lesson>(`/api/lessons/${domain}/${node}`, json('PUT', { body, source })),
+  extractPdf: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return request<ExtractedPdf>('/api/lessons/extract-pdf', { method: 'POST', body: form })
+  },
   resources: (domain: string, node: string) => request<NodeResources>(`/api/resources/${domain}/${node}`),
   /** The domain's sync status; null when the domain has no resource mapping (404). */
   /** null when the roadmap has no resource mapping (it cannot be synced). */
@@ -397,6 +474,17 @@ export const api = {
   },
   startResourceSync: (domain: string) =>
     request<ResourceSyncStatus>('/api/resources/sync', json('POST', { domain })),
+  news: (query: NewsQuery = {}) => {
+    const params = new URLSearchParams()
+    if (query.source) params.set('source', query.source)
+    if (query.q) params.set('q', query.q)
+    if (query.limit !== undefined) params.set('limit', String(query.limit))
+    if (query.before) params.set('before', query.before)
+    const search = params.toString()
+    return request<NewsList>(search ? `/api/news?${search}` : '/api/news')
+  },
+  newsRefreshStatus: () => request<NewsRefreshStatus>('/api/news/refresh'),
+  startNewsRefresh: () => request<NewsRefreshStatus>('/api/news/refresh', { method: 'POST' }),
 }
 
 export const queryKeys = {
@@ -415,4 +503,8 @@ export const queryKeys = {
   /** Every node's references of a domain (prefix of `resources`). */
   domainResources: (domain: string) => ['resources', domain] as const,
   resourceSync: (domain: string) => ['resource-sync', domain] as const,
+  /** Every news list (prefix of `newsList`). */
+  news: ['news'] as const,
+  newsList: (filters: NewsFilters) => ['news', 'list', filters.source ?? '', filters.q ?? ''] as const,
+  newsRefresh: ['news-refresh'] as const,
 }

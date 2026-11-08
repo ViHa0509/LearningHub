@@ -13,7 +13,14 @@ const KEY = 'sk-test-abcd1234'
 const NO_SUCH_ID = '00000000-0000-4000-8000-000000000000'
 
 let counter = 0
-const unique = (label: string) => `${label} ${Date.now().toString(36)}${counter++}`
+// Every name made here is remembered, so afterEach can remove a provider even when the test
+// failed before it recorded the id (a leftover would change "first active provider" for later tests).
+const names = new Set<string>()
+const unique = (label: string) => {
+  const name = `${label} ${Date.now().toString(36)}${counter++}`
+  names.add(name)
+  return name
+}
 
 interface Created {
   id: string
@@ -61,6 +68,8 @@ test.afterEach(async ({ request }) => {
   while (created.length > 0) {
     await request.delete(`${API}/api/ai-providers/${created.pop()}`, { headers: H })
   }
+  const left = (await (await request.get(`${API}/api/ai-providers`)).json()) as { id: string; name: string }[]
+  for (const p of left) if (names.has(p.name)) await request.delete(`${API}/api/ai-providers/${p.id}`, { headers: H })
 })
 
 /** Fills the new-provider form; the type radio is chosen first because it resets the defaults. */
@@ -91,7 +100,8 @@ test.describe('Manage provider configurations', () => {
     const name = unique('Claude main')
     const form = await fillNew(page, { type: 'Local', name, model: 'fake-ok', key: KEY, baseUrl: FAKE })
     await form.getByRole('button', { name: 'Save Changes' }).click()
-    await expect(page).toHaveURL(/#\/settings\/providers\/[0-9a-f-]+$/)
+    // Saving creates the configuration first; on a loaded machine the move to its page can take a while.
+    await expect(page).toHaveURL(/#\/settings\/providers\/[0-9a-f-]+$/, { timeout: 15_000 })
     const row = await trackByName(request, name)
     await expect(form.getByRole('heading', { level: 1, name })).toBeVisible()
     await expect(form.getByLabel('API key')).toHaveAttribute('placeholder', 'Saved key (…1234), type to replace')

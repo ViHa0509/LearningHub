@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.config import Settings
 from app.db import Note, get_session
 from app.extract import UndecodableError, decode_html, extract
+from app.lesson_pdf import PdfImportError, extract_pdf, pdf_note_html
 from app.roadmaps import RoadmapCatalog
 from app.routes.domains import get_catalog
 from app.routes.guard import require_app_header
@@ -25,12 +26,21 @@ from app.storage import FileStore, blob_key, sha256_hex
 router = APIRouter(prefix="/api/notes", tags=["notes"])
 
 HTML_SUFFIXES = {".html", ".htm"}
+PDF_SUFFIX = ".pdf"
 # Opaque-origin sandbox: scripts run, but cannot reach the app's origin, cookies or storage.
 ORIGINAL_HEADERS = {
     "Content-Security-Policy": "sandbox allow-scripts",
     "X-Content-Type-Options": "nosniff",
     "Cache-Control": "no-store",
 }
+# The print view: same opaque-origin sandbox as the original, plus the print dialog.
+PRINT_HEADERS = {
+    **ORIGINAL_HEADERS,
+    "Content-Security-Policy": "sandbox allow-scripts allow-modals",
+}
+PRINT_SCRIPT = (
+    b"<script>addEventListener('load',function(){setTimeout(function(){print()},300)})</script>"
+)
 
 SessionDep = Annotated[Session, Depends(get_session)]
 
@@ -91,8 +101,9 @@ def import_notes(
 
     for upload in files:
         filename = PurePath(upload.filename or "unnamed").name
-        if PurePath(filename).suffix.lower() not in HTML_SUFFIXES:
-            results.append(rejected(filename, "not an HTML file"))
+        suffix = PurePath(filename).suffix.lower()
+        if suffix not in HTML_SUFFIXES and suffix != PDF_SUFFIX:
+            results.append(rejected(filename, "not an HTML or PDF file"))
             continue
         data = upload.file.read(limit + 1)
         if not data:
@@ -101,11 +112,24 @@ def import_notes(
         if len(data) > limit:
             results.append(rejected(filename, f"larger than {limit // (1024 * 1024)} MB"))
             continue
-        try:
-            html = decode_html(data)
-        except UndecodableError:
-            results.append(rejected(filename, "not decodable as text"))
-            continue
+        if suffix == PDF_SUFFIX:
+            # A PDF becomes a generated, fully escaped HTML page holding its text.
+            try:
+                pdf = extract_pdf(data)
+            except PdfImportError as exc:
+                results.append(rejected(filename, str(exc)))
+                continue
+            if not pdf.markdown.strip():
+                results.append(rejected(filename, pdf.warning or "the PDF has no text to import"))
+                continue
+            _title, html = pdf_note_html(pdf, filename)
+            data = html.encode("utf-8")
+        else:
+            try:
+                html = decode_html(data)
+            except UndecodableError:
+                results.append(rejected(filename, "not decodable as text"))
+                continue
 
         sha = sha256_hex(data)
         existing = session.scalar(select(Note).where(Note.content_sha256 == sha))
@@ -253,6 +277,14 @@ def delete_note(note_id: UUID, request: Request, session: SessionDep) -> Respons
     session.commit()
     get_store(request).delete(key)
     return Response(status_code=204)
+
+
+@router.get("/{note_id}/print")
+def print_note(note_id: UUID, request: Request, session: SessionDep) -> Response:
+    """The note's page in its own tab, isolated like the original, that opens the print dialog."""
+    note = require_note(session, note_id)
+    data = get_store(request).get(note.storage_key) + PRINT_SCRIPT
+    return Response(content=data, media_type="text/html", headers=PRINT_HEADERS)
 
 
 @router.get("/{note_id}/original")

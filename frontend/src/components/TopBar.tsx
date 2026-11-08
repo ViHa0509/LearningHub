@@ -21,6 +21,10 @@ export function TopBar({ theme, onThemeChange }: Props) {
         <span>Learning Hub</span>
       </a>
       <nav className="top-actions" aria-label="App">
+        <a href="#/news">
+          <Icon name="news" />
+          News
+        </a>
         <a href="#/settings">
           <Icon name="settings" />
           Settings

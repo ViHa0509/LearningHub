@@ -183,7 +183,7 @@ export function LearnedList({
             place on a roadmap node and find again later.
           </p>
           <button type="button" className="primary" onClick={onImport}>
-            Import HTML files
+            Import HTML or PDF files
           </button>
         </div>
         {error && <p className="error" role="alert">{error}</p>}

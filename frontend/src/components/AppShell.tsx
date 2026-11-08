@@ -9,6 +9,7 @@ import { HomePage } from './HomePage'
 import { ImportDialog } from './ImportDialog'
 import { LearnedList } from './LearnedList'
 import { LessonPage } from './LessonPage'
+import { NewsPage } from './NewsPage'
 import { NoteView } from './NoteView'
 import { RoadmapMap } from './RoadmapMap'
 import { ProviderPage } from './ProviderPage'
@@ -44,9 +45,9 @@ export function AppShell() {
           ? { kind: 'note', note_id: route.id }
           : { kind: 'home' }
 
-  const askAgent = (text: string, agentId?: string) => {
+  const askAgent = (text: string, agentId?: string, prefill = false) => {
     setRightOpen(true)
-    setAgentRequest((previous) => ({ id: (previous?.id ?? 0) + 1, text, agentId }))
+    setAgentRequest((previous) => ({ id: (previous?.id ?? 0) + 1, text, agentId, prefill }))
   }
 
   const openNote = route.page === 'note'
@@ -90,6 +91,9 @@ export function AppShell() {
         onSelectNode={openLesson}
       />
     )
+  } else if (route.page === 'news') {
+    // The chat sees the News page as home: the agent has no news context.
+    center = <NewsPage onAskAgent={(text) => askAgent(text, undefined, true)} />
   } else if (route.page === 'settings') {
     center = <SettingsPage />
   } else if (route.page === 'provider') {

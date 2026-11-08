@@ -54,7 +54,7 @@ describe('empty state', () => {
     installFakeApi([])
     renderApp()
     expect(await screen.findByText('Nothing learned yet')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Import HTML files' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Import HTML or PDF files' })).toBeInTheDocument()
   })
 })
 

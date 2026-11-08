@@ -11,7 +11,7 @@ from app.agent.agents import AGENTS
 from app.agent.loop import Attachment, Effort, Page, run_agent
 from app.agent.messages import Message, ProviderError
 from app.agent.ratelimit import RateLimiter
-from app.agent.resolve import ResolveError, resolve_chain
+from app.agent.resolve import ResolveError, resolve_chain, web_search_enabled
 from app.agent.tools import AgentTools
 from app.db import get_session
 from app.roadmaps import RoadmapCatalog
@@ -110,6 +110,7 @@ def chat(
             agent.instructions,
             payload.effort,
             [Attachment(name=a.name, text=a.text) for a in payload.attachments],
+            web_search=web_search_enabled(session, agent.id),
         )
     except ProviderError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc

@@ -3,7 +3,7 @@ import socket
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
@@ -15,12 +15,28 @@ from app.agent.llm.claude_code import ClaudeCodeSetup
 from app.agent.llm.factory import LLMFactory
 from app.agent.ratelimit import RateLimiter
 from app.agent.secrets import SecretBox
+from app.auth.mail import mailer_from_settings
+from app.auth.oauth import PendingStore
+from app.auth.ratelimit import AuthLimiter
+from app.auth.sessions import require_session, utc_now
 from app.config import Settings, get_settings
 from app.db import make_engine, make_session_factory
+from app.news.refresh import NewsJobs, default_fetcher
+from app.news.sources import load_sources
 from app.resources.mapping import load_mappings
 from app.resources.sync import SyncJobs, http_get
 from app.roadmaps import RoadmapCatalog
-from app.routes import agent, agents, ai_providers, domains, lessons, notes, resources
+from app.routes import (
+    agent,
+    agents,
+    ai_providers,
+    auth,
+    domains,
+    lessons,
+    news,
+    notes,
+    resources,
+)
 from app.storage import LocalFileStore
 
 # Routes whose 422 answers use ``detail: [{field, msg}]`` (the provider settings forms).
@@ -57,6 +73,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.resource_mappings = load_mappings(settings.roadmaps_dir, app.state.catalog)
     app.state.resource_sync = SyncJobs()
     app.state.resource_getter = http_get
+    # An invalid news/sources.yaml raises NewsSourcesError (a RoadmapError).
+    app.state.news_sources = load_sources(settings.news_sources_file)
+    app.state.news_jobs = NewsJobs()
+    app.state.news_fetcher = default_fetcher
     app.state.engine = make_engine(settings.database_url)
     app.state.session_factory = make_session_factory(app.state.engine)
     app.state.store = LocalFileStore(settings.storage_dir)
@@ -66,6 +86,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         resolve=socket.getaddrinfo, claude_code_setup=ClaudeCodeSetup.from_settings(settings)
     )
     app.state.rate_limiter = RateLimiter(settings.agent_rate_per_minute)
+    app.state.clock = utc_now
+    app.state.auth_limiter = AuthLimiter(10)
+    app.state.oauth_pending = PendingStore()
+    app.state.mailer = mailer_from_settings(settings)
 
     @app.exception_handler(RequestValidationError)
     async def field_errors(request: Request, exc: RequestValidationError) -> Response:
@@ -89,13 +113,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         return JSONResponse(content={"status": "ok"})
 
-    app.include_router(domains.router)
-    app.include_router(notes.router)
-    app.include_router(lessons.router)
-    app.include_router(agent.router)
-    app.include_router(ai_providers.router)
-    app.include_router(agents.router)
-    app.include_router(resources.router)
+    app.include_router(auth.router)
+    # Every data router needs a session (when the login is on); health and auth do not.
+    gate = [Depends(require_session)]
+    for module in (domains, notes, lessons, agent, ai_providers, agents, resources, news):
+        app.include_router(module.router, dependencies=gate)
     return app
 
 

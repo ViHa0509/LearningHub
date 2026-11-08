@@ -1,0 +1,13 @@
+# News sources of the e2e backend (LH_NEWS_SOURCES_FILE in playwright.config.ts).
+# The feeds point at a loopback address on purpose: the backend's safe fetch refuses any
+# non-global address before connecting, so a refresh in the e2e run never reaches the network
+# (no real feed is ever read). The UI scenarios with items use synthetic answers in the browser.
+sources:
+  - id: qc-lab
+    name: QC Lab News
+    homepage: https://127.0.0.1/qc-lab/
+    feed: https://127.0.0.1/qc-lab/feed.xml
+  - id: qc-research
+    name: QC Research Blog
+    homepage: https://127.0.0.1/qc-research/
+    feed: https://127.0.0.1/qc-research/rss.xml

@@ -42,6 +42,16 @@ function answerCollect(frame: HTMLIFrameElement, edits: Record<string, string>) 
 }
 
 describe('note view', () => {
+  // Scenario: Export a note
+  it('exports the note through its print view in a new tab', async () => {
+    const { article, note } = await openNote('Redis eviction')
+    const link = within(article).getByRole('link', { name: 'Export PDF' })
+    expect(link).toHaveAttribute('href', `/api/notes/${note.id}/print`)
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link.getAttribute('rel')).toContain('noopener')
+    expect(link.getAttribute('rel')).toContain('noreferrer')
+  })
+
   it('shows the original page in a sandboxed frame without same-origin access', async () => {
     const { article, note } = await openNote('Redis eviction')
     const frame = within(article).getByTitle('Original page: Redis eviction')

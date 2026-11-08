@@ -51,11 +51,11 @@ def test_import_several_files_each_with_own_outcome(
 
 # Scenario: Wrong file type
 def test_wrong_file_type_is_rejected(client: TestClient) -> None:
-    (result,) = upload(client, ("notes.pdf", b"%PDF", "application/pdf"))
+    (result,) = upload(client, ("notes.docx", b"PK..", "application/octet-stream"))
     assert result == {
-        "filename": "notes.pdf",
+        "filename": "notes.docx",
         "outcome": "rejected",
-        "reason": "not an HTML file",
+        "reason": "not an HTML or PDF file",
         "note": None,
     }
     assert client.get("/api/notes").json() == []

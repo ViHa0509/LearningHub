@@ -117,3 +117,48 @@ class ResourceSyncStatus(BaseModel):
     error: str | None
     started_at: datetime | None
     finished_at: datetime | None
+
+
+class NewsSourceResult(BaseModel):
+    id: str
+    name: str
+    # None while the running refresh has not read the source yet.
+    ok: bool | None
+    items: int | None
+    error: str | None
+
+
+class NewsRefreshStatus(BaseModel):
+    state: Literal["idle", "running", "done", "failed"]
+    started_at: datetime | None
+    finished_at: datetime | None
+    # Set when the whole refresh failed (every source failed, or an unexpected error).
+    error: str | None
+    sources: list[NewsSourceResult]
+
+
+class NewsItemOut(BaseModel):
+    id: UUID
+    source: str
+    source_name: str
+    title: str
+    url: str
+    published_at: datetime
+    summary: str
+
+
+class NewsSourceOut(BaseModel):
+    id: str
+    name: str
+    homepage: str
+    count: int
+    last_ok: bool | None
+    last_error: str | None
+    last_fetched_at: datetime | None
+
+
+class NewsListOut(BaseModel):
+    items: list[NewsItemOut]
+    sources: list[NewsSourceOut]
+    last_refresh_at: datetime | None
+    stale: bool

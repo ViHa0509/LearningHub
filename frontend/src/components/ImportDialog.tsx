@@ -56,8 +56,8 @@ export function ImportDialog({ roadmaps, onClose, onChanged }: Props) {
 
   return (
     <div className="dialog-backdrop">
-      <div role="dialog" aria-modal="true" aria-label="Import HTML files" className="dialog">
-        <h2>Import HTML files</h2>
+      <div role="dialog" aria-modal="true" aria-label="Import HTML or PDF files" className="dialog">
+        <h2>Import HTML or PDF files</h2>
         {error && <p className="error" role="alert">{error}</p>}
 
         {(stage === 'pick' || stage === 'uploading') && (
@@ -71,17 +71,17 @@ export function ImportDialog({ roadmaps, onClose, onChanged }: Props) {
             onDragLeave={() => setDragging(false)}
             onDrop={onDrop}
           >
-            <p>Drop Claude-generated .html files here, or</p>
+            <p>Drop Claude-generated .html pages or .pdf files here, or</p>
             <button type="button" onClick={() => input.current?.click()} disabled={stage === 'uploading'}>
               Choose files
             </button>
             <input
               ref={input}
               type="file"
-              accept=".html,.htm,text/html"
+              accept=".html,.htm,.pdf,text/html,application/pdf"
               multiple
               hidden
-              aria-label="HTML files"
+              aria-label="HTML or PDF files"
               onChange={(e) => void upload(Array.from(e.target.files ?? []))}
             />
             {stage === 'uploading' && <p className="muted">Importing…</p>}

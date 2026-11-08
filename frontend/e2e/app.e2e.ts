@@ -72,9 +72,9 @@ test('roadmap node opens a lesson that can be written and survives a reload', as
 test('imported note opens from the list in a sandbox', async ({ page }) => {
   const errors = watchErrors(page)
   await page.goto('/')
-  await page.getByRole('button', { name: 'Import HTML files' }).click()
-  const dialog = page.getByRole('dialog', { name: 'Import HTML files' })
-  await dialog.getByLabel('HTML files').setInputFiles(FIXTURE)
+  await page.getByRole('button', { name: 'Import HTML or PDF files' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Import HTML or PDF files' })
+  await dialog.getByLabel('HTML or PDF files').setInputFiles(FIXTURE)
   await dialog.getByRole('combobox', { name: 'Roadmap node for redis-eviction.html' }).selectOption('backend/redis')
   await dialog.getByRole('button', { name: 'Done' }).click()
   await expect(dialog).toBeHidden()

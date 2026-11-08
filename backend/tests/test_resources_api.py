@@ -26,7 +26,7 @@ from app.main import create_app
 from app.resources.mapping import ResourceRef
 from app.resources.sync import SyncError, collect
 from app.sync_resources import main as sync_command
-from tests.conftest import TEST_DATABASE_URL
+from tests.conftest import TEST_DATABASE_URL, signed_in_client
 
 COMMIT = "abc1234"
 REPO = "/kamranahmedse/developer-roadmap"
@@ -150,7 +150,7 @@ def resource_settings(
 @pytest.fixture
 def api(resource_settings: Settings) -> Iterator[TestClient]:
     app = create_app(resource_settings)
-    with TestClient(app, headers={"X-LearningHub": "1"}) as test_client:
+    with signed_in_client(app, headers={"X-LearningHub": "1"}) as test_client:
         yield test_client
     app.state.engine.dispose()
 

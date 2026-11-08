@@ -98,6 +98,17 @@ export function NoteView({ note, roadmaps, onClose, onChanged, onDeleted }: Prop
             Edit page
           </button>
         )}
+        {!editing && (
+          <a
+            className="button-link"
+            href={api.printUrl(note.id)}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Opens the page in a new tab with the print dialog: choose Save as PDF"
+          >
+            Export PDF
+          </a>
+        )}
         {note.archived_at ? (
           <button type="button" onClick={() => void run(() => api.setArchived(note.id, false))}>
             Restore

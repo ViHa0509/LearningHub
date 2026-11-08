@@ -82,6 +82,37 @@ describe('providers list', () => {
   })
 })
 
+describe('internet search per agent', () => {
+  // Scenario: Setting needs Save
+  it('is off by default and saved only with the card Save', async () => {
+    const state = installFakeApi()
+    state.providers = [makeProvider('Claude sub', 'claude-code', 'sonnet')]
+    const { user } = renderApp('#/settings')
+    const card = await screen.findByRole('article', { name: 'Learning assistant' })
+    const box = within(card).getByRole('checkbox', { name: 'Internet search' })
+    expect(box).not.toBeChecked()
+    expect(within(card).getByText(/Lets the agent search the web/)).toBeInTheDocument()
+
+    await user.click(box)
+    expect(state.webSearch.assistant).toBeUndefined()
+    await user.click(within(card).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(state.webSearch.assistant).toBe(true))
+    const put = state.calls.find((c) => c.url === '/api/agents/assistant/settings')
+    expect(put).toMatchObject({ method: 'PUT', body: { web_search: true } })
+  })
+
+  // Scenario: Not a Claude Code provider
+  it('says it needs a Claude Code provider for other provider types', async () => {
+    const state = installFakeApi()
+    state.providers = [makeProvider('GPT', 'openai', 'gpt-5.5')]
+    renderApp('#/settings')
+    const card = await screen.findByRole('article', { name: 'Learning assistant' })
+    expect(
+      await within(card).findByText('Internet search needs a Claude Code provider; it has no effect with the current one.'),
+    ).toBeInTheDocument()
+  })
+})
+
 describe('agents section', () => {
   it('assigns different providers to the two agents', async () => {
     const state = installFakeApi()

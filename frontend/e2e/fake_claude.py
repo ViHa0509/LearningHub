@@ -7,6 +7,11 @@ the stream lines are the ones Claude Code writes (stream-json). Never calls any 
 
 Models: sonnet (search + read the notes, then answer), fake-write (write the lesson named in
 the message), fake-429 (usage limit), fake-auth (not logged in), fake-slow (sleeps).
+
+Internet search: when the backend allowed the built-in WebSearch (`--tools WebSearch`) and
+the message asks to "search the web", the default run also emits a WebSearch tool_use and
+its tool_result (synthetic example.test links, the shape Claude Code writes) before the
+answer, which lists the URLs under "Sources". Nothing is searched for real.
 """
 
 import json
@@ -97,6 +102,48 @@ class Run:
         return result
 
 
+    def web_search(self, query: str) -> list[dict]:
+        """A built-in WebSearch use and its result, as Claude Code streams them."""
+        self.count += 1
+        tool_id = f"toolu_{self.count}"
+        emit(
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": tool_id,
+                            "name": "WebSearch",
+                            "input": {"query": query, "mode": "standard"},
+                        }
+                    ],
+                },
+            }
+        )
+        links = [
+            {"title": f"Fake web result about {query}", "url": "https://example.test/fake-web-result"},
+            {"title": "Second fake web result", "url": "https://example.test/second-result"},
+        ]
+        text = (
+            f'Web search results for query: "{query}"\n\n'
+            f"Links: {json.dumps(links)}\n\n"
+            "REMINDER: You MUST include the sources above in your response to the user."
+        )
+        emit(
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": tool_id, "content": text}],
+                },
+                "tool_use_result": {"query": query, "results": [{"content": links}]},
+            }
+        )
+        return links
+
+
 def finish(text: str) -> None:
     emit({"type": "result", "subtype": "success", "is_error": False, "result": text})
 
@@ -134,12 +181,15 @@ def main() -> int:
         finish("OK")
         return 0
 
+    web = arg("--tools") == "WebSearch" and "search the web" in conversation.lower()
     mcp = Mcp(config)
     try:
         emit(
             {
                 "type": "system",
                 "subtype": "init",
+                "tools": (["WebSearch"] if arg("--tools") == "WebSearch" else [])
+                + [f"mcp__learninghub__{t}" for t in ("list_roadmap", "read_lesson", "read_note", "search_notes", "write_lesson")],
                 "mcp_servers": [{"name": "learninghub", "status": "connected"}],
                 "model": model,
             }
@@ -155,6 +205,11 @@ def main() -> int:
         query = "redis" if "redis" in question else (re.findall(r"[a-z]{5,}", question) or ["notes"])[-1]
         searched = run.call("search_notes", {"query": query})
         notes = json.loads(searched["content"][0]["text"]).get("notes", [])
+        if web:
+            links = run.web_search(f"{query} latest news")
+            sources = "\n".join(f"- {link['url']}" for link in links)
+            finish(f"From the web: fake findings about {query}. FAKE-CLAUDE-ANSWER\n\nSources:\n{sources}")
+            return 0
         if notes:
             read = run.call("read_note", {"note_id": notes[0]["id"]})
             title = json.loads(read["content"][0]["text"]).get("title", "")

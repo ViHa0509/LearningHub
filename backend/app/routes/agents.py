@@ -9,8 +9,8 @@ from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
 from app.agent.agents import AGENTS, AgentDef
-from app.agent.resolve import assignments, effective
-from app.db import AgentProvider, AIProvider, get_session
+from app.agent.resolve import assignments, effective, web_search_enabled
+from app.db import AgentProvider, AgentSetting, AIProvider, get_session
 from app.routes.guard import require_app_header
 
 router = APIRouter(prefix="/api/agents", tags=["agents"])
@@ -33,6 +33,11 @@ class AgentOut(BaseModel):
     fallback: ProviderRef | None
     effective: ProviderRef | None
     effective_reason: Literal["override", "primary", "assistant", "default", "none"]
+    web_search: bool
+
+
+class SettingsIn(BaseModel):
+    web_search: bool
 
 
 class AssignmentIn(BaseModel):
@@ -64,6 +69,7 @@ def agent_out(session: Session, agent: AgentDef) -> AgentOut:
         fallback=ref(assigned.get("fallback")),
         effective=ref(chosen),
         effective_reason=reason,
+        web_search=web_search_enabled(session, agent.id),
     )
 
 
@@ -112,5 +118,24 @@ def save_assignment(
     for role, provider_id in wanted.items():
         if provider_id is not None:
             session.add(AgentProvider(agent_id=agent.id, role=role, provider_id=provider_id))
+    session.commit()
+    return agent_out(session, agent)
+
+
+@router.put(
+    "/{agent_id}/settings",
+    response_model=AgentOut,
+    dependencies=[Depends(require_app_header)],
+)
+def save_settings(
+    agent_id: str, payload: SettingsIn, session: Annotated[Session, Depends(get_session)]
+) -> AgentOut:
+    """Save the agent's switches (Internet search)."""
+    agent = get_agent(agent_id)
+    row = session.get(AgentSetting, agent.id)
+    if row is None:
+        session.add(AgentSetting(agent_id=agent.id, web_search=payload.web_search))
+    else:
+        row.web_search = payload.web_search
     session.commit()
     return agent_out(session, agent)

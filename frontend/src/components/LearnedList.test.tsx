@@ -62,7 +62,7 @@ describe('LearnedList', () => {
       <LearnedList notes={[]} roadmaps={[backend]} selectedNoteId={null} selectedNodeId={null}
         onOpenNote={noop} onImport={onImport} />,
     )
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Import HTML files' }))
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Import HTML or PDF files' }))
     expect(onImport).toHaveBeenCalled()
   })
 })

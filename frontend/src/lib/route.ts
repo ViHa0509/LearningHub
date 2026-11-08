@@ -6,6 +6,7 @@ export type Route =
   | { page: 'lesson'; domain: string; node: string }
   | { page: 'note'; id: string }
   | { page: 'settings' }
+  | { page: 'news' }
   /** The provider configuration page; id is `new` for a configuration not saved yet. */
   | { page: 'provider'; id: string }
 
@@ -18,6 +19,7 @@ export function parseRoute(hash: string): Route {
   if (parts[0] === 'lesson' && parts.length === 3) return { page: 'lesson', domain: parts[1], node: parts[2] }
   if (parts[0] === 'note' && parts.length === 2) return { page: 'note', id: parts[1] }
   if (parts[0] === 'settings' && parts.length === 1) return { page: 'settings' }
+  if (parts[0] === 'news' && parts.length === 1) return { page: 'news' }
   if (parts[0] === 'settings' && parts[1] === 'providers' && parts.length === 3) {
     return { page: 'provider', id: parts[2] }
   }
@@ -36,6 +38,8 @@ export function routeHash(route: Route): string {
       return `#/note/${route.id}`
     case 'settings':
       return '#/settings'
+    case 'news':
+      return '#/news'
     case 'provider':
       return `#/settings/providers/${route.id}`
   }

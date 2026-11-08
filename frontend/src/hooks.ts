@@ -1,6 +1,6 @@
-import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useInfiniteQuery, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useRef } from 'react'
-import { api, queryKeys, type HealthReason, type Roadmap } from './api'
+import { api, queryKeys, type HealthReason, type NewsFilters, type Roadmap } from './api'
 import { onFailure } from './lib/failures'
 
 export function useDomains() {
@@ -82,6 +82,59 @@ export function useResourceSync(domain: string, enabled = true) {
     previous.current = state
   }, [state, domain, client])
   return status
+}
+
+/** How many news items one page asks for. */
+export const NEWS_PAGE_SIZE = 50
+
+/**
+ * The news, newest first, for the given source and text filters. Pages are loaded with "Load more":
+ * a full page means there may be more, read before the last item's publication time.
+ */
+export function useNews(filters: NewsFilters) {
+  return useInfiniteQuery({
+    queryKey: queryKeys.newsList(filters),
+    queryFn: ({ pageParam }) =>
+      api.news({ source: filters.source, q: filters.q, limit: NEWS_PAGE_SIZE, before: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    // The source chips and the list stay on screen while another filter loads.
+    placeholderData: keepPreviousData,
+    getNextPageParam: (last) =>
+      last.items.length >= NEWS_PAGE_SIZE ? last.items[last.items.length - 1].published_at : undefined,
+  })
+}
+
+/** How often the refresh status is read while a refresh runs. */
+export const NEWS_REFRESH_POLL_MS = 1_500
+
+/**
+ * The news refresh job, read every 1.5 s while it runs. When a running refresh ends, every news
+ * list is reloaded.
+ */
+export function useNewsRefresh() {
+  const client = useQueryClient()
+  const status = useQuery({
+    queryKey: queryKeys.newsRefresh,
+    queryFn: api.newsRefreshStatus,
+    refetchInterval: (query) => (query.state.data?.state === 'running' ? NEWS_REFRESH_POLL_MS : false),
+  })
+  const state = status.data?.state
+  const previous = useRef(state)
+  useEffect(() => {
+    if (previous.current === 'running' && state !== 'running') {
+      void client.invalidateQueries({ queryKey: queryKeys.news })
+    }
+    previous.current = state
+  }, [state, client])
+
+  const start = useCallback(async () => {
+    // A status read still on its way must not overwrite the running job this answer starts.
+    await client.cancelQueries({ queryKey: queryKeys.newsRefresh })
+    const started = await api.startNewsRefresh()
+    client.setQueryData(queryKeys.newsRefresh, started)
+  }, [client])
+
+  return { status, start }
 }
 
 /**

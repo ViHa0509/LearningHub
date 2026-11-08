@@ -20,7 +20,7 @@ from tests.agent_fakes import (
     openai_client,
     status_error,
 )
-from tests.conftest import TEST_DATABASE_URL
+from tests.conftest import TEST_DATABASE_URL, signed_in_client
 
 KEY = "sk-test-abcd1234"
 BASE = "/api/ai-providers"
@@ -482,7 +482,7 @@ def test_env_key_imported_once(settings_factory: Any) -> None:
     )
     for _ in range(2):
         app = create_app(settings)
-        with TestClient(app) as client:
+        with signed_in_client(app) as client:
             listing = client.get(BASE).json()
         app.state.engine.dispose()
     by_name = {p["name"]: p for p in listing}
@@ -499,7 +499,7 @@ def test_env_key_imported_once(settings_factory: Any) -> None:
 def test_env_import_does_not_overwrite_an_edited_configuration(settings_factory: Any) -> None:
     settings = settings_factory(deepseek_api_key=SecretStr("sk-deep-1111"))
     app = create_app(settings)
-    with TestClient(app, headers={"X-LearningHub": "1"}) as client:
+    with signed_in_client(app, headers={"X-LearningHub": "1"}) as client:
         imported = client.get(BASE).json()[0]
         assert (imported["name"], imported["provider_type"], imported["base_url"]) == (
             "DeepSeek (from .env)",
@@ -516,7 +516,7 @@ def test_env_import_does_not_overwrite_an_edited_configuration(settings_factory:
         assert client.put(f"{BASE}/{imported['id']}", json=edited).status_code == 200
     app.state.engine.dispose()
     app = create_app(settings)
-    with TestClient(app) as client:
+    with signed_in_client(app) as client:
         again = client.get(BASE).json()
     app.state.engine.dispose()
     assert [(p["name"], p["model_name"]) for p in again] == [
