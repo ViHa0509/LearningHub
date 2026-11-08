@@ -119,6 +119,35 @@ test('dark theme applies at once and is remembered', async ({ page }) => {
   expect(errors).toEqual([])
 })
 
+test('lesson pages keep the same width whatever their content', async ({ page, request }) => {
+  // A one-word lesson once shrank the page to a narrow column, unlike a node without a lesson.
+  const saved = await request.put('http://127.0.0.1:8001/api/lessons/devops/helm', {
+    headers: { 'X-LearningHub': '1' },
+    data: { body: 'Test' },
+  })
+  expect(saved.ok()).toBe(true)
+  const widths: Record<string, number> = {}
+  for (const [path, title] of [
+    ['devops/helm', 'Helm'],
+    ['devops/docker', 'Docker'],
+    ['backend/not-a-node', null],
+  ] as const) {
+    await page.goto(`/#/lesson/${path}`)
+    const region = title
+      ? page.getByRole('article', { name: `Lesson: ${title}` })
+      : page.getByRole('region', { name: 'Lesson not found' })
+    await expect(region).toBeVisible()
+    widths[path] = (await region.boundingBox())!.width
+  }
+  const center = (await page.getByRole('main', { name: 'Content' }).boundingBox())!.width
+  for (const width of Object.values(widths)) {
+    expect(Math.round(width)).toBe(Math.round(Math.min(center, 860)))
+  }
+  await page.goto('/#/lesson/devops/helm')
+  await expect(page.getByRole('article', { name: 'Lesson: Helm' })).toBeVisible()
+  await shot(page, 'lesson-short')
+})
+
 test('unknown lesson shows a way back', async ({ page }) => {
   await page.goto('/#/lesson/backend/not-a-node')
   const missing = page.getByRole('region', { name: 'Lesson not found' })

@@ -223,7 +223,7 @@ a { color: var(--accent); }
 .center { overflow: auto; }
 .page-status { padding: 24px; }
 
-.home-page { padding: 32px clamp(16px, 4vw, 48px) 48px; max-width: 1100px; margin: 0 auto; }
+.home-page { padding: 32px clamp(16px, 4vw, 48px) 48px; width: 100%; max-width: 1100px; margin: 0 auto; }
 .home-intro h1 { font-size: 26px; margin: 0 0 6px; }
 .domain-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; margin-top: 24px; }
 .domain-card { display: flex; flex-direction: column; gap: 8px; height: 100%; padding: 18px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; color: var(--text); text-decoration: none; transition: border-color 0.15s, transform 0.15s; }
@@ -234,7 +234,7 @@ a { color: var(--accent); }
 .progress-bar { flex: 1; height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
 .progress-bar span { display: block; height: 100%; background: var(--has-notes); }
 
-.lesson-page { padding: 24px clamp(16px, 4vw, 48px) 48px; max-width: 860px; margin: 0 auto; }
+.lesson-page { padding: 24px clamp(16px, 4vw, 48px) 48px; width: 100%; max-width: 860px; margin: 0 auto; }
 .breadcrumb { font-size: 13px; color: var(--muted); }
 .lesson-header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .lesson-header h1 { font-size: 26px; margin: 8px 0; }
@@ -308,7 +308,7 @@ a { color: var(--accent); }
 .top-actions a:hover { background: var(--surface-2); }
 .button-link { display: inline-block; padding: 5px 12px; border-radius: 6px; text-decoration: none; border: 1px solid var(--border); }
 .button-link.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-.settings-page { padding: 24px clamp(16px, 4vw, 48px) 48px; max-width: 1000px; margin: 0 auto; }
+.settings-page { padding: 24px clamp(16px, 4vw, 48px) 48px; width: 100%; max-width: 1000px; margin: 0 auto; }
 .settings-page h1 { font-size: 24px; margin: 0 0 6px; }
 .provider-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; margin-top: 20px; }
 .provider-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
