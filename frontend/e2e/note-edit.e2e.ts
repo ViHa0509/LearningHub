@@ -1,10 +1,11 @@
 /**
  * Spec checks for the change note-edit-save: rename in the learned list with Save and Cancel,
- * the note page title with Save and Cancel (never saved on blur), and the page HTML editor
- * (Edit page, live sandboxed preview, Save, Ctrl+S, Cancel and leave confirmations).
+ * the note page title with Save and Cancel (never saved on blur); and for note-inline-edit the
+ * in-place page editor (Edit page makes the rendered page editable in a sandboxed frame; Save,
+ * Ctrl+S inside the page, only typed changes saved, Cancel and leave confirmations, isolation).
  * Data is created through the API with unique titles and removed afterwards.
  */
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
+import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -43,9 +44,14 @@ function pageHtml(title: string, marker: string) {
 }
 
 /** Import one HTML note through the API, linked to a node. */
-async function createNote(request: APIRequestContext, tag: string, node = 'backend/redis') {
-  const title = uniqueTitle(tag)
-  const html = pageHtml(title, `old content ${title}`)
+async function createNote(
+  request: APIRequestContext,
+  tag: string,
+  node = 'backend/redis',
+  custom?: { title: string; html: string },
+) {
+  const title = custom?.title ?? uniqueTitle(tag)
+  const html = custom?.html ?? pageHtml(title, `old content ${title}`)
   const res = await request.post(`${API}/notes/import`, {
     headers: H,
     multipart: { files: { name: `${title.replace(/ /g, '_')}.html`, mimeType: 'text/html', buffer: Buffer.from(html) } },
@@ -209,97 +215,172 @@ test('Rename on the note page: Save and Cancel appear on change, blur does not s
   expect(errors).toEqual([])
 })
 
-test('Edit page: editor shows the stored HTML with an isolated preview, Save replaces the page', async ({
+const editingSelector = (title: string) => `iframe[title="Editing: ${title}"]`
+const editingFrame = (page: Page, title: string) => page.frameLocator(editingSelector(title))
+const originalFrame = (page: Page, title: string) => page.frameLocator(`iframe[title="Original page: ${title}"]`)
+
+/** Opens the in-place editor and waits until the page in the editing frame is editable. */
+async function openEditor(page: Page, article: Locator, title: string) {
+  await article.getByRole('button', { name: 'Edit page' }).click()
+  const editor = page.getByRole('region', { name: 'Edit page' })
+  await expect(editor).toBeVisible()
+  await expect(editingFrame(page, title).locator('h1')).toHaveAttribute('contenteditable', 'true')
+  return editor
+}
+
+/** Clicks a block inside the editing frame, selects its text and types a replacement. */
+async function replaceText(page: Page, title: string, selector: string, text: string) {
+  const block = editingFrame(page, title).locator(selector)
+  await block.click()
+  await page.keyboard.press('Control+a')
+  await page.keyboard.type(text)
+  await expect(block).toHaveText(text)
+}
+
+/** Stored HTML must never keep the editor's marks or script. */
+function expectNoEditorTraces(stored: string) {
+  expect(stored).not.toContain('data-lh-edit')
+  expect(stored).not.toContain('contenteditable')
+  expect(stored).not.toContain('lh-collect')
+}
+
+test('Edit page: the page itself becomes editable in a sandboxed frame, Save writes only the changed text', async ({
   page,
   request,
 }) => {
   const errors = watchErrors(page)
-  const { note, html } = await createNote(request, 'editsave')
+  const { note } = await createNote(request, 'editsave')
   const article = await openNotePage(page, note)
-  await expect(page.frameLocator(`iframe[title="Original page: ${note.title}"]`).locator('#marker')).toHaveText(
-    `old content ${note.title}`,
-  )
+  await expect(originalFrame(page, note.title).locator('#marker')).toHaveText(`old content ${note.title}`)
 
-  await article.getByRole('button', { name: 'Edit page' }).click()
-  const editor = page.getByRole('region', { name: 'Edit page' })
-  const source = editor.getByRole('textbox', { name: 'Page HTML' })
-  await expect(source).toHaveValue(html)
-  const preview = editor.locator(`iframe[title="Preview: ${note.title}"]`)
-  await expect(preview).toHaveAttribute('sandbox', 'allow-scripts')
-  expect(await preview.getAttribute('sandbox')).not.toContain('allow-same-origin')
-  await expect(page.frameLocator(`iframe[title="Preview: ${note.title}"]`).locator('#marker')).toHaveText(
-    `old content ${note.title}`,
-  )
+  const editor = await openEditor(page, article, note.title)
+  // No HTML source and no side preview: the rendered page is the editor.
+  await expect(editor.getByRole('textbox', { name: 'Page HTML' })).toHaveCount(0)
+  await expect(page.locator('textarea')).toHaveCount(0)
+  await expect(page.locator('iframe[title^="Preview:"]')).toHaveCount(0)
+  await expect(page.locator(`iframe[title="Original page: ${note.title}"]`)).toHaveCount(0)
+  const frameEl = editor.locator(editingSelector(note.title))
+  await expect(frameEl).toHaveAttribute('sandbox', 'allow-scripts')
+  expect(await frameEl.getAttribute('sandbox')).not.toContain('allow-same-origin')
+  const marker = editingFrame(page, note.title).locator('#marker')
+  await expect(marker).toHaveText(`old content ${note.title}`)
+  await expect(marker).toHaveAttribute('contenteditable', 'true')
+  const status = editor.getByRole('status')
+  await expect(status).toHaveText('Click any text on the page to edit it')
   const save = editor.getByRole('button', { name: 'Save' })
   await expect(save).toBeDisabled()
+  await expect(editor.getByRole('button', { name: 'Cancel' })).toBeEnabled()
 
-  // Live preview follows the source; Save becomes enabled.
-  const newHtml = pageHtml(note.title, 'volatile-lru evicts keys with a TTL')
-  await source.fill(newHtml)
+  // Click the paragraph, replace its text: one block changed, Save enabled.
+  await replaceText(page, note.title, '#marker', 'volatile-lru evicts keys with a TTL')
+  await expect(status).toHaveText('1 block changed')
   await expect(save).toBeEnabled()
-  await expect(page.frameLocator(`iframe[title="Preview: ${note.title}"]`).locator('#marker')).toHaveText(
-    'volatile-lru evicts keys with a TTL',
-  )
-  await shot(page, 'note-edit-editor')
+  await shot(page, 'note-edit-inline')
 
   await save.click()
   await expect(editor).toHaveCount(0)
-  await expect(page.frameLocator(`iframe[title="Original page: ${note.title}"]`).locator('#marker')).toHaveText(
-    'volatile-lru evicts keys with a TTL',
-  )
-  expect((await original(request, note.id)).trim()).toBe(newHtml)
+  await expect(originalFrame(page, note.title).locator('#marker')).toHaveText('volatile-lru evicts keys with a TTL')
+  await expect(originalFrame(page, note.title).locator('h1')).toHaveText(note.title)
+
+  const stored = await original(request, note.id)
+  expect(stored).toContain('volatile-lru evicts keys with a TTL')
+  expect(stored).not.toContain(`old content ${note.title}`)
+  expect(stored).toContain(`<h1>${note.title}</h1>`)
+  expect(stored).toContain(`<title>${note.title}</title>`)
+  expectNoEditorTraces(stored)
 
   // Title and link unchanged; content persists after reload.
   await page.reload()
   await expect(page.getByRole('textbox', { name: 'Note title' })).toHaveValue(note.title)
   await expect(page.getByRole('combobox', { name: 'Roadmap node' })).toHaveValue('backend/redis')
-  await expect(page.frameLocator(`iframe[title="Original page: ${note.title}"]`).locator('#marker')).toHaveText(
-    'volatile-lru evicts keys with a TTL',
-  )
+  await expect(originalFrame(page, note.title).locator('#marker')).toHaveText('volatile-lru evicts keys with a TTL')
+  await expect(originalFrame(page, note.title).locator('h1')).toHaveText(note.title)
   await shot(page, 'note-edit-saved')
   expect(errors).toEqual([])
 })
 
-test('Edit page: Ctrl+S saves', async ({ page, request }) => {
+test('Edit page: Ctrl+S inside the page saves', async ({ page, request }) => {
   const errors = watchErrors(page)
   const { note } = await createNote(request, 'ctrls')
   const article = await openNotePage(page, note)
-  await article.getByRole('button', { name: 'Edit page' }).click()
-  const editor = page.getByRole('region', { name: 'Edit page' })
-  const source = editor.getByRole('textbox', { name: 'Page HTML' })
-  await expect(source).toHaveValue(/old content/)
-  const newHtml = pageHtml(note.title, 'saved with the keyboard')
-  await source.fill(newHtml)
-  await source.press('Control+s')
+  const editor = await openEditor(page, article, note.title)
+  await replaceText(page, note.title, '#marker', 'saved with the keyboard')
+  await expect(editor.getByRole('status')).toHaveText('1 block changed')
+  // Focus is still inside the frame.
+  await page.keyboard.press('Control+s')
   await expect(editor).toHaveCount(0)
-  await expect(page.frameLocator(`iframe[title="Original page: ${note.title}"]`).locator('#marker')).toHaveText(
-    'saved with the keyboard',
-  )
-  expect((await original(request, note.id)).trim()).toBe(newHtml)
+  await expect(originalFrame(page, note.title).locator('#marker')).toHaveText('saved with the keyboard')
+  const stored = await original(request, note.id)
+  expect(stored).toContain('saved with the keyboard')
+  expectNoEditorTraces(stored)
   expect(errors).toEqual([])
 })
 
-test('Edit page: preview runs scripts in a sandbox without access to the application', async ({ page, request }) => {
+test("Edit page: changes made by the page's own scripts are not saved", async ({ page, request }) => {
   const errors = watchErrors(page)
-  const { note } = await createNote(request, 'isolated')
+  const title = uniqueTitle('scripted')
+  // The generated texts never appear literally in the source.
+  const script = [
+    "var p = document.createElement('div'); p.id = 'progress';",
+    "p.textContent = 'progress ' + 0 + '/' + 3; document.body.appendChild(p);",
+    "document.getElementById('status').textContent = 'ready' + '-' + 'by-script';",
+  ].join('\n')
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title></head><body><h1>${title}</h1><p id="marker">old content</p><p id="status">static status</p><script>${script}</script></body></html>`
+  const { note } = await createNote(request, 'scripted', 'backend/redis', { title, html })
   const article = await openNotePage(page, note)
-  await article.getByRole('button', { name: 'Edit page' }).click()
-  const editor = page.getByRole('region', { name: 'Edit page' })
-  const source = editor.getByRole('textbox', { name: 'Page HTML' })
-  await expect(source).toHaveValue(/old content/)
-  const script = `<!doctype html><html><body><p id="marker">waiting</p><script>
+  const editor = await openEditor(page, article, note.title)
+  const frame = editingFrame(page, note.title)
+  await expect(frame.locator('#progress')).toHaveText('progress 0/3')
+  await expect(frame.locator('#status')).toHaveText('ready-by-script')
+
+  await replaceText(page, note.title, '#marker', 'edited by the user')
+  await expect(editor.getByRole('status')).toHaveText('1 block changed')
+  await editor.getByRole('button', { name: 'Save' }).click()
+  await expect(editor).toHaveCount(0)
+
+  const stored = await original(request, note.id)
+  expect(stored).toContain('edited by the user')
+  expect(stored).toContain(script)
+  expect(stored).toContain('static status')
+  expect(stored).not.toContain('progress 0/3')
+  expect(stored).not.toContain('ready-by-script')
+  expect(stored).not.toContain('id="progress"')
+  expectNoEditorTraces(stored)
+
+  // The saved page still runs its script once, as before.
+  const orig = originalFrame(page, note.title)
+  await expect(orig.locator('#marker')).toHaveText('edited by the user')
+  await expect(orig.locator('#progress')).toHaveCount(1)
+  await expect(orig.locator('#status')).toHaveText('ready-by-script')
+  expect(errors).toEqual([])
+})
+
+test('Edit page: the editing frame runs scripts in a sandbox without access to the application', async ({
+  page,
+  request,
+}) => {
+  const errors = watchErrors(page)
+  const title = uniqueTitle('isolated')
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title></head><body><h1>${title}</h1><p id="marker">waiting</p><script>
 var out; try { out = 'leaked: ' + window.parent.document.title } catch (e) { out = 'isolated' }
-try { localStorage.setItem('x', '1'); out += ' storage-open' } catch (e) { out += ' no-storage' }
+try { out += ' storage:' + localStorage.getItem('lh-e2e-probe') } catch (e) { out += ' no-storage' }
 document.getElementById('marker').textContent = 'ran ' + out
 </script></body></html>`
-  await source.fill(script)
-  await expect(page.frameLocator(`iframe[title="Preview: ${note.title}"]`).locator('#marker')).toHaveText(
-    'ran isolated no-storage',
-  )
-  // Discard to leave the note as it was.
-  page.once('dialog', (d) => void d.accept())
+  const { note } = await createNote(request, 'isolated', 'backend/redis', { title, html })
+  const article = await openNotePage(page, note)
+  await page.evaluate(() => localStorage.setItem('lh-e2e-probe', 'app-secret'))
+  const editor = await openEditor(page, article, note.title)
+  const frameEl = editor.locator(editingSelector(note.title))
+  await expect(frameEl).toHaveAttribute('sandbox', 'allow-scripts')
+  expect(await frameEl.getAttribute('sandbox')).not.toContain('allow-same-origin')
+  await expect(editingFrame(page, note.title).locator('#marker')).toHaveText('ran isolated no-storage')
+  // The editing frame runs in an opaque origin.
+  const frame = page.frames().find((f) => f !== page.mainFrame())
+  expect(frame).toBeTruthy()
+  expect(await frame!.evaluate('window.origin')).toBe('null')
   await editor.getByRole('button', { name: 'Cancel' }).click()
   await expect(editor).toHaveCount(0)
+  await page.evaluate(() => localStorage.removeItem('lh-e2e-probe'))
   expect(errors).toEqual([])
 })
 
@@ -317,20 +398,16 @@ test('Edit page: Cancel without changes closes; with changes it asks, dismiss ke
     dialogs += 1
   }
   page.on('dialog', count)
-  await article.getByRole('button', { name: 'Edit page' }).click()
-  const editor = page.getByRole('region', { name: 'Edit page' })
-  await expect(editor.getByRole('textbox', { name: 'Page HTML' })).toHaveValue(html)
+  let editor = await openEditor(page, article, note.title)
   await editor.getByRole('button', { name: 'Cancel' }).click()
   await expect(editor).toHaveCount(0)
   expect(dialogs).toBe(0)
   page.off('dialog', count)
 
   // Changes, then dismiss: the editor stays with the draft.
-  await article.getByRole('button', { name: 'Edit page' }).click()
-  const source = editor.getByRole('textbox', { name: 'Page HTML' })
-  await expect(source).toHaveValue(html)
-  const draft = pageHtml(note.title, 'draft that will be dropped')
-  await source.fill(draft)
+  editor = await openEditor(page, article, note.title)
+  await replaceText(page, note.title, '#marker', 'draft that will be dropped')
+  await expect(editor.getByRole('status')).toHaveText('1 block changed')
   let message = ''
   page.once('dialog', (d) => {
     message = d.message()
@@ -340,15 +417,14 @@ test('Edit page: Cancel without changes closes; with changes it asks, dismiss ke
   await editor.getByRole('button', { name: 'Cancel' }).click()
   await expect.poll(() => message).toMatch(DISCARD_PROMPT)
   await expect(editor).toBeVisible()
-  await expect(source).toHaveValue(draft)
+  await expect(editingFrame(page, note.title).locator('#marker')).toHaveText('draft that will be dropped')
+  await expect(editor.getByRole('status')).toHaveText('1 block changed')
 
   // Accept: the editor closes and the old content stays.
   page.once('dialog', (d) => void d.accept())
   await editor.getByRole('button', { name: 'Cancel' }).click()
   await expect(editor).toHaveCount(0)
-  await expect(page.frameLocator(`iframe[title="Original page: ${note.title}"]`).locator('#marker')).toHaveText(
-    `old content ${note.title}`,
-  )
+  await expect(originalFrame(page, note.title).locator('#marker')).toHaveText(`old content ${note.title}`)
   expect(await original(request, note.id)).toBe(html)
   expect(errors).toEqual([])
 })
@@ -360,11 +436,9 @@ test('Edit page: leaving with unsaved changes through Back asks first', async ({
   await listOf(page).getByRole('button', { name: note.title, exact: true }).click()
   await expect(page).toHaveURL(new RegExp(`#/note/${note.id}`))
   const article = page.getByRole('article', { name: `Note: ${note.title}` })
-  await article.getByRole('button', { name: 'Edit page' }).click()
-  const editor = page.getByRole('region', { name: 'Edit page' })
-  const source = editor.getByRole('textbox', { name: 'Page HTML' })
-  await expect(source).toHaveValue(html)
-  await source.fill(pageHtml(note.title, 'unsaved draft'))
+  const editor = await openEditor(page, article, note.title)
+  await replaceText(page, note.title, '#marker', 'unsaved draft')
+  await expect(editor.getByRole('status')).toHaveText('1 block changed')
 
   // Dismiss: stay on the note with the draft.
   let message = ''
@@ -376,7 +450,7 @@ test('Edit page: leaving with unsaved changes through Back asks first', async ({
   await article.getByRole('button', { name: '← Back' }).click()
   await expect.poll(() => message).toMatch(DISCARD_PROMPT)
   await expect(page).toHaveURL(new RegExp(`#/note/${note.id}`))
-  await expect(source).toHaveValue(/unsaved draft/)
+  await expect(editingFrame(page, note.title).locator('#marker')).toHaveText('unsaved draft')
 
   // Accept: leave the note; nothing was saved.
   page.once('dialog', (d) => void d.accept())

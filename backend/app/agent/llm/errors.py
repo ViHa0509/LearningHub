@@ -1,14 +1,13 @@
 """Provider failures sorted into the categories the connection test and the fallback use.
 
 The Anthropic and OpenAI SDKs share their exception class names, so one classifier
-handles both; it is given the SDK module the exception came from.
+handles both; it is given the SDK module the exception came from. The SDKs are imported
+only when classifying: importing them takes seconds, and the MCP tool server (started for
+every Claude Code answer) needs ProviderError without them.
 """
 
 from types import ModuleType
 from typing import Literal
-
-import anthropic
-import openai
 
 ErrorCategory = Literal[
     "auth_failed", "invalid_model", "unavailable", "timeout", "rate_limited", "invalid_config"
@@ -69,8 +68,12 @@ def _classify(exc: Exception, sdk: ModuleType) -> ProviderError:
 
 
 def classify_anthropic(exc: Exception) -> ProviderError:
+    import anthropic
+
     return _classify(exc, anthropic)
 
 
 def classify_openai(exc: Exception) -> ProviderError:
+    import openai
+
     return _classify(exc, openai)

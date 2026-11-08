@@ -580,3 +580,19 @@ def test_mcp_has_no_delete_tool(mcp: McpClient) -> None:
     result = call_tool(mcp, "delete_lessons")
     assert result["isError"] is True
     assert "unknown tool" in result["content"][0]["text"]
+
+
+def test_mcp_server_starts_without_the_provider_sdks() -> None:
+    """The tool server starts for every answer; importing the SDKs took ~15 s on Windows."""
+    code = (
+        "import sys, app.agent.mcp_server; "
+        "print(sorted({'anthropic', 'openai'} & set(sys.modules)))"
+    )
+    out = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=Path(__file__).parents[1],
+    )
+    assert out.stdout.strip() == "[]"

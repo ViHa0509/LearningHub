@@ -1,5 +1,5 @@
 /** Spec: learning-views - Read a note; knowledge-import - Show the original page safely. */
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { Note } from '../api'
 import { installFakeApi, makeNote } from '../test/fakeApi'
@@ -15,6 +15,30 @@ async function openNote(title: string, nodeId: string | null = 'backend/caching'
   await view.user.click(await screen.findByRole('button', { name: title }))
   const article = await screen.findByRole('article', { name: `Note: ${title}` })
   return { ...view, state, note, article }
+}
+
+type User = Awaited<ReturnType<typeof openNote>>['user']
+
+async function startEditing(user: User, article: HTMLElement) {
+  await user.click(within(article).getByRole('button', { name: 'Edit page' }))
+  await within(article).findByRole('region', { name: 'Edit page' })
+  return (await within(article).findByTitle('Editing: Redis eviction')) as HTMLIFrameElement
+}
+
+/** A message as the editor script in the frame would send it. */
+function fromFrame(frame: HTMLIFrameElement, data: unknown) {
+  act(() => {
+    window.dispatchEvent(new MessageEvent('message', { data, source: frame.contentWindow }))
+  })
+}
+
+/** Makes the frame answer the next collect request with these edits. */
+function answerCollect(frame: HTMLIFrameElement, edits: Record<string, string>) {
+  vi.spyOn(frame.contentWindow!, 'postMessage').mockImplementation((message: unknown) => {
+    if ((message as { type?: string }).type === 'lh-collect') {
+      setTimeout(() => fromFrame(frame, { type: 'lh-edits', edits }), 0)
+    }
+  })
 }
 
 describe('note view', () => {
@@ -64,44 +88,52 @@ describe('note view', () => {
     expect(state.calls.some((c) => c.method === 'PATCH')).toBe(false)
   })
 
-  it('edits the page source and saves it', async () => {
+  it('edits the text in place and saves only the changed block', async () => {
     const { user, article, state, note } = await openNote('Redis eviction')
-    await user.click(within(article).getByRole('button', { name: 'Edit page' }))
-    const editor = await within(article).findByRole('region', { name: 'Edit page' })
-    const source = await within(editor).findByRole('textbox', { name: 'Page HTML' })
-    expect(source).toHaveValue('<title>Redis eviction</title><p>Redis eviction</p>')
-    const save = within(editor).getByRole('button', { name: 'Save' })
+    const frame = await startEditing(user, article)
+    expect(frame).toHaveAttribute('sandbox', 'allow-scripts')
+    expect(frame.getAttribute('srcdoc')).toContain('data-lh-edit="0"')
+    expect(within(article).queryByRole('textbox', { name: 'Page HTML' })).not.toBeInTheDocument()
+    const save = within(article).getByRole('button', { name: 'Save' })
     expect(save).toBeDisabled()
-    const preview = within(editor).getByTitle('Preview: Redis eviction')
-    expect(preview).toHaveAttribute('sandbox', 'allow-scripts')
+    expect(within(article).getByText('Click any text on the page to edit it')).toBeInTheDocument()
 
-    await user.clear(source)
-    await user.type(source, '<p>volatile-lru</p>')
-    expect(save).toBeEnabled()
+    fromFrame(frame, { type: 'lh-dirty', count: 1 })
+    expect(await screen.findByText('1 block changed')).toBeInTheDocument()
+    answerCollect(frame, { '0': 'volatile-lru' })
     await user.click(save)
     const put = state.calls.find((c) => c.method === 'PUT')
     expect(put?.url).toBe(`/api/notes/${note.id}/content`)
-    expect(put?.body).toMatchObject({ html: '<p>volatile-lru</p>' })
-    expect((put!.body as { base_sha256: string }).base_sha256).toMatch(/^sha-/)
+    const html = (put!.body as { html: string }).html
+    expect(html).toContain('<p>volatile-lru</p>')
+    expect(html).toContain('<title>Redis eviction</title>')
+    expect(html).not.toContain('data-lh-edit')
+    expect(html).not.toContain('lh-collect')
     await waitFor(() => expect(within(article).queryByRole('region', { name: 'Edit page' })).not.toBeInTheDocument())
     expect(within(article).getByTitle('Original page: Redis eviction')).toBeInTheDocument()
-    expect(state.sources[note.id]).toBe('<p>volatile-lru</p>')
   })
 
-  it('saves the page with Ctrl+S', async () => {
+  it('ignores messages that do not come from its own frame', async () => {
+    const { user, article } = await openNote('Redis eviction')
+    await startEditing(user, article)
+    window.dispatchEvent(new MessageEvent('message', { data: { type: 'lh-dirty', count: 3 }, source: window }))
+    expect(within(article).getByRole('button', { name: 'Save' })).toBeDisabled()
+  })
+
+  it('saves when the page forwards Ctrl+S', async () => {
     const { user, article, state } = await openNote('Redis eviction')
-    await user.click(within(article).getByRole('button', { name: 'Edit page' }))
-    const source = await within(article).findByRole('textbox', { name: 'Page HTML' })
-    await user.type(source, '<p>more</p>')
-    await user.keyboard('{Control>}s{/Control}')
+    const frame = await startEditing(user, article)
+    fromFrame(frame, { type: 'lh-dirty', count: 1 })
+    answerCollect(frame, { '0': 'more' })
+    fromFrame(frame, { type: 'lh-save' })
     await waitFor(() => expect(state.calls.some((c) => c.method === 'PUT')).toBe(true))
   })
 
   it('asks before discarding unsaved page changes', async () => {
     const { user, article, state } = await openNote('Redis eviction')
-    await user.click(within(article).getByRole('button', { name: 'Edit page' }))
-    const source = await within(article).findByRole('textbox', { name: 'Page HTML' })
-    await user.type(source, '<p>draft</p>')
+    const frame = await startEditing(user, article)
+    fromFrame(frame, { type: 'lh-dirty', count: 1 })
+    await screen.findByText('1 block changed')
     const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false)
     await user.click(within(article).getByRole('button', { name: 'Cancel' }))
     expect(confirm).toHaveBeenCalledWith('Discard your unsaved changes to this page?')
@@ -116,9 +148,9 @@ describe('note view', () => {
 
   it('asks before leaving the note with unsaved page changes', async () => {
     const { user, article } = await openNote('Redis eviction')
-    await user.click(within(article).getByRole('button', { name: 'Edit page' }))
-    const source = await within(article).findByRole('textbox', { name: 'Page HTML' })
-    await user.type(source, '<p>draft</p>')
+    const frame = await startEditing(user, article)
+    fromFrame(frame, { type: 'lh-dirty', count: 2 })
+    await screen.findByText('2 blocks changed')
     const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false)
     await user.click(within(article).getByRole('button', { name: '← Back' }))
     expect(confirm).toHaveBeenCalledTimes(1)
@@ -133,15 +165,14 @@ describe('note view', () => {
 
   it('shows a conflict when the page changed since the editor opened', async () => {
     const { user, article, state, note } = await openNote('Redis eviction')
-    await user.click(within(article).getByRole('button', { name: 'Edit page' }))
-    const source = await within(article).findByRole('textbox', { name: 'Page HTML' })
+    const frame = await startEditing(user, article)
     state.sources[note.id] = '<p>saved in another tab</p>'
-    await user.type(source, '<p>mine</p>')
-    await user.click(within(article).getByRole('button', { name: 'Save' }))
+    fromFrame(frame, { type: 'lh-dirty', count: 1 })
+    answerCollect(frame, { '0': 'mine' })
+    await user.click(await within(article).findByRole('button', { name: 'Save' }))
     expect(await within(article).findByRole('alert')).toHaveTextContent('the page changed since you opened it')
     expect(state.sources[note.id]).toBe('<p>saved in another tab</p>')
   })
-
   it('changes and removes the link', async () => {
     const { user, article, state, note } = await openNote('Redis eviction')
     const picker = within(article).getByRole('combobox', { name: 'Roadmap node' })
