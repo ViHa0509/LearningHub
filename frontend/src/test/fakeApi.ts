@@ -480,6 +480,7 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
           stopped: false,
           provider: { id: resolved.id, name: resolved.name, model: resolved.model_name },
           fallback_used: false,
+          effort: chatBody.effort ?? 'medium',
           ...answer,
         })
       }

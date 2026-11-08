@@ -1,6 +1,11 @@
-/** Spec: agent-chat - Chat panel; agent-providers; lesson-pages - Ask the agent to draft an empty lesson. */
-import { screen, waitFor, within } from '@testing-library/react'
+/**
+ * Spec: agent-chat - Chat panel, Skills in the composer, Effort per message, Text attachments;
+ * agent-providers; lesson-pages - Ask the agent to draft an empty lesson.
+ */
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
+import type { ChatRequest } from '../api'
+import { SKILLS } from '../lib/skills'
 import { installFakeApi, makeProvider, twoProviders } from '../test/fakeApi'
 import { renderApp } from '../test/render'
 
@@ -49,12 +54,14 @@ describe('agent panel', () => {
     expect(within(log).getByText('Used 2 tools')).toBeInTheDocument()
     expect(within(log).getByText("Read note 'Redis eviction'")).toBeInTheDocument()
     expect(within(log).getByText('Claude main · claude-sonnet-5-5')).toBeInTheDocument()
+    expect(within(log).getByText('Medium')).toBeInTheDocument()
     expect(box).toHaveValue('')
 
     expect(chats(state)[0].body).toEqual({
       agent_id: 'assistant',
       messages: [{ role: 'user', content: 'what about redis?' }],
       page: { kind: 'roadmap', domain: 'backend' },
+      effort: 'medium',
     })
   })
 
@@ -150,6 +157,345 @@ describe('agent panel', () => {
     await within(panel()).findByText('ok')
     await user.click(within(panel()).getByRole('button', { name: 'Clear chat' }))
     expect(within(panel()).queryByText('ok')).not.toBeInTheDocument()
+  })
+})
+
+const box = () => within(panel()).getByRole('textbox', { name: 'Message the agent' })
+const lastBody = (state: ReturnType<typeof installFakeApi>) => chats(state).at(-1)!.body as ChatRequest
+const fileInput = () => panel().querySelector('input[type="file"]') as HTMLInputElement
+const mdFile = (name: string, text: string) => new File([text], name, { type: 'text/markdown' })
+
+describe('chat panel layout', () => {
+  it('shows the error in its own row under the question with Retry, which sends it again', async () => {
+    const state = withProviders()
+    state.chat = () => ({ status: 502, detail: 'Claude main: auth_failed' })
+    const { user } = renderApp()
+    await user.type(await within(panel()).findByRole('textbox', { name: 'Message the agent' }), 'hello{Enter}')
+    const alert = await within(panel()).findByRole('alert')
+    expect(alert).toHaveTextContent('auth_failed')
+    // Not inside the user's bubble: the bubble holds only the question.
+    expect(within(panel()).getByText('hello').contains(alert)).toBe(false)
+    const row = alert.closest('.agent-error-row') as HTMLElement
+    expect(row).not.toBeNull()
+
+    state.chat = () => ({ reply: 'Hi now.' })
+    await user.click(within(row).getByRole('button', { name: 'Retry' }))
+    expect(await within(panel()).findByText('Hi now.')).toBeInTheDocument()
+    expect(within(panel()).queryByRole('alert')).not.toBeInTheDocument()
+    expect(within(panel()).getAllByText('hello')).toHaveLength(1)
+    expect(chats(state)).toHaveLength(2)
+    expect(lastBody(state).messages).toEqual([{ role: 'user', content: 'hello' }])
+  })
+
+  it('retries an answer: the question is sent again and the old answer replaced', async () => {
+    const state = withProviders()
+    let n = 0
+    state.chat = () => ({ reply: `take ${++n}` })
+    const { user } = renderApp()
+    await user.type(await within(panel()).findByRole('textbox', { name: 'Message the agent' }), 'explain{Enter}')
+    await within(panel()).findByText('take 1')
+    await user.click(within(panel()).getByRole('button', { name: 'Retry' }))
+    expect(await within(panel()).findByText('take 2')).toBeInTheDocument()
+    expect(within(panel()).queryByText('take 1')).not.toBeInTheDocument()
+    expect(lastBody(state).messages).toEqual([{ role: 'user', content: 'explain' }])
+  })
+
+  it('lets the user pick the agent that answers; the header shows it', async () => {
+    const state = withProviders()
+    state.assignments['lesson-writer'] = { primary: 'p2', fallback: null }
+    const { user } = renderApp()
+    const menu = await within(panel()).findByRole('button', { name: 'Agent: Learning assistant' })
+    expect(menu).toHaveAttribute('aria-haspopup', 'listbox')
+    await user.click(menu)
+    const list = within(panel()).getByRole('listbox', { name: 'Choose agent' })
+    const options = within(list).getAllByRole('option')
+    expect(options.map((o) => o.textContent)).toEqual([
+      expect.stringContaining('Learning assistant'),
+      expect.stringContaining('Lesson writer'),
+    ])
+    expect(options[0]).toHaveAttribute('aria-selected', 'true')
+    await user.click(within(list).getByRole('option', { name: /Lesson writer/ }))
+
+    expect(within(panel()).queryByRole('listbox', { name: 'Choose agent' })).not.toBeInTheDocument()
+    const current = within(panel()).getByRole('button', { name: 'Agent: Lesson writer' })
+    expect(current).toHaveTextContent('via Local qwen')
+    // The provider choice is for the assistant only.
+    expect(within(panel()).getByRole('combobox', { name: 'Provider' })).toBeDisabled()
+
+    await user.type(box(), 'draft caching{Enter}')
+    await within(panel()).findByText('ok')
+    expect(lastBody(state)).toMatchObject({ agent_id: 'lesson-writer' })
+    expect(lastBody(state)).not.toHaveProperty('provider_id')
+  })
+
+  it('opens the agent menu with the keyboard and closes it with Escape', async () => {
+    withProviders()
+    const { user } = renderApp()
+    const menu = await within(panel()).findByRole('button', { name: 'Agent: Learning assistant' })
+    menu.focus()
+    await user.keyboard('{Enter}')
+    const list = within(panel()).getByRole('listbox', { name: 'Choose agent' })
+    expect(within(list).getAllByRole('option')[0]).toHaveFocus()
+    await user.keyboard('{ArrowDown}')
+    expect(within(list).getAllByRole('option')[1]).toHaveFocus()
+    await user.keyboard('{Escape}')
+    expect(within(panel()).queryByRole('listbox', { name: 'Choose agent' })).not.toBeInTheDocument()
+    expect(menu).toHaveFocus()
+    await user.click(menu)
+    await user.keyboard('{ArrowDown}{Enter}')
+    expect(within(panel()).getByRole('button', { name: 'Agent: Lesson writer' })).toBeInTheDocument()
+  })
+
+  it('links to Settings from the header', async () => {
+    withProviders()
+    renderApp()
+    expect(await within(panel()).findByRole('link', { name: 'Agent settings' })).toHaveAttribute('href', '#/settings')
+  })
+
+  it('shows a Markdown table as a table and HTML tags as text', async () => {
+    const state = withProviders()
+    state.chat = () => ({
+      reply: '| Policy | Picks |\n|---|---|\n| allkeys-lru | least recent |\n\nUse <b>care</b> here.',
+    })
+    const { user } = renderApp()
+    await user.type(await within(panel()).findByRole('textbox', { name: 'Message the agent' }), 'policies?{Enter}')
+    const log = within(panel()).getByRole('log', { name: 'Conversation' })
+    const table = await within(log).findByRole('table')
+    expect(within(table).getByRole('columnheader', { name: 'Policy' })).toBeInTheDocument()
+    expect(within(table).getByRole('cell', { name: 'allkeys-lru' })).toBeInTheDocument()
+    expect(log.querySelector('b')).toBeNull()
+    expect(log).toHaveTextContent('Use <b>care</b> here.')
+  })
+
+  it('copies a code block and an answer', async () => {
+    const state = withProviders()
+    state.chat = () => ({ reply: 'Set it:\n\n```conf\nmaxmemory 512mb\n```' })
+    const { user } = renderApp()
+    await user.type(await within(panel()).findByRole('textbox', { name: 'Message the agent' }), 'config?{Enter}')
+    const log = within(panel()).getByRole('log', { name: 'Conversation' })
+    expect(await within(log).findByText('maxmemory 512mb')).toBeInTheDocument()
+    expect(within(log).getByText('conf')).toBeInTheDocument()
+
+    await user.click(within(log).getByRole('button', { name: 'Copy' }))
+    expect(await navigator.clipboard.readText()).toBe('maxmemory 512mb')
+    expect(within(log).getByRole('button', { name: 'Copied' })).toBeInTheDocument()
+
+    await user.click(within(log).getByRole('button', { name: 'Copy answer' }))
+    expect(await navigator.clipboard.readText()).toBe('Set it:\n\n```conf\nmaxmemory 512mb\n```')
+  })
+
+  it('offers starters in an empty chat that fill the input', async () => {
+    withProviders()
+    const { user } = renderApp()
+    const log = await within(panel()).findByRole('log', { name: 'Conversation' })
+    expect(within(log).getByText('What are we learning today?')).toBeInTheDocument()
+    const starters = within(log).getAllByRole('button')
+    expect(starters).toHaveLength(3)
+    await user.click(within(log).getByRole('button', { name: 'What should I learn next?' }))
+    expect(box()).toHaveValue('What should I learn next?')
+    expect(box()).toHaveFocus()
+  })
+
+  it('disables Send until there is text or a file', async () => {
+    withProviders()
+    const { user } = renderApp()
+    const send = await within(panel()).findByRole('button', { name: 'Send' })
+    expect(send).toBeDisabled()
+    await user.type(box(), '  ')
+    expect(send).toBeDisabled()
+    await user.type(box(), 'x')
+    expect(send).toBeEnabled()
+  })
+})
+
+describe('skills in the composer', () => {
+  it('suggests skills for "/qu" and Enter puts "/quiz " in the input without sending', async () => {
+    const state = withProviders()
+    const { user } = renderApp()
+    await user.type(await within(panel()).findByRole('textbox', { name: 'Message the agent' }), '/qu')
+    const list = within(panel()).getByRole('listbox', { name: 'Skills' })
+    expect(within(list).getAllByRole('option').map((o) => o.textContent)).toEqual([
+      expect.stringContaining('/quiz'),
+    ])
+    expect(within(list).getByRole('option')).toHaveAttribute('aria-selected', 'true')
+    await user.keyboard('{Enter}')
+    expect(box()).toHaveValue('/quiz ')
+    expect(within(panel()).queryByRole('listbox', { name: 'Skills' })).not.toBeInTheDocument()
+    expect(chats(state)).toHaveLength(0)
+  })
+
+  it('moves through the skills with the arrow keys and closes with Escape', async () => {
+    withProviders()
+    const { user } = renderApp()
+    await user.type(await within(panel()).findByRole('textbox', { name: 'Message the agent' }), '/')
+    const list = within(panel()).getByRole('listbox', { name: 'Skills' })
+    const options = () => within(list).getAllByRole('option')
+    expect(options().map((o) => o.querySelector('.popover-option-title')?.textContent)).toEqual(SKILLS.map((s) => s.cmd))
+    expect(options()[0]).toHaveAttribute('aria-selected', 'true')
+    await user.keyboard('{ArrowDown}{ArrowDown}')
+    expect(options()[2]).toHaveAttribute('aria-selected', 'true')
+    expect(box()).toHaveAttribute('aria-activedescendant', options()[2].id)
+    await user.keyboard('{ArrowUp}{ArrowUp}{ArrowUp}')
+    expect(options().at(-1)).toHaveAttribute('aria-selected', 'true')
+    await user.keyboard('{Escape}')
+    expect(within(panel()).queryByRole('listbox', { name: 'Skills' })).not.toBeInTheDocument()
+    expect(box()).toHaveValue('/')
+  })
+
+  it('opens all skills from the Skills button and picks one with a click', async () => {
+    withProviders()
+    const { user } = renderApp()
+    const button = await within(panel()).findByRole('button', { name: 'Skills' })
+    await user.click(button)
+    expect(button).toHaveAttribute('aria-expanded', 'true')
+    const list = within(panel()).getByRole('listbox', { name: 'Skills' })
+    expect(within(list).getAllByRole('option')).toHaveLength(SKILLS.length)
+    await user.click(within(list).getByRole('option', { name: /\/flashcards/ }))
+    expect(box()).toHaveValue('/flashcards ')
+    expect(box()).toHaveFocus()
+  })
+
+  it('sends a skill message as the instruction plus the text, and shows what the user typed', async () => {
+    const state = withProviders()
+    const { user } = renderApp()
+    await user.type(await within(panel()).findByRole('textbox', { name: 'Message the agent' }), '/quiz JWT{Enter}')
+    const log = within(panel()).getByRole('log', { name: 'Conversation' })
+    expect(await within(log).findByText('/quiz JWT')).toBeInTheDocument()
+    await within(log).findByText('ok')
+    const sent = lastBody(state).messages.at(-1)!.content
+    const quiz = SKILLS.find((s) => s.cmd === '/quiz')!
+    expect(sent.startsWith(quiz.prompt)).toBe(true)
+    expect(sent).toContain('JWT')
+    expect(within(log).queryByText(quiz.prompt, { exact: false })).not.toBeInTheDocument()
+  })
+})
+
+describe('effort per message', () => {
+  it('sends the chosen effort, remembers it and shows it in the caption', async () => {
+    const state = withProviders()
+    const { user, unmount } = renderApp()
+    const group = await within(panel()).findByRole('group', { name: 'Effort' })
+    const buttons = within(group).getAllByRole('button')
+    expect(buttons.map((b) => [b.textContent, b.getAttribute('title')])).toEqual([
+      ['Low', 'Fast, saves tokens'],
+      ['Medium', 'Balanced'],
+      ['High', 'Deep reasoning, slower'],
+    ])
+    expect(within(group).getByRole('button', { name: 'Medium' })).toHaveAttribute('aria-pressed', 'true')
+
+    await user.click(within(group).getByRole('button', { name: 'Low' }))
+    expect(within(group).getByRole('button', { name: 'Low' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(group).getByRole('button', { name: 'Medium' })).toHaveAttribute('aria-pressed', 'false')
+    expect(localStorage.getItem('learninghub.effort')).toBe('low')
+
+    await user.type(box(), 'quick one{Enter}')
+    const log = within(panel()).getByRole('log', { name: 'Conversation' })
+    await within(log).findByText('ok')
+    expect(lastBody(state).effort).toBe('low')
+    expect(within(log).getByText('Low')).toBeInTheDocument()
+
+    unmount()
+    renderApp()
+    const again = await within(panel()).findByRole('group', { name: 'Effort' })
+    expect(within(again).getByRole('button', { name: 'Low' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('falls back to Medium when the stored effort is unknown', async () => {
+    localStorage.setItem('learninghub.effort', 'extreme')
+    withProviders()
+    renderApp()
+    const group = await within(panel()).findByRole('group', { name: 'Effort' })
+    expect(within(group).getByRole('button', { name: 'Medium' })).toHaveAttribute('aria-pressed', 'true')
+  })
+})
+
+describe('text attachments', () => {
+  it('attaches a file, sends its name and text with the message, clears the chip and shows the file', async () => {
+    const state = withProviders()
+    const { user } = renderApp()
+    await within(panel()).findByRole('textbox', { name: 'Message the agent' })
+    await user.upload(fileInput(), mdFile('jwt.md', '# JWT\n\nTokens expire.'))
+    const chips = await within(panel()).findByRole('list', { name: 'Attachments' })
+    expect(within(chips).getByText('jwt.md')).toBeInTheDocument()
+    expect(within(chips).getByText('21 B')).toBeInTheDocument()
+    expect(within(chips).getByRole('button', { name: 'Remove jwt.md' })).toBeInTheDocument()
+
+    await user.type(box(), 'summarize this{Enter}')
+    const log = within(panel()).getByRole('log', { name: 'Conversation' })
+    await within(log).findByText('ok')
+    expect(lastBody(state)).toMatchObject({
+      messages: [{ role: 'user', content: 'summarize this' }],
+      attachments: [{ name: 'jwt.md', text: '# JWT\n\nTokens expire.' }],
+    })
+    expect(within(panel()).queryByRole('list', { name: 'Attachments' })).not.toBeInTheDocument()
+    expect(within(within(log).getByRole('list', { name: 'Attached files' })).getByText('jwt.md')).toBeInTheDocument()
+
+    // Later messages do not carry the file again.
+    await user.type(box(), 'and more{Enter}')
+    await waitFor(() => expect(chats(state)).toHaveLength(2))
+    expect(lastBody(state)).not.toHaveProperty('attachments')
+  })
+
+  it('sends a message with only a file, and Retry resends the same file', async () => {
+    const state = withProviders()
+    state.chat = () => ({ status: 502, detail: 'Claude main: unavailable' })
+    const { user } = renderApp()
+    await within(panel()).findByRole('textbox', { name: 'Message the agent' })
+    await user.upload(fileInput(), mdFile('notes.txt', 'plain'))
+    const send = within(panel()).getByRole('button', { name: 'Send' })
+    await waitFor(() => expect(send).toBeEnabled())
+    await user.click(send)
+    const alert = await within(panel()).findByRole('alert')
+    expect(lastBody(state).attachments).toEqual([{ name: 'notes.txt', text: 'plain' }])
+
+    state.chat = () => ({ reply: 'Read it.' })
+    await user.click(within(alert.closest('.agent-error-row') as HTMLElement).getByRole('button', { name: 'Retry' }))
+    await within(panel()).findByText('Read it.')
+    expect(lastBody(state).attachments).toEqual([{ name: 'notes.txt', text: 'plain' }])
+  })
+
+  it('shows a dropped unsupported file as an error chip and sends nothing for it', async () => {
+    const state = withProviders()
+    const { user } = renderApp()
+    const input = await within(panel()).findByRole('textbox', { name: 'Message the agent' })
+    const pdf = new File(['%PDF'], 'diagram.pdf', { type: 'application/pdf' })
+
+    fireEvent.dragEnter(input, { dataTransfer: { types: ['Files'], files: [] } })
+    expect(within(panel()).getByText('Drop to attach')).toBeInTheDocument()
+    fireEvent.drop(input, { dataTransfer: { types: ['Files'], files: [pdf] } })
+    expect(within(panel()).queryByText('Drop to attach')).not.toBeInTheDocument()
+
+    const chips = await within(panel()).findByRole('list', { name: 'Attachments' })
+    expect(within(chips).getByText('diagram.pdf')).toBeInTheDocument()
+    expect(within(chips).getByText(/File type not supported/)).toBeInTheDocument()
+    expect(within(panel()).getByRole('button', { name: 'Send' })).toBeDisabled()
+
+    await user.type(input, 'hi{Enter}')
+    await waitFor(() => expect(chats(state)).toHaveLength(1))
+    expect(lastBody(state)).not.toHaveProperty('attachments')
+  })
+
+  it('refuses a sixth file and a file over 100 KB, and removes a chip', async () => {
+    const state = withProviders()
+    const { user } = renderApp()
+    await within(panel()).findByRole('textbox', { name: 'Message the agent' })
+    const six = Array.from({ length: 6 }, (_, i) => mdFile(`n${i + 1}.md`, `note ${i + 1}`))
+    await user.upload(fileInput(), six)
+    const chips = await within(panel()).findByRole('list', { name: 'Attachments' })
+    await waitFor(() => expect(within(chips).getAllByRole('listitem')).toHaveLength(6))
+    const sixth = within(chips).getByText('n6.md').closest('li') as HTMLElement
+    expect(sixth).toHaveTextContent('Only 5 files per message.')
+
+    await user.click(within(chips).getByRole('button', { name: 'Remove n1.md' }))
+    expect(within(chips).queryByText('n1.md')).not.toBeInTheDocument()
+
+    await user.upload(fileInput(), mdFile('big.md', 'a'.repeat(100_001)))
+    const big = (await within(chips).findByText('big.md')).closest('li') as HTMLElement
+    expect(big).toHaveTextContent('Larger than 100 KB.')
+
+    await user.type(box(), 'go{Enter}')
+    await waitFor(() => expect(chats(state)).toHaveLength(1))
+    expect(lastBody(state).attachments?.map((a) => a.name)).toEqual(['n2.md', 'n3.md', 'n4.md', 'n5.md'])
   })
 })
 

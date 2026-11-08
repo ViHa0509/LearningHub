@@ -129,6 +129,39 @@ const PATHS = {
       <path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" />
     </>
   ),
+  paperclip: (
+    <>
+      <path d="m20.5 11.5-8.6 8.6a5 5 0 0 1-7.1-7.1l8.6-8.6a3.3 3.3 0 0 1 4.7 4.7l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9" />
+    </>
+  ),
+  send: (
+    <>
+      <path d="M12 19V5M5.5 11.5 12 5l6.5 6.5" />
+    </>
+  ),
+  copy: (
+    <>
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5 15V6a2 2 0 0 1 2-2h9" />
+    </>
+  ),
+  retry: (
+    <>
+      <path d="M4 12a8 8 0 0 1 14-5.3L20 9M20 4v5h-5" />
+      <path d="M20 12a8 8 0 0 1-14 5.3L4 15M4 20v-5h5" />
+    </>
+  ),
+  sparkle: (
+    <>
+      <path d="m12 4 1.9 5.1L19 11l-5.1 1.9L12 18l-1.9-5.1L5 11l5.1-1.9z" />
+    </>
+  ),
+  sidebar: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M15 4v16M8.5 10l2 2-2 2" />
+    </>
+  ),
 } satisfies Record<string, ReactElement>
 
 export type IconName = keyof typeof PATHS

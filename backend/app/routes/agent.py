@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.agent.agents import AGENTS
-from app.agent.loop import Page, run_agent
+from app.agent.loop import Attachment, Effort, Page, run_agent
 from app.agent.messages import Message, ProviderError
 from app.agent.ratelimit import RateLimiter
 from app.agent.resolve import ResolveError, resolve_chain
@@ -34,11 +34,19 @@ class PageIn(BaseModel):
     note_id: str | None = Field(default=None, pattern=ID)
 
 
+class AttachmentIn(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    text: str = Field(max_length=100_000)
+
+
 class ChatIn(BaseModel):
     agent_id: str = "assistant"
     provider_id: uuid.UUID | None = None
     messages: list[ChatMessageIn] = Field(min_length=1, max_length=50)
     page: PageIn = PageIn()
+    effort: Effort = "medium"
+    # Text files attached to the last user message; they are data, like note content.
+    attachments: list[AttachmentIn] = Field(default_factory=list, max_length=5)
 
 
 class StepOut(BaseModel):
@@ -60,6 +68,7 @@ class ChatOut(BaseModel):
     stopped: bool
     provider: AnsweredBy
     fallback_used: bool
+    effort: Effort
 
 
 @router.post("/chat", response_model=ChatOut, dependencies=[Depends(require_app_header)])
@@ -99,6 +108,8 @@ def chat(
             page,
             request.app.state.settings.agent_max_steps,
             agent.instructions,
+            payload.effort,
+            [Attachment(name=a.name, text=a.text) for a in payload.attachments],
         )
     except ProviderError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
@@ -110,4 +121,5 @@ def chat(
         stopped=result.stopped,
         provider=AnsweredBy(id=answered.id, name=answered.name, model=answered.model_name),
         fallback_used=chat_model.fallback_used,
+        effort=payload.effort,
     )

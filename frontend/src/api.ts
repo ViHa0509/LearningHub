@@ -192,6 +192,14 @@ export interface AgentStep {
   summary: string
 }
 
+export type Effort = 'low' | 'medium' | 'high'
+
+/** A text file sent with one chat message. */
+export interface ChatAttachment {
+  name: string
+  text: string
+}
+
 export interface ChatReply {
   reply: string
   steps: AgentStep[]
@@ -199,6 +207,7 @@ export interface ChatReply {
   stopped: boolean
   provider: { id: string; name: string; model: string }
   fallback_used: boolean
+  effort: Effort
 }
 
 export interface ChatRequest {
@@ -206,6 +215,9 @@ export interface ChatRequest {
   provider_id?: string
   messages: ChatTurn[]
   page: ChatPage
+  effort?: Effort
+  /** Text files for the last user message only. */
+  attachments?: ChatAttachment[]
 }
 
 export class ApiError extends Error {

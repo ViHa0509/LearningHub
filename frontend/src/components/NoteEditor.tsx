@@ -12,7 +12,7 @@ interface Props {
 }
 
 export const DISCARD_PROMPT = 'Discard your unsaved changes to this page?'
-const COLLECT_TIMEOUT_MS = 3000
+const COLLECT_TIMEOUT_MS = 10_000
 
 export function NoteEditor({ note, onSaved, onClose, onDirtyChange }: Props) {
   const [session, setSession] = useState<(EditSession & { sha: string }) | null>(null)

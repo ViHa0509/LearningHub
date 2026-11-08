@@ -1,10 +1,19 @@
-import { useQueryClient } from '@tanstack/react-query'
-import { useEffect, useEffectEvent, useRef, useState } from 'react'
-import Markdown from 'react-markdown'
-import { api, queryKeys, type AgentStep, type ChatPage, type ProviderOut } from '../api'
-import { Icon } from './Icon'
+import { useEffect, useEffectEvent, useRef, useState, type DragEvent } from 'react'
+import type { ChatPage, Effort } from '../api'
 import { useAgents, useProviders } from '../hooks'
-import { providerLabel } from '../lib/providers'
+import {
+  DEFAULT_PROVIDER,
+  readEffort,
+  readProviderChoice,
+  saveEffort,
+  saveProviderChoice,
+} from '../lib/agentPrefs'
+import { readAttachments, type Attachment, type ReadyAttachment } from '../lib/attachments'
+import { expandSkill } from '../lib/skills'
+import { AgentHeader } from './agent/AgentHeader'
+import { Composer } from './agent/Composer'
+import { MessageList } from './agent/MessageList'
+import { useAgentChat } from './agent/useAgentChat'
 
 export interface AgentRequest {
   id: number
@@ -20,65 +29,163 @@ interface Props {
   request: AgentRequest | null
 }
 
-interface Entry {
-  role: 'user' | 'assistant'
-  content: string
-  steps?: AgentStep[]
-  error?: string
-  /** Who answered, and whether the fallback did. */
-  answeredBy?: { name: string; model: string; fallback: boolean }
-}
+const ASSISTANT = 'assistant'
+const FALLBACK_AGENTS = [{ id: ASSISTANT, name: 'Learning assistant', description: 'Answers from your notes and lessons.' }]
+/** What is sent when a message carries files but no text. */
+const FILES_ONLY = 'Read the attached files.'
 
-const CHOICE_KEY = 'learninghub.agent'
-const DEFAULT = ''
-
-function readChoice(): string {
-  try {
-    const value = (JSON.parse(localStorage.getItem(CHOICE_KEY) ?? '{}') as { provider_id?: unknown }).provider_id
-    return typeof value === 'string' ? value : DEFAULT
-  } catch {
-    return DEFAULT
-  }
-}
-
-function saveChoice(providerId: string) {
-  try {
-    localStorage.setItem(CHOICE_KEY, JSON.stringify({ provider_id: providerId }))
-  } catch {
-    // storage blocked: the choice lasts for this page only
-  }
-}
+const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes('Files')
 
 export function AgentPanel({ open, onToggle, page, request }: Props) {
   const providers = useProviders()
   const agents = useAgents()
   const available = (providers.data ?? []).filter((p) => p.is_active)
+  const ready = available.length > 0
   // What "Agent default" means right now: the assistant's resolved provider.
-  const defaultProvider = agents.data?.find((a) => a.id === 'assistant')?.effective ?? available[0] ?? null
+  const defaultProvider = agents.data?.find((a) => a.id === ASSISTANT)?.effective ?? available[0] ?? null
+
+  const [choice, setChoice] = useState(readProviderChoice)
+  // A saved choice that is no longer active falls back to the agent default.
+  const providerId = available.some((p) => p.id === choice) ? choice : DEFAULT_PROVIDER
+  const [effort, setEffort] = useState<Effort>(readEffort)
+  const [agentId, setAgentId] = useState(ASSISTANT)
+  const chat = useAgentChat({ providerId, effort, page })
+
+  const [draft, setDraft] = useState('')
+  const [attachments, setAttachments] = useState<Attachment[]>([])
+  const [dropping, setDropping] = useState(false)
+  const dragDepth = useRef(0)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const handled = useRef<number | null>(null)
+
+  const agentList = agents.data?.length ? agents.data : FALLBACK_AGENTS
+  const files = attachments.filter((a): a is ReadyAttachment => a.kind === 'ok')
+
+  // The header names the provider that answers the chosen agent (the chat's choice applies to the assistant).
+  const hintProvider =
+    agentId === ASSISTANT
+      ? (available.find((p) => p.id === providerId) ?? defaultProvider)
+      : agents.data?.find((a) => a.id === agentId)?.effective
+  const hint = hintProvider ? `via ${hintProvider.name}` : 'No provider'
+
+  const chooseProvider = (next: string) => {
+    setChoice(next)
+    saveProviderChoice(next)
+  }
+
+  const chooseEffort = (next: Effort) => {
+    setEffort(next)
+    saveEffort(next)
+  }
+
+  const addFiles = async (list: File[]) => {
+    if (list.length === 0) return
+    const items = await readAttachments(list, files.length)
+    setAttachments((current) => [...current, ...items])
+  }
+
+  const submit = () => {
+    const text = draft.trim()
+    if (chat.busy || (!text && files.length === 0)) return
+    // The conversation shows what the user typed; the request carries the expanded skill message.
+    void chat.send({ display: text, content: text ? expandSkill(text) : FILES_ONLY, attachments: files, agentId })
+    setDraft('')
+    setAttachments([])
+  }
+
+  // A request from elsewhere in the app (e.g. "Draft with agent"), sent once per id.
+  const sendRequest = useEffectEvent((next: AgentRequest) => {
+    if (handled.current === next.id) return
+    handled.current = next.id
+    void chat.send({ display: next.text, content: next.text, attachments: [], agentId: next.agentId ?? ASSISTANT })
+  })
+  useEffect(() => {
+    if (request && ready) sendRequest(request)
+  }, [request, ready])
 
   return (
-    <aside className="pane right" aria-label="Agent" data-collapsed={!open}>
-      <div className="pane-header">
-        <button
-          type="button"
-          className="icon"
-          aria-expanded={open}
-          aria-label={open ? 'Collapse agent panel' : 'Expand agent panel'}
-          onClick={onToggle}
-        >
-          {open ? '»' : '«'}
-        </button>
-        {open && (
-          <h2>
-            <Icon name="agent" /> Agent
-          </h2>
-        )}
-      </div>
+    <aside className="pane right agent-pane" aria-label="Agent" data-collapsed={!open}>
+      <AgentHeader
+        open={open}
+        onToggle={onToggle}
+        chat={
+          ready
+            ? {
+                agents: agentList,
+                agentId,
+                onAgent: setAgentId,
+                hint,
+                canClear: !chat.busy && chat.entries.length > 0,
+                onClear: chat.clear,
+              }
+            : null
+        }
+      />
       {open && providers.isError && <p className="agent-note error">Could not reach the backend.</p>}
-      {open && providers.data && available.length === 0 && <NotConfigured />}
-      {/* Kept mounted while collapsed, so the conversation survives a collapse. */}
-      {providers.data && available.length > 0 && (
-        <Chat hidden={!open} providers={available} defaultProvider={defaultProvider} page={page} request={request} />
+      {open && providers.data && !ready && <NotConfigured />}
+      {/* Kept mounted while collapsed, so the draft and attachments survive a collapse. */}
+      {ready && (
+        <div
+          className="agent-chat"
+          hidden={!open}
+          onDragEnter={(e) => {
+            if (!hasFiles(e)) return
+            e.preventDefault()
+            dragDepth.current += 1
+            setDropping(true)
+          }}
+          onDragOver={(e) => {
+            if (!hasFiles(e)) return
+            e.preventDefault()
+            e.dataTransfer.dropEffect = 'copy'
+          }}
+          onDragLeave={(e) => {
+            if (!hasFiles(e)) return
+            dragDepth.current = Math.max(0, dragDepth.current - 1)
+            if (dragDepth.current === 0) setDropping(false)
+          }}
+          onDrop={(e) => {
+            const dropped = Array.from(e.dataTransfer?.files ?? [])
+            if (!hasFiles(e) && dropped.length === 0) return
+            e.preventDefault()
+            dragDepth.current = 0
+            setDropping(false)
+            void addFiles(dropped)
+          }}
+        >
+          <MessageList
+            entries={chat.entries}
+            busy={chat.busy}
+            onRetry={chat.retry}
+            onStarter={(text) => {
+              setDraft(text)
+              inputRef.current?.focus()
+            }}
+          />
+          <Composer
+            inputRef={inputRef}
+            draft={draft}
+            onDraft={setDraft}
+            attachments={attachments}
+            onAddFiles={(list) => void addFiles(list)}
+            onRemoveAttachment={(id) => setAttachments((current) => current.filter((a) => a.id !== id))}
+            effort={effort}
+            onEffort={chooseEffort}
+            providers={available}
+            providerId={providerId}
+            onProvider={chooseProvider}
+            defaultProvider={defaultProvider}
+            providerLocked={
+              agentId === ASSISTANT
+                ? null
+                : 'This agent uses the provider assigned to it in Settings.'
+            }
+            busy={chat.busy}
+            canSend={draft.trim() !== '' || files.length > 0}
+            dropping={dropping}
+            onSubmit={submit}
+          />
+        </div>
       )}
     </aside>
   )
@@ -96,186 +203,6 @@ function NotConfigured() {
         </a>{' '}
         <span className="muted">and add a provider - the agent works at once.</span>
       </p>
-    </div>
-  )
-}
-
-function Chat({
-  hidden,
-  providers,
-  defaultProvider,
-  page,
-  request,
-}: {
-  hidden: boolean
-  providers: ProviderOut[]
-  defaultProvider: { name: string; model_name: string } | null
-  page: ChatPage
-  request: AgentRequest | null
-}) {
-  const client = useQueryClient()
-  const [choice, setChoice] = useState(readChoice)
-  // A saved choice that is no longer active falls back to the agent default.
-  const providerId = providers.some((p) => p.id === choice) ? choice : DEFAULT
-  const [entries, setEntries] = useState<Entry[]>([])
-  const [draft, setDraft] = useState('')
-  const [busy, setBusy] = useState(false)
-  const handled = useRef<number | null>(null)
-  const end = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    end.current?.scrollIntoView?.({ block: 'end' })
-  }, [entries, busy])
-
-  const choose = (next: string) => {
-    setChoice(next)
-    saveChoice(next)
-  }
-
-  const send = async (text: string, agentId = 'assistant') => {
-    const question = text.trim()
-    if (!question || busy) return
-    // Failed questions stay visible but are not sent again as history.
-    const history = entries
-      .filter((e) => !e.error)
-      .map((e) => ({ role: e.role, content: e.content }))
-    const index = entries.length
-    setEntries((current) => [...current, { role: 'user', content: question }])
-    setDraft('')
-    setBusy(true)
-    try {
-      const answer = await api.chat({
-        agent_id: agentId,
-        // The picker is for the chat; other agents use their own assignment.
-        ...(agentId === 'assistant' && providerId ? { provider_id: providerId } : {}),
-        messages: [...history, { role: 'user', content: question }],
-        page,
-      })
-      setEntries((current) => [
-        ...current,
-        {
-          role: 'assistant',
-          content: answer.reply,
-          steps: answer.steps,
-          answeredBy: { name: answer.provider.name, model: answer.provider.model, fallback: answer.fallback_used },
-        },
-      ])
-      await Promise.all(
-        answer.changed_lessons.map((nodeId) => {
-          const [domain, node] = nodeId.split('/')
-          return client.invalidateQueries({ queryKey: queryKeys.lesson(domain, node) })
-        }),
-      )
-    } catch (e) {
-      const message = e instanceof Error ? e.message : 'The agent request failed'
-      setEntries((current) => current.map((entry, i) => (i === index ? { ...entry, error: message } : entry)))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  // A request from elsewhere in the app (e.g. "Draft with agent"), sent once per id.
-  const sendRequest = useEffectEvent((next: AgentRequest) => {
-    if (handled.current === next.id) return
-    handled.current = next.id
-    void send(next.text, next.agentId)
-  })
-  useEffect(() => {
-    if (request) sendRequest(request)
-  }, [request])
-
-  return (
-    <div className="agent-chat" hidden={hidden}>
-      <div className="agent-toolbar">
-        <select aria-label="Provider" value={providerId} onChange={(e) => choose(e.target.value)}>
-          <option value={DEFAULT}>
-            {defaultProvider ? `Agent default (${providerLabel(defaultProvider)})` : 'Agent default'}
-          </option>
-          {providers.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-        <button type="button" onClick={() => setEntries([])} disabled={busy || entries.length === 0}>
-          Clear chat
-        </button>
-      </div>
-
-      <div className="agent-messages" role="log" aria-label="Conversation">
-        {entries.length === 0 && (
-          <p className="muted agent-hint">
-            Ask about what you learned, e.g. “What did I note about Redis eviction?” or, on a lesson page,
-            “Draft this lesson”.
-          </p>
-        )}
-        {entries.map((entry, i) => (
-          <div key={i} className={`agent-message ${entry.role}`}>
-            {entry.role === 'user' ? (
-              <p className="user-text">{entry.content}</p>
-            ) : (
-              <div className="markdown">
-                {/* No rehype-raw: HTML in model output is shown as text, never inserted. */}
-                <Markdown>{entry.content}</Markdown>
-              </div>
-            )}
-            {entry.answeredBy && (
-              <p className="agent-caption muted">
-                {entry.answeredBy.name} · {entry.answeredBy.model}
-                {entry.answeredBy.fallback ? ' (fallback)' : ''}
-              </p>
-            )}
-            {entry.steps && entry.steps.length > 0 && (
-              <details className="agent-steps">
-                <summary>
-                  Used {entry.steps.length} {entry.steps.length === 1 ? 'tool' : 'tools'}
-                </summary>
-                <ul>
-                  {entry.steps.map((s, j) => (
-                    <li key={j}>{s.summary}</li>
-                  ))}
-                </ul>
-              </details>
-            )}
-            {entry.error && (
-              <p className="error" role="alert">
-                {entry.error}
-              </p>
-            )}
-          </div>
-        ))}
-        {busy && (
-          <p className="muted agent-working" role="status">
-            Agent is working…
-          </p>
-        )}
-        <div ref={end} />
-      </div>
-
-      <form
-        className="agent-input"
-        onSubmit={(e) => {
-          e.preventDefault()
-          void send(draft)
-        }}
-      >
-        <textarea
-          aria-label="Message the agent"
-          placeholder="Ask the agent… (Enter to send, Shift+Enter for a new line)"
-          rows={3}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              void send(draft)
-            }
-          }}
-        />
-        <button type="submit" className="primary" disabled={busy || !draft.trim()}>
-          Send
-        </button>
-      </form>
     </div>
   )
 }
