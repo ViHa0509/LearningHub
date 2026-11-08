@@ -17,7 +17,7 @@ The web app SHALL show a top bar with the app title and the theme switch, and be
 - **THEN** the center widens to use the freed space, and the panel can be expanded again
 
 ### Requirement: Learned-items list
-The left panel SHALL list all notes that are not archived, grouped by domain, then by node in roadmap order, with an "Unsorted" group for notes without a valid link. It MUST offer a text filter on note titles. Each item MUST offer a "More actions" menu with Rename, Move to node and Archive, without changing what a click on the item does; Rename MUST show Save and Cancel. A collapsed "Archived" section below the groups SHALL show the archived count and, when expanded, list them with Restore and Delete.
+The left panel SHALL list all notes that are not archived, grouped by domain, then by node in roadmap order, with an "Unsorted" group for notes without a valid link. It MUST offer a title filter. Each item MUST offer a "More actions" menu with Rename, Move to node and Archive, without changing what a click on the item does; Rename MUST show Save and Cancel. A collapsed "Archived" section below the groups SHALL show the archived count and, when expanded, list them with Restore and Delete.
 
 #### Scenario: Grouped list
 - **GIVEN** notes linked to `backend/caching`, `devops/ci-cd`, and one unsorted note
