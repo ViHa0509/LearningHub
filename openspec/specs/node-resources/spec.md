@@ -1,7 +1,7 @@
 # node-resources Specification
 
 ## Purpose
-TBD - created by archiving change roadmap-resources. Update Purpose after archive.
+Gives each lesson node a list of reading links (official docs, articles, videos, courses) synced from roadmap.sh into the local database only, shows them on the lesson page, and lets the agent read the official and article pages safely to draft a lesson in its own words.
 
 ## Requirements
 
