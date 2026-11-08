@@ -16,15 +16,53 @@ It is also built as a showcase of an **AI-native SDLC**: every change goes spec 
 
 ## Run it
 
-Needs Docker, Python 3.12 and Node 24+ (Windows paths shown; Git Bash).
+Needs Docker Desktop, Python 3.12 and Node 24+. Commands are for Git Bash on Windows, run from the repo folder.
+
+### First time only
 
 ```bash
-docker compose up -d                                   # Postgres on port 5434
-cd backend && python -m venv .venv && .venv/Scripts/pip install -r requirements-dev.txt
-.venv/Scripts/alembic upgrade head
-.venv/Scripts/python -m uvicorn app.main:app --port 8000
-cd frontend && npm install && npm run dev              # http://localhost:5173
+docker compose up -d                                  # Postgres on port 5434
+cd backend
+python -m venv .venv
+.venv/Scripts/pip install -r requirements-dev.txt
+cp .env.example .env                                  # optional: provider keys, see below
+cd ../frontend
+npm install
 ```
+
+### Every time
+
+Use two terminals; each server keeps running in its own.
+
+**Terminal 1 - database and backend** (http://localhost:8000)
+
+```bash
+docker compose up -d                                  # no-op if Postgres is already up
+cd backend
+.venv/Scripts/alembic upgrade head                    # applies new migrations, if any
+.venv/Scripts/python -m uvicorn app.main:app --port 8000
+```
+
+**Terminal 2 - frontend** (open http://localhost:5173)
+
+```bash
+cd frontend
+npm run dev
+```
+
+Stop a server with `Ctrl+C` in its terminal; `docker compose stop` stops Postgres.
+
+After pulling new code: run `.venv/Scripts/pip install -r requirements-dev.txt` and `npm install` again if those files changed, then restart the backend (it does not reload by itself; `--reload` can hang on Windows and keep serving old code).
+
+### If something is wrong
+
+| You see | Do |
+|---|---|
+| The app shows **Service unavailable - can't reach its server** | Terminal 1 is not running the backend: start it. The page reconnects by itself. |
+| **Service unavailable - can't reach its database** | Postgres is down: `docker compose up -d` (start Docker Desktop first). |
+| `address already in use` on 8000 or 5173 | Another copy is running: close it (`netstat -ano \| findstr :8000`, then `taskkill /PID <pid> /F`). |
+| An error about a missing table or column | Run `.venv/Scripts/alembic upgrade head` in `backend`, then restart the backend. |
+| The server refuses to start with a roadmap error | A file in `roadmaps/` is invalid; the message names the file and the node. |
 
 To enable the agent, open **Settings** (top bar) -> **Add provider**:
 - Choose a type (OpenAI, Anthropic, Google Gemini, Local such as Ollama, vLLM or LM Studio, or Custom OpenAI-compatible).

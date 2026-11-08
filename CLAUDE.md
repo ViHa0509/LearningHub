@@ -15,7 +15,7 @@ Shell: Git Bash on Windows. Postgres must be up (`docker compose up -d`) before 
 | Start database | `docker compose up -d` | no |
 | Install backend | `cd backend && python -m venv .venv && .venv/Scripts/pip install -r requirements-dev.txt` | no |
 | Migrate dev DB | `cd backend && .venv/Scripts/alembic upgrade head` | no |
-| Run backend | `cd backend && .venv/Scripts/python -m uvicorn app.main:app --reload --port 8000` | no |
+| Run backend | `cd backend && .venv/Scripts/python -m uvicorn app.main:app --port 8000` (no `--reload`: it can hang on Windows; restart after backend changes) | no |
 | Backend tests | `cd backend && .venv/Scripts/python -m pytest` | yes |
 | Backend lint | `cd backend && .venv/Scripts/ruff check . && .venv/Scripts/ruff format --check .` | yes |
 | Backend types | `cd backend && .venv/Scripts/mypy app` | yes |
