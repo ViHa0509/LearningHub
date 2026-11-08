@@ -136,6 +136,9 @@ button.icon-only { display: inline-flex; align-items: center; justify-content: c
 .note-item:hover .note-more, .note-item:focus-within .note-more, .note-item.highlighted .note-more,
 .note-item .note-more[aria-expanded='true'] { opacity: 1; }
 .rename-input { flex: 1; min-width: 0; }
+.rename-form { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.rename-form .rename-input { flex: 1 1 100%; }
+.rename-form button { padding: 2px 10px; font-size: 12px; }
 .note-menu {
   position: absolute; right: 0; top: 100%; z-index: 5; min-width: 150px; display: flex; flex-direction: column;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
@@ -184,6 +187,17 @@ button.disclosure .icon { width: 16px; height: 16px; flex: none; margin-right: 0
 input[type='range'], input[type='checkbox'] { accent-color: var(--accent); }
 .confirm { display: inline-flex; align-items: center; gap: 6px; }
 .original { flex: 1; width: 100%; border: 0; background: #fff; }
+.title-actions { display: inline-flex; gap: 6px; }
+.note-editor { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.note-editor-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.note-editor-panes { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; }
+.note-source {
+  width: 100%; height: 100%; resize: none; border: 0; border-right: 1px solid var(--border); border-radius: 0;
+  padding: 12px; font: 12.5px/1.5 ui-monospace, 'Cascadia Code', Consolas, monospace; tab-size: 2;
+  background: var(--bg); color: var(--text);
+}
+.note-preview { height: 100%; }
+@media (max-width: 900px) { .note-editor-panes { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; } }
 
 .agent-placeholder { padding: 16px; }
 

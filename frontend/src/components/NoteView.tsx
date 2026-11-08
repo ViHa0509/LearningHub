@@ -1,5 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api, type Note, type Roadmap } from '../api'
+import { setLeaveGuard } from '../lib/route'
+import { DISCARD_PROMPT, NoteEditor } from './NoteEditor'
 import { NodePicker } from './NodePicker'
 
 interface Props {
@@ -14,6 +16,10 @@ export function NoteView({ note, roadmaps, onClose, onChanged, onDeleted }: Prop
   const [title, setTitle] = useState(note.title)
   const [error, setError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [editorDirty, setEditorDirty] = useState(false)
+  // Bumped after a page save, so the frame reloads the stored page.
+  const [version, setVersion] = useState(0)
 
   const run = async (action: () => Promise<unknown>) => {
     setError(null)
@@ -25,10 +31,19 @@ export function NoteView({ note, roadmaps, onClose, onChanged, onDeleted }: Prop
     }
   }
 
+  const titleDirty = title !== note.title
+  const canSaveTitle = title.trim() !== '' && title.trim() !== note.title
+
   const rename = () => {
-    const next = title.trim()
-    if (next && next !== note.title) void run(() => api.rename(note.id, next))
+    if (canSaveTitle) void run(() => api.rename(note.id, title.trim()))
   }
+
+  // Unsaved page edits: any navigation away (Back, the list, links) asks first.
+  useEffect(() => {
+    if (!editorDirty) return
+    setLeaveGuard(() => window.confirm(DISCARD_PROMPT))
+    return () => setLeaveGuard(null)
+  }, [editorDirty])
 
   const remove = async () => {
     setError(null)
@@ -53,9 +68,21 @@ export function NoteView({ note, roadmaps, onClose, onChanged, onDeleted }: Prop
           aria-label="Note title"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          onBlur={rename}
-          onKeyDown={(e) => e.key === 'Enter' && rename()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') rename()
+            if (e.key === 'Escape') setTitle(note.title)
+          }}
         />
+        {titleDirty && (
+          <span className="title-actions">
+            <button type="button" className="primary" aria-label="Save title" disabled={!canSaveTitle} onClick={rename}>
+              Save
+            </button>
+            <button type="button" aria-label="Cancel title change" onClick={() => setTitle(note.title)}>
+              Cancel
+            </button>
+          </span>
+        )}
         <NodePicker
           roadmaps={roadmaps}
           label="Roadmap node"
@@ -66,6 +93,11 @@ export function NoteView({ note, roadmaps, onClose, onChanged, onDeleted }: Prop
           <span className="tag warn">Linked node {note.node_id} no longer exists</span>
         )}
         <div className="note-actions">
+        {!editing && (
+          <button type="button" onClick={() => setEditing(true)}>
+            Edit page
+          </button>
+        )}
         {note.archived_at ? (
           <button type="button" onClick={() => void run(() => api.setArchived(note.id, false))}>
             Restore
@@ -101,14 +133,27 @@ export function NoteView({ note, roadmaps, onClose, onChanged, onDeleted }: Prop
         </p>
       )}
       {error && <p className="error" role="alert">{error}</p>}
-      {/* No allow-same-origin: the page runs in an opaque origin and cannot reach the app. */}
-      <iframe
-        className="original"
-        title={`Original page: ${note.title}`}
-        src={api.originalUrl(note.id)}
-        sandbox="allow-scripts"
-        referrerPolicy="no-referrer"
-      />
+      {editing ? (
+        <NoteEditor
+          note={note}
+          onSaved={async () => {
+            setVersion((v) => v + 1)
+            await onChanged()
+          }}
+          onClose={() => setEditing(false)}
+          onDirtyChange={setEditorDirty}
+        />
+      ) : (
+        /* No allow-same-origin: the page runs in an opaque origin and cannot reach the app. */
+        <iframe
+          key={version}
+          className="original"
+          title={`Original page: ${note.title}`}
+          src={api.originalUrl(note.id)}
+          sandbox="allow-scripts"
+          referrerPolicy="no-referrer"
+        />
+      )}
     </article>
   )
 }

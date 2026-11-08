@@ -54,7 +54,7 @@ export function LearnedList({
     }
   }
 
-  // Deferred, so the Enter or Escape keystroke that ended a rename is not replayed on the trigger.
+  // Deferred, so the keystroke that ended a rename is not replayed on the trigger.
   const focusTrigger = (id: string) => window.setTimeout(() => triggers.current.get(id)?.focus(), 0)
 
   const closeMenu = (restoreFocus: boolean) => {
@@ -80,6 +80,11 @@ export function LearnedList({
     const next = renaming?.draft.trim() ?? ''
     setRenaming(null)
     if (next && next !== note.title) await run(() => api.rename(note.id, next), 'Rename failed')
+    focusTrigger(note.id)
+  }
+
+  const cancelRename = (note: Note) => {
+    setRenaming(null)
     focusTrigger(note.id)
   }
 
@@ -196,21 +201,35 @@ export function LearnedList({
     return (
       <li key={note.id} className={highlighted ? 'note-item highlighted' : 'note-item'}>
         {renaming?.id === note.id ? (
-          <input
-            className="rename-input"
-            aria-label="New title"
-            autoFocus
-            value={renaming.draft}
-            onChange={(e) => setRenaming({ id: note.id, draft: e.target.value })}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') void saveRename(note)
-              if (e.key === 'Escape') {
-                setRenaming(null)
-                focusTrigger(note.id)
-              }
+          <form
+            className="rename-form"
+            aria-label={`Rename ${note.title}`}
+            onSubmit={(e) => {
+              e.preventDefault()
+              void saveRename(note)
             }}
-            onBlur={() => setRenaming(null)}
-          />
+          >
+            <input
+              className="rename-input"
+              aria-label="New title"
+              autoFocus
+              value={renaming.draft}
+              onChange={(e) => setRenaming({ id: note.id, draft: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') cancelRename(note)
+              }}
+            />
+            <button
+              type="submit"
+              className="primary"
+              disabled={!renaming.draft.trim() || renaming.draft.trim() === note.title}
+            >
+              Save
+            </button>
+            <button type="button" onClick={() => cancelRename(note)}>
+              Cancel
+            </button>
+          </form>
         ) : (
           <button
             type="button"

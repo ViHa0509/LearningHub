@@ -38,6 +38,11 @@ export interface Note {
   updated_at: string
 }
 
+export interface NoteDetail extends Note {
+  body_text: string
+  content_sha256: string
+}
+
 export interface ImportOutcome {
   filename: string
   outcome: 'created' | 'duplicate' | 'rejected'
@@ -277,6 +282,15 @@ export const api = {
     request<Note>(`/api/notes/${id}`, json('PATCH', { archived })),
   remove: (id: string) => request<void>(`/api/notes/${id}`, { method: 'DELETE' }),
   originalUrl: (id: string) => `/api/notes/${id}/original`,
+  note: (id: string) => request<NoteDetail>(`/api/notes/${id}`),
+  /** The page's HTML source, for the editor. */
+  noteSource: async (id: string) => {
+    const response = await fetch(`/api/notes/${id}/original`)
+    if (!response.ok) throw new ApiError(response.status, `${response.status} ${response.statusText}`)
+    return response.text()
+  },
+  saveContent: (id: string, html: string, baseSha: string) =>
+    request<NoteDetail>(`/api/notes/${id}/content`, json('PUT', { html, base_sha256: baseSha })),
   providerTypes: () => request<ProviderTypeInfo[]>('/api/ai-providers/types'),
   providers: () => request<ProviderOut[]>('/api/ai-providers'),
   provider: (id: string) => request<ProviderOut>(`/api/ai-providers/${id}`),

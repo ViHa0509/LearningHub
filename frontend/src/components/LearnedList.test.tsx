@@ -132,6 +132,40 @@ describe('LearnedList actions', () => {
     expect(patches(state)).toHaveLength(1)
   })
 
+  it('renames with the Save button and cancels with the Cancel button', async () => {
+    const { user, state } = await setup()
+    await user.click(more('Redis eviction'))
+    await user.click(screen.getByRole('menuitem', { name: 'Rename' }))
+    const form = screen.getByRole('form', { name: 'Rename Redis eviction' })
+    const save = within(form).getByRole('button', { name: 'Save' })
+    expect(save).toBeDisabled()
+    const input = within(form).getByRole('textbox', { name: 'New title' })
+    await user.clear(input)
+    expect(save).toBeDisabled()
+    await user.type(input, 'Redis TTL')
+    expect(save).toBeEnabled()
+    await user.click(save)
+    expect(await screen.findByRole('button', { name: 'Redis TTL' })).toBeInTheDocument()
+    expect(patches(state)).toEqual([{ title: 'Redis TTL' }])
+
+    await user.click(more('Redis TTL'))
+    await user.click(screen.getByRole('menuitem', { name: 'Rename' }))
+    await user.type(screen.getByRole('textbox', { name: 'New title' }), ' extra')
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('textbox', { name: 'New title' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Redis TTL' })).toBeInTheDocument()
+    expect(patches(state)).toHaveLength(1)
+  })
+
+  it('keeps the rename open when focus leaves the field', async () => {
+    const { user } = await setup()
+    await user.click(more('Redis eviction'))
+    await user.click(screen.getByRole('menuitem', { name: 'Rename' }))
+    await user.type(screen.getByRole('textbox', { name: 'New title' }), ' v2')
+    await user.click(screen.getByRole('searchbox', { name: 'Filter by title' }))
+    expect(screen.getByRole('textbox', { name: 'New title' })).toHaveValue('Redis eviction v2')
+  })
+
   it('makes no call for a blank or unchanged title', async () => {
     const { user, state } = await setup()
     await user.click(more('Redis eviction'))

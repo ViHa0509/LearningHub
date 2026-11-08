@@ -41,7 +41,17 @@ export function routeHash(route: Route): string {
   }
 }
 
+/** Asked before the page changes; returns false to stay (for example, unsaved edits). */
+let leaveGuard: (() => boolean) | null = null
+
+export function setLeaveGuard(guard: (() => boolean) | null) {
+  leaveGuard = guard
+}
+
 export function navigate(route: Route) {
+  if (leaveGuard && !leaveGuard()) return
+  // Confirmed once; the hash change that follows must not ask again.
+  leaveGuard = null
   window.location.hash = routeHash(route)
 }
 
@@ -49,7 +59,19 @@ export function navigate(route: Route) {
 export function useRoute(): Route {
   const [route, setRoute] = useState(() => parseRoute(window.location.hash))
   useEffect(() => {
-    const update = () => setRoute(parseRoute(window.location.hash))
+    let current = window.location.hash
+    const update = () => {
+      // A link or the back button changed the hash: put it back when the page must stay.
+      if (window.location.hash !== current && leaveGuard) {
+        if (!leaveGuard()) {
+          window.history.replaceState(null, '', current || '#/')
+          return
+        }
+        leaveGuard = null
+      }
+      current = window.location.hash
+      setRoute(parseRoute(current))
+    }
     window.addEventListener('hashchange', update)
     return () => window.removeEventListener('hashchange', update)
   }, [])

@@ -1,0 +1,45 @@
+## MODIFIED Requirements
+
+### Requirement: List, read, rename and delete notes
+The system SHALL let the user list notes (newest first), read one note (title, text, metadata, link, archived state, page hash), change its title, archive and restore it, and delete it. Deleting a note also deletes its stored original file. The list MUST exclude archived notes unless the client asks for archived notes, in which case it returns only those.
+
+#### Scenario: Rename a note
+- **WHEN** the user changes a note's title to `Redis: eviction and TTL`
+- **THEN** the note shows the new title and the original file is unchanged
+
+#### Scenario: Delete a note
+- **WHEN** the user deletes a note
+- **THEN** the note no longer appears in any list and its original file is removed from storage
+
+#### Scenario: Archive a note
+- **GIVEN** a note linked to `backend/redis`
+- **WHEN** the user archives it
+- **THEN** the default note list no longer contains it, the list of archived notes does, and it keeps its title, link and original file
+
+#### Scenario: Restore a note
+- **GIVEN** an archived note
+- **WHEN** the user restores it
+- **THEN** it is back in the default note list with its link, and no longer in the archived list
+
+## ADDED Requirements
+
+### Requirement: Replace a note's page
+The system SHALL let the user replace a note's stored page with new HTML. The note keeps its title, link and archived state, its searchable text is taken from the new page, and the old file is removed once no note uses it. The system MUST reject an empty or oversized page, a page identical to another note's page, and a save based on a page that has since changed.
+
+#### Scenario: Save edited HTML
+- **GIVEN** a note titled `Redis TTL` linked to `backend/redis`
+- **WHEN** the user saves new HTML containing `volatile-lru`
+- **THEN** the original page returns the new HTML, a search for `volatile-lru` finds the note, and its title and link are unchanged
+
+#### Scenario: Stale edit is refused
+- **GIVEN** the user opened the editor, and the page was saved from another tab since
+- **WHEN** the user saves from the first editor
+- **THEN** the save is refused with a conflict and the newer page is kept
+
+#### Scenario: Empty page is refused
+- **WHEN** the user saves an empty page
+- **THEN** the save is refused and the page is unchanged
+
+#### Scenario: Page identical to another note
+- **WHEN** the user saves HTML identical to another note's page
+- **THEN** the save is refused with a conflict and the page is unchanged

@@ -11,7 +11,15 @@ from app.db import Note, get_session
 from app.extract import UndecodableError, decode_html, extract
 from app.roadmaps import RoadmapCatalog
 from app.routes.domains import get_catalog
-from app.schemas import ImportOutcome, ImportResult, NoteDetail, NoteOut, NoteUpdate
+from app.routes.guard import require_app_header
+from app.schemas import (
+    ImportOutcome,
+    ImportResult,
+    NoteContentUpdate,
+    NoteDetail,
+    NoteOut,
+    NoteUpdate,
+)
 from app.storage import FileStore, blob_key, sha256_hex
 
 router = APIRouter(prefix="/api/notes", tags=["notes"])
@@ -52,7 +60,11 @@ def note_out(note: Note, catalog: RoadmapCatalog) -> NoteOut:
 
 
 def note_detail(note: Note, catalog: RoadmapCatalog) -> NoteDetail:
-    return NoteDetail(**note_out(note, catalog).model_dump(), body_text=note.body_text)
+    return NoteDetail(
+        **note_out(note, catalog).model_dump(),
+        body_text=note.body_text,
+        content_sha256=note.content_sha256,
+    )
 
 
 def require_note(session: Session, note_id: UUID) -> Note:
@@ -182,6 +194,54 @@ def update_note(
 
     session.commit()
     session.refresh(note)
+    return note_detail(note, catalog)
+
+
+@router.put(
+    "/{note_id}/content",
+    response_model=NoteDetail,
+    dependencies=[Depends(require_app_header)],
+)
+def replace_content(
+    note_id: UUID, update: NoteContentUpdate, request: Request, session: SessionDep
+) -> NoteDetail:
+    catalog = get_catalog(request)
+    store = get_store(request)
+    limit = get_settings_from(request).max_upload_bytes
+    note = require_note(session, note_id)
+
+    html = update.html.strip()
+    if not html:
+        raise HTTPException(status_code=422, detail="the page must not be empty")
+    data = html.encode("utf-8")
+    if len(data) > limit:
+        raise HTTPException(
+            status_code=422, detail=f"the page is larger than {limit // (1024 * 1024)} MB"
+        )
+    if update.base_sha256 is not None and update.base_sha256 != note.content_sha256:
+        raise HTTPException(status_code=409, detail="the page changed since you opened it")
+
+    sha = sha256_hex(data)
+    if sha == note.content_sha256:
+        return note_detail(note, catalog)
+    other = session.scalar(select(Note.id).where(Note.content_sha256 == sha))
+    if other is not None:
+        raise HTTPException(status_code=409, detail="another note already has this exact page")
+
+    old_key = note.storage_key
+    key = blob_key(sha)
+    store.put(key, data)
+    note.content_sha256 = sha
+    note.storage_key = key
+    note.size_bytes = len(data)
+    note.body_text = extract(html, note.original_name).text
+    session.commit()
+    session.refresh(note)
+    if (
+        old_key != key
+        and session.scalar(select(Note.id).where(Note.storage_key == old_key)) is None
+    ):
+        store.delete(old_key)
     return note_detail(note, catalog)
 
 

@@ -186,6 +186,8 @@ export function makeNote(title: string, nodeId: string | null = null, extra: Par
 
 export interface FakeState {
   notes: Note[]
+  /** Note id -> HTML source; a note without an entry has a page made from its title. */
+  sources: Record<string, string>
   importResults?: ImportOutcome[]
   lessons: Record<string, Lesson>
   types: ProviderTypeInfo[]
@@ -235,6 +237,7 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
   providerSeq = 0
   const state: FakeState = {
     notes: [...notes],
+    sources: {},
     importResults,
     lessons: {},
     types: TYPES,
@@ -493,6 +496,27 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
         for (const r of results) if (r.outcome === 'created' && r.note) state.notes.unshift(r.note)
         return respond({ results })
       }
+      const source = (n: Note) => state.sources[n.id] ?? `<title>${n.title}</title><p>${n.title}</p>`
+      const sha = (html: string) => `sha-${html.length}-${[...html].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7)}`
+      const detail = (n: Note) => ({ ...n, body_text: source(n), content_sha256: sha(source(n)) })
+      match = url.match(/^\/api\/notes\/([^/]+)\/original$/)
+      if (match) {
+        const note = state.notes.find((n) => n.id === match![1])
+        if (!note) return respond({ detail: 'note not found' }, 404)
+        return Promise.resolve(new Response(source(note), { status: 200, headers: { 'Content-Type': 'text/html' } }))
+      }
+      match = url.match(/^\/api\/notes\/([^/]+)\/content$/)
+      if (match && method === 'PUT') {
+        const note = state.notes.find((n) => n.id === match![1])
+        if (!note) return respond({ detail: 'note not found' }, 404)
+        const html = String(body.html ?? '').trim()
+        if (!html) return respond({ detail: 'the page must not be empty' }, 422)
+        if (body.base_sha256 && body.base_sha256 !== sha(source(note))) {
+          return respond({ detail: 'the page changed since you opened it' }, 409)
+        }
+        state.sources[note.id] = html
+        return respond(detail(note))
+      }
       match = url.match(/^\/api\/notes\/([^/]+)$/)
       if (match) {
         const note = state.notes.find((n) => n.id === match![1])
@@ -503,13 +527,13 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
           if (body.archived !== undefined) {
             note.archived_at = body.archived ? (note.archived_at ?? new Date().toISOString()) : null
           }
-          return respond(note)
+          return respond(detail(note))
         }
         if (method === 'DELETE') {
           state.notes = state.notes.filter((n) => n !== note)
           return respond(null, 204)
         }
-        return respond(note)
+        return respond(detail(note))
       }
       return respond({ detail: `unhandled ${method} ${url}` }, 500)
     }),

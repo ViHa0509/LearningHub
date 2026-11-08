@@ -47,6 +47,7 @@ class NoteOut(BaseModel):
 
 class NoteDetail(NoteOut):
     body_text: str
+    content_sha256: str
 
 
 class ImportOutcome(BaseModel):
@@ -58,6 +59,11 @@ class ImportOutcome(BaseModel):
 
 class ImportResult(BaseModel):
     results: list[ImportOutcome]
+
+
+class NoteContentUpdate(BaseModel):
+    html: str
+    base_sha256: str | None = None
 
 
 class NoteUpdate(BaseModel):
