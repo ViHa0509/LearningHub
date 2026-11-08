@@ -5,7 +5,9 @@ import { join, resolve } from 'node:path'
 // The UI checks run against their own backend (port 8001), database (learninghub_e2e)
 // and storage folder, and their own Vite server (port 5174), never the dev ones.
 const backendDir = resolve(import.meta.dirname, '../backend')
-const python = join(backendDir, '.venv', 'Scripts', 'python')
+// The backend venv's programs: .venv/Scripts on Windows, .venv/bin elsewhere (CI on Linux).
+export const venvBin = (name: string) => join(backendDir, '.venv', process.platform === 'win32' ? 'Scripts' : 'bin', name)
+const python = venvBin('python')
 export const E2E_ENV = {
   LH_DATABASE_URL: 'postgresql+psycopg://learninghub:learninghub@localhost:5434/learninghub_e2e',
   LH_STORAGE_DIR: join(tmpdir(), 'learninghub-e2e-storage'),

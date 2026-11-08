@@ -1,5 +1,7 @@
 # Learning Hub
 
+[![CI](https://github.com/ViHa0509/LearningHub/actions/workflows/ci.yml/badge.svg)](https://github.com/ViHa0509/LearningHub/actions/workflows/ci.yml)
+
 A personal web app that keeps what I learn in one place: research pages generated with Claude are imported as notes, placed on hand-written roadmaps per role (Frontend, Backend, DevOps, QA, Data Engineer, AI Engineer), and turned into short lessons per topic, with an agent in the side panel that answers from my own notes and drafts lessons.
 
 It is also built as a showcase of an **AI-native SDLC**: every change goes spec -> plan -> code -> review -> verify, run by a small agent team (see [How it is built](#how-it-is-built)).
@@ -82,6 +84,42 @@ To enable the agent, open **Settings** (top bar) -> **Add provider**:
 - Press **Test Connection**, then **Save Changes**. It works at once, without a restart.
 
 Under **Agents**, give the Learning assistant and the Lesson writer their own provider, plus an optional fallback. The fallback is used only on timeout, rate limit or unavailability. Keys are encrypted (`storage/secret.key` or `LH_SECRET_KEY`) and never shown again. Keys in `backend/.env` (`LH_ANTHROPIC_API_KEY`, ...) are imported once as "<Type> (from .env)". Chat calls are limited to 20 per minute (`LH_AGENT_RATE_PER_MINUTE`).
+
+## Run a released version
+
+Each release is a Docker image with the backend and the built app on one port. Only Docker is needed:
+
+```bash
+curl -LO https://github.com/ViHa0509/LearningHub/releases/latest/download/docker-compose.release.yml
+docker compose -f docker-compose.release.yml up -d     # LH_VERSION=0.1.0 picks a version; default latest
+```
+
+Open http://localhost:8080 and create the owner account. Migrations run when the container starts; the database and the uploaded files (and `secret.key`) are kept in the volumes `db-data` and `app-data`. Optional settings (`LH_GITHUB_*`, `LH_GOOGLE_*`, `LH_SMTP_*`, `LH_PUBLIC_URL`) go in a `.env` file next to the compose file.
+
+The **Claude Code** provider type needs the `claude` CLI, which is not in the image: use it from a hand-run backend (above), or use an API-key provider in the image.
+
+### Cut a release
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+The Release workflow runs every check, pushes `ghcr.io/viha0509/learninghub:0.1.0` and `:latest`, and creates a GitHub Release with generated notes and `docker-compose.release.yml`. It needs no secret beyond the default token. The first time, make the package public under GitHub -> Packages if others should pull it.
+
+CI (`.github/workflows/ci.yml`) runs the backend, frontend and e2e checks on every push to `main` and every pull request; the e2e screenshots are kept as a run artifact for 14 days.
+
+## Public access (Cloudflare Tunnel)
+
+The app stays on your machine; a Cloudflare Tunnel makes it reachable at your own https address. The login must be on: with an https `LH_PUBLIC_URL` and `LH_AUTH_REQUIRED=false` the backend refuses to start.
+
+1. Install `cloudflared` (`winget install --id Cloudflare.cloudflared`) and, in your own terminal, run `cloudflared tunnel login` (it opens the browser to pick your domain).
+2. `cloudflared tunnel create learninghub` prints a tunnel id; then `cloudflared tunnel route dns learninghub hub.<your-domain>`.
+3. Copy `deploy/cloudflared/config.example.yml` to `deploy/cloudflared/config.yml` (git-ignored) and fill in the tunnel id, the credentials file and the hostname.
+4. Run the app on one origin: the release image (port 8080), or the backend by hand with `LH_STATIC_DIR=../frontend/dist` after `npm run build` (then point the config at port 8000).
+5. Set `LH_PUBLIC_URL=https://hub.<your-domain>` (session cookies become Secure). For GitHub or Google sign-in, add the callback URLs with that address. In the image, also set `LH_FORWARDED_ALLOW_IPS=*` so the sign-in rate limit sees each visitor's address (the port is bound to 127.0.0.1 only).
+6. Start the tunnel: `deploy/cloudflared/run-tunnel.ps1` (or `cloudflared tunnel --config deploy/cloudflared/config.yml run`).
+
+What stays local: the database, the files, the provider keys and the Claude Code CLI never leave your machine; only the pages and API answers go through the tunnel.
 
 ## Checks
 

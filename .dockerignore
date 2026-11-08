@@ -1,0 +1,13 @@
+**/node_modules
+**/.venv
+**/__pycache__
+**/.mypy_cache
+**/.ruff_cache
+**/.pytest_cache
+frontend/dist
+frontend/e2e-results
+frontend/test-results
+**/*.local
+**/.env
+storage
+.git

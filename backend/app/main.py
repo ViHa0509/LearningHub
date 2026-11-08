@@ -2,11 +2,12 @@ import logging
 import socket
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -57,9 +58,35 @@ def import_env(app: FastAPI) -> None:
         )
 
 
+class PublicWithoutLogin(RuntimeError):
+    """An https public address with the login off: the app would be open to the internet."""
+
+
+def serve_static(app: FastAPI, root: Path) -> None:
+    """Serve the built frontend: its files as they are, any other non-API path the app page."""
+    root = root.resolve()
+    index = root / "index.html"
+    if not index.is_file():
+        raise RuntimeError(f"LH_STATIC_DIR has no index.html: {root}")
+
+    @app.get("/{path:path}", include_in_schema=False)
+    def frontend(path: str) -> Response:
+        if path == "api" or path.startswith("api/"):
+            return JSONResponse(status_code=404, content={"detail": "Not Found"})
+        file = (root / path).resolve()
+        if path and file.is_relative_to(root) and file.is_file():
+            return FileResponse(file)
+        return FileResponse(index, headers={"Cache-Control": "no-cache"})
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Build the app. Invalid roadmap files raise RoadmapError, so the server refuses to start."""
     settings = settings or get_settings()
+    if settings.public_url.startswith("https://") and not settings.auth_required:
+        raise PublicWithoutLogin(
+            "LH_PUBLIC_URL is a public https address but LH_AUTH_REQUIRED is false: "
+            "the login must be on for a public address"
+        )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -118,6 +145,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     gate = [Depends(require_session)]
     for module in (domains, notes, lessons, agent, ai_providers, agents, resources, news):
         app.include_router(module.router, dependencies=gate)
+    # Last, so every API route matches first.
+    if settings.static_dir is not None:
+        serve_static(app, settings.static_dir)
     return app
 
 

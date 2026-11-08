@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     roadmap_raw_base: str = "https://raw.githubusercontent.com"
     # The AI news feeds (checked at startup).
     news_sources_file: Path = REPO_ROOT / "news" / "sources.yaml"
+    # The built frontend (frontend/dist) to serve next to the API, as the release image does;
+    # unset in development, where Vite serves the app.
+    static_dir: Path | None = None
 
     # Owner login: every data route needs a session. LH_AUTH_REQUIRED=false opens them again,
     # for a machine nobody else can reach (the auth routes always work).

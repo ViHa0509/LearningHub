@@ -28,3 +28,6 @@ Thumbs.db
 
 # ai-sdlc-kit hook state (gate results, e2e stamps)
 .sdlc/state/
+
+# Local tunnel settings (tunnel id, hostname)
+deploy/cloudflared/config.yml

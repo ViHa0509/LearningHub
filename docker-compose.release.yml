@@ -1,0 +1,38 @@
+# Runs a released Learning Hub: `docker compose -f docker-compose.release.yml up -d`, then
+# open http://localhost:8080. LH_VERSION picks the image tag (default: latest).
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: learninghub
+      POSTGRES_PASSWORD: learninghub
+      POSTGRES_DB: learninghub
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U learninghub -d learninghub"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  app:
+    image: ghcr.io/viha0509/learninghub:${LH_VERSION:-latest}
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      LH_DATABASE_URL: postgresql+psycopg://learninghub:learninghub@db:5432/learninghub
+      # Optional: LH_PUBLIC_URL (the address the browser uses), LH_GITHUB_*, LH_GOOGLE_*, LH_SMTP_*.
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - app-data:/data
+    restart: unless-stopped
+
+volumes:
+  db-data:
+  app-data:

@@ -1,0 +1,12 @@
+# Cloudflare Tunnel for Learning Hub. Copy to config.yml (git-ignored) and fill in the tunnel id
+# and hostname printed by `cloudflared tunnel create learninghub`; see "Public access" in the README.
+# The app must run with the login on and LH_PUBLIC_URL set to the public https address.
+tunnel: <TUNNEL-ID>
+credentials-file: <HOME>/.cloudflared/<TUNNEL-ID>.json
+
+ingress:
+  # One origin serves both the API and the app: the release image (port 8080), or the backend
+  # run by hand with LH_STATIC_DIR=../frontend/dist (port 8000).
+  - hostname: hub.example.com
+    service: http://localhost:8080
+  - service: http_status:404
