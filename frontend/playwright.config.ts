@@ -15,6 +15,9 @@ export const E2E_ENV = {
   LH_ANTHROPIC_API_KEY: '',
   LH_OPENAI_API_KEY: '',
   LH_DEEPSEEK_API_KEY: '',
+  // The suite sends many agent requests in a row (more than 20 a minute on a fast CI runner);
+  // the limit itself is covered by the backend tests.
+  LH_AGENT_RATE_PER_MINUTE: '1000',
   LH_OLLAMA_URL: '',
   // The Claude Code provider runs this fake `claude` (a .py path runs with the backend's Python).
   LH_CLAUDE_BIN: join(import.meta.dirname, 'e2e', 'fake_claude.py'),

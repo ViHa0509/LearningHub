@@ -35,10 +35,10 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Create the test databases
         run: psql -h localhost -p 5434 -U learninghub -d learninghub -f ../docker/db-init/01-test-db.sql
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -58,8 +58,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "24"
           cache: npm
@@ -88,10 +88,10 @@ jobs:
           --health-cmd "pg_isready -U learninghub -d learninghub"
           --health-interval 5s --health-timeout 3s --health-retries 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Create the test databases
         run: psql -h localhost -p 5434 -U learninghub -d learninghub -f docker/db-init/01-test-db.sql
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -99,7 +99,7 @@ jobs:
       - name: Install backend
         working-directory: backend
         run: python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "24"
           cache: npm
@@ -112,7 +112,7 @@ jobs:
         run: npm run e2e
       - name: Keep screenshots and report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: e2e-results
           path: |
