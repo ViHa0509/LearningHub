@@ -6,7 +6,7 @@
 ## 2. CI
 
 - [x] 2.1 `.github/workflows/ci.yml`: backend (Postgres service, init SQL, pytest, ruff, mypy), frontend (npm ci, test, lint, build), e2e (Edge, artifacts), concurrency
-- [ ] 2.2 Push and confirm the run is green on GitHub (fix what only fails on Linux)
+- [x] 2.2 Push and confirm the run is green on GitHub (fix what only fails on Linux)
 
 ## 3. CD
 
