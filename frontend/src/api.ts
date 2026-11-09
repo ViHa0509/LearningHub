@@ -324,6 +324,37 @@ export interface ChatRequest {
 export type OAuthProvider = 'github' | 'google'
 
 /** GET /api/auth/status: public, decides between the app and the auth pages. */
+/** One OAuth provider's client setup (GET /api/settings/sign-in); the secret itself is never returned. */
+export interface SignInProvider {
+  client_id: string | null
+  secret_hint: string | null
+  /** Where the values in use come from: saved in the app, the environment, or nowhere. */
+  source: 'app' | 'env' | null
+  callback_url: string
+}
+
+export interface SignInSettings {
+  public_url: string
+  providers: Record<OAuthProvider, SignInProvider>
+}
+
+/** What a restore (or a sync) put on the server (POST /api/data/restore, /api/data/sync). */
+export interface RestoreResult {
+  counts: Partial<Record<'notes' | 'files' | 'lessons' | 'providers' | 'agent_providers' | 'agent_settings', number>>
+  providers_needing_key: string[]
+}
+
+export interface SyncKeyStatus {
+  active: boolean
+  expires_at: string | null
+}
+
+/** The key is in the answer of its creation only. */
+export interface NewSyncKey {
+  key: string
+  expires_at: string
+}
+
 export interface AuthStatus {
   auth_required: boolean
   has_owner: boolean
@@ -530,6 +561,25 @@ export const api = {
   consumeMagicLink: (token: string) => request<Me>('/api/auth/magic/consume', json('POST', { token })),
   verifyEmail: (token: string) => request<{ email_verified: boolean }>('/api/auth/verify', json('POST', { token })),
   resendVerification: () => request<{ message: string }>('/api/auth/verify/resend', { method: 'POST' }),
+  signInSettings: () => request<SignInSettings>('/api/settings/sign-in'),
+  /** client_secret is left out to keep the secret already saved. */
+  saveSignIn: (provider: OAuthProvider, body: { client_id: string; client_secret?: string }) =>
+    request<SignInSettings>(`/api/settings/sign-in/${provider}`, json('PUT', body)),
+  /** Answers 204 with no body; read the settings again afterwards. */
+  removeSignIn: (provider: OAuthProvider) =>
+    request<void>(`/api/settings/sign-in/${provider}`, { method: 'DELETE' }),
+  backupUrl: '/api/data/backup',
+  restoreBackup: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('confirm', 'REPLACE')
+    return request<RestoreResult>('/api/data/restore', { method: 'POST', body: form })
+  },
+  syncKeyStatus: () => request<SyncKeyStatus>('/api/data/sync-key'),
+  createSyncKey: () => request<NewSyncKey>('/api/data/sync-key', { method: 'POST' }),
+  revokeSyncKey: () => request<void>('/api/data/sync-key', { method: 'DELETE' }),
+  sendSync: (targetUrl: string, key: string) =>
+    request<RestoreResult>('/api/data/sync', json('POST', { target_url: targetUrl, key })),
   /** Where Continue with GitHub/Google goes; the server redirects back to `next` (an app hash). */
   oauthStartUrl: (provider: OAuthProvider, next: string) =>
     `/api/auth/oauth/${provider}/start?next=${encodeURIComponent(next)}`,
@@ -559,4 +609,6 @@ export const queryKeys = {
   auth: ['auth'] as const,
   authStatus: ['auth', 'status'] as const,
   me: ['auth', 'me'] as const,
+  signInSettings: ['settings', 'sign-in'] as const,
+  syncKey: ['data', 'sync-key'] as const,
 }

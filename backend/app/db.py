@@ -110,6 +110,32 @@ class AgentSetting(Base):
     )
 
 
+class AppSetting(Base):
+    """A setting saved in the app; ``secret_enc`` holds a SecretBox-encrypted secret."""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(Text, primary_key=True)
+    value: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, default=dict, server_default="{}", nullable=False
+    )
+    secret_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class SyncKey(Base):
+    """The key that lets another copy upload data; only its SHA-256 hash is stored."""
+
+    __tablename__ = "sync_keys"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    token_hash: Mapped[str] = mapped_column(Text, unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class NodeResource(Base):
     """A reference link of one roadmap node, synced from a source at a pinned commit."""
 

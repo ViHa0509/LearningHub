@@ -25,6 +25,8 @@ def test_downgrade_base_then_upgrade_head() -> None:
         "oauth_accounts",
         "sessions",
         "auth_tokens",
+        "app_settings",
+        "sync_keys",
     }
     try:
         command.downgrade(config, "base")
@@ -229,3 +231,41 @@ def test_0004_moves_saved_providers_and_assigns_the_first() -> None:
     finally:
         command.upgrade(config, "head")
         engine.dispose()
+
+
+def test_every_table_has_row_level_security_after_upgrade() -> None:
+    """A hosted Postgres (Supabase) exposes the public schema through its own API: every table
+    is locked with RLS after an upgrade, which the app's owner role is not restricted by."""
+    command.upgrade(alembic_config(), "head")
+    engine = create_engine(TEST_DATABASE_URL)
+    with engine.connect() as connection:
+        open_tables = connection.scalars(
+            text(
+                "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                "WHERE n.nspname = 'public' AND c.relkind = 'r' AND NOT c.relrowsecurity"
+            )
+        ).all()
+        notes = connection.scalar(text("SELECT count(*) FROM notes"))
+    engine.dispose()
+    assert open_tables == []
+    assert notes is not None
+
+
+def test_upgrade_with_a_url_encoded_password(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A '%' in LH_DATABASE_URL (URL-encoded password) must not break Alembic's config."""
+    from alembic.config import Config
+
+    from app.config import get_settings
+
+    # '%6C' is 'l': the same password, written URL-encoded.
+    encoded = TEST_DATABASE_URL.replace(":learninghub@", ":%6Cearninghub@")
+    monkeypatch.setenv("LH_DATABASE_URL", encoded)
+    get_settings.cache_clear()
+    try:
+        config = Config(alembic_config().config_file_name)
+        config.set_main_option(
+            "script_location", alembic_config().get_main_option("script_location") or ""
+        )
+        command.upgrade(config, "head")
+    finally:
+        get_settings.cache_clear()

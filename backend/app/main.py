@@ -32,11 +32,14 @@ from app.routes import (
     agents,
     ai_providers,
     auth,
+    data,
+    data_upload,
     domains,
     lessons,
     news,
     notes,
     resources,
+    settings_signin,
 )
 from app.storage import LocalFileStore
 
@@ -114,6 +117,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.rate_limiter = RateLimiter(settings.agent_rate_per_minute)
     app.state.clock = utc_now
+    app.state.sync_transport = None  # tests inject an httpx2 transport for the sync sender
     app.state.auth_limiter = AuthLimiter(10)
     app.state.oauth_pending = PendingStore()
     app.state.mailer = mailer_from_settings(settings)
@@ -143,8 +147,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth.router)
     # Every data router needs a session (when the login is on); health and auth do not.
     gate = [Depends(require_session)]
-    for module in (domains, notes, lessons, agent, ai_providers, agents, resources, news):
+    for module in (
+        data,
+        domains,
+        notes,
+        lessons,
+        agent,
+        ai_providers,
+        agents,
+        resources,
+        news,
+        settings_signin,
+    ):
         app.include_router(module.router, dependencies=gate)
+    # The upload routes authenticate with the sync key, not a session.
+    app.include_router(data_upload.router)
     # Last, so every API route matches first.
     if settings.static_dir is not None:
         serve_static(app, settings.static_dir)

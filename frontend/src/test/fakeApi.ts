@@ -9,6 +9,8 @@ import type {
   NewsItem,
   NewsRefreshStatus,
   Note,
+  OAuthProvider,
+  RestoreResult,
   ProviderIn,
   ProviderOut,
   ProviderRef,
@@ -259,6 +261,28 @@ export interface FakeState {
   newsRefreshPolls: number
   /** The login model; by default no session is required, so the app shows as before. */
   auth: FakeAuth
+  /** The sign-in setup: what is saved in the app, what the environment sets, and the public address. */
+  signIn: FakeSignIn
+  /** Backup, restore and sync. */
+  data: FakeData
+}
+
+export interface FakeSignIn {
+  publicUrl: string
+  app: Record<OAuthProvider, { client_id: string; secret: string } | null>
+  env: Record<OAuthProvider, { client_id: string } | null>
+  /** When set, saving answers 422 with this detail. */
+  saveError: string | null
+}
+
+export interface FakeData {
+  /** The sync key active on this (target) server; its value is shown once at creation. */
+  syncKey: { key: string; expires_at: string } | null
+  /** What a restore or a sync answers: the result, or a status and detail for a refusal. */
+  restore: RestoreResult | { status: number; detail: string }
+  sync: RestoreResult | { status: number; detail: string }
+  /** Files received by POST /api/data/restore: name and the confirm field. */
+  restored: { name: string; confirm: string }[]
 }
 
 export interface FakeOwner {
@@ -414,6 +438,32 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
       tokens: [],
       limited: null,
     },
+    signIn: {
+      publicUrl: 'https://hub.example.com',
+      app: { github: null, google: null },
+      env: { github: null, google: null },
+      saveError: null,
+    },
+    data: {
+      syncKey: null,
+      restore: { counts: { notes: 2, files: 2, lessons: 1, providers: 1 }, providers_needing_key: [] },
+      sync: { counts: { notes: 2, files: 2, lessons: 1, providers: 1 }, providers_needing_key: [] },
+      restored: [],
+    },
+  }
+  const signInOut = () => {
+    const one = (name: OAuthProvider) => {
+      const app = state.signIn.app[name]
+      const env = state.signIn.env[name]
+      state.auth.providers[name] = !!(app || env)
+      return {
+        client_id: app?.client_id ?? env?.client_id ?? null,
+        secret_hint: app ? `••••${app.secret.slice(-4)}` : env ? '••••env!' : null,
+        source: app ? 'app' : env ? 'env' : null,
+        callback_url: `${state.signIn.publicUrl}/api/auth/oauth/${name}/callback`,
+      }
+    }
+    return { public_url: state.signIn.publicUrl, providers: { github: one('github'), google: one('google') } }
   }
   let tokenSeq = 0
   const me = (owner: FakeOwner) => ({
@@ -662,6 +712,53 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
       }
       if (HEADER_REQUIRED.has(method) && headers['X-LearningHub'] !== '1') {
         return respond({ detail: 'missing X-LearningHub header' }, 403)
+      }
+
+      if (url === '/api/settings/sign-in' && method === 'GET') return respond(signInOut())
+      const signInMatch = url.match(/^\/api\/settings\/sign-in\/(github|google)$/)
+      if (signInMatch) {
+        const name = signInMatch[1] as OAuthProvider
+        if (method === 'PUT') {
+          if (state.signIn.saveError) return respond({ detail: state.signIn.saveError }, 422)
+          const clientId = String(body?.client_id ?? '').trim()
+          const kept = state.signIn.app[name]?.secret ?? ''
+          const secret = String(body?.client_secret ?? kept)
+          if (!clientId || clientId.length > 200 || !secret) {
+            return respond({ detail: 'Enter a Client ID and a Client secret (at most 200 characters)' }, 422)
+          }
+          state.signIn.app[name] = { client_id: clientId, secret }
+        } else if (method === 'DELETE') {
+          // Like the backend: 204 without a body.
+          state.signIn.app[name] = null
+          return respond(null, 204)
+        }
+        return respond(signInOut())
+      }
+
+      if (url === '/api/data/restore' && method === 'POST') {
+        const form = init?.body instanceof FormData ? init.body : null
+        const file = form?.get('file')
+        if (!(file instanceof File) || form?.get('confirm') !== 'REPLACE') {
+          return respond({ detail: 'Type REPLACE to confirm' }, 422)
+        }
+        state.data.restored.push({ name: file.name, confirm: String(form.get('confirm')) })
+        const answer = state.data.restore
+        return 'status' in answer ? respond({ detail: answer.detail }, answer.status) : respond(answer)
+      }
+      if (url === '/api/data/sync' && method === 'POST') {
+        const answer = state.data.sync
+        return 'status' in answer ? respond({ detail: answer.detail }, answer.status) : respond(answer)
+      }
+      if (url === '/api/data/sync-key') {
+        if (method === 'POST') {
+          state.data.syncKey = { key: 'sync-key-abc123', expires_at: '2026-11-10T12:00:00Z' }
+          return respond(state.data.syncKey, 201)
+        }
+        if (method === 'DELETE') {
+          state.data.syncKey = null
+          return respond(null, 204)
+        }
+        return respond({ active: !!state.data.syncKey, expires_at: state.data.syncKey?.expires_at ?? null })
       }
 
       if (url === '/api/domains') {

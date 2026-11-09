@@ -17,6 +17,8 @@ import { navigate, useRoute } from '../lib/route'
 import { useTheme, type Theme } from '../lib/theme'
 import { AgentPanel, type AgentRequest } from './AgentPanel'
 import { AuthPages } from './AuthPages'
+import { DataSettings } from './DataSettings'
+import { SignInSettings } from './SignInSettings'
 import { HomePage } from './HomePage'
 import { ImportDialog } from './ImportDialog'
 import { LearnedList } from './LearnedList'
@@ -173,6 +175,10 @@ function MainApp({ theme, onThemeChange, health, user }: MainProps) {
     center = <NewsPage onAskAgent={(text) => askAgent(text, undefined, true)} />
   } else if (route.page === 'settings') {
     center = <SettingsPage />
+  } else if (route.page === 'sign-in-settings') {
+    center = <SignInSettings />
+  } else if (route.page === 'data-settings') {
+    center = <DataSettings />
   } else if (route.page === 'provider') {
     center = <ProviderPage key={route.id} id={route.id} />
   } else if (route.page === 'lesson') {

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { api, type AgentOut, type ProviderOut } from '../api'
 import { useAgents, useProviders, useProviderTypes, useRefreshProviders } from '../hooks'
 import { providerLabel, typeLabel } from '../lib/providers'
-import { backFromSettings, routeHash } from '../lib/route'
+import { SettingsNav } from './SettingsNav'
 import { StatusBadge } from './StatusBadge'
 
 export function SettingsPage() {
@@ -10,9 +10,7 @@ export function SettingsPage() {
   const types = useProviderTypes()
   return (
     <section className="settings-page" aria-label="Settings">
-      <a className="back-link" href={routeHash(backFromSettings())}>
-        ← Back
-      </a>
+      <SettingsNav current="providers" />
       <div className="settings-header">
         <h1>AI providers</h1>
         <a className="button-link primary" href="#/settings/providers/new">
@@ -32,7 +30,12 @@ export function SettingsPage() {
       )}
       <div className="provider-cards">
         {providers.data?.map((p) => (
-          <ProviderCard key={p.id} provider={p} typeName={typeLabel(types.data, p.provider_type)} />
+          <ProviderCard
+            key={p.id}
+            provider={p}
+            typeName={typeLabel(types.data, p.provider_type)}
+            needsKey={!p.has_key && (types.data?.find((t) => t.type === p.provider_type)?.needs_key ?? false)}
+          />
         ))}
       </div>
       {providers.data && <AgentsSection providers={providers.data} />}
@@ -40,7 +43,7 @@ export function SettingsPage() {
   )
 }
 
-function ProviderCard({ provider, typeName }: { provider: ProviderOut; typeName: string }) {
+function ProviderCard({ provider, typeName, needsKey }: { provider: ProviderOut; typeName: string; needsKey: boolean }) {
   return (
     <article className="provider-card" aria-label={provider.name}>
       <header className="provider-header">
@@ -55,6 +58,11 @@ function ProviderCard({ provider, typeName }: { provider: ProviderOut; typeName:
       <p className="provider-status">
         <StatusBadge status={provider.last_test?.status} />
       </p>
+      {needsKey && (
+        <p className="error small" role="status">
+          Needs its API key: <a href={`#/settings/providers/${provider.id}`}>enter it again</a>
+        </p>
+      )}
       <p className="muted small">
         {provider.used_by.length === 0
           ? 'Not used by any agent'

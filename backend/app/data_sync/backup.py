@@ -1,0 +1,172 @@
+"""Build a backup archive: notes with their files, lessons, providers (no keys), agent data.
+
+The archive never holds accounts, sessions, one-time tokens, passwords, API keys or OAuth
+secrets: those tables are not read, and the provider rows are built without key columns.
+"""
+
+import json
+import re
+import uuid
+import zipfile
+from datetime import datetime
+from pathlib import Path
+from typing import IO, Any
+
+from alembic.config import Config
+from alembic.script import ScriptDirectory
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.db import AgentProvider, AgentSetting, AIProvider, Lesson, Note
+from app.storage import FileStore
+
+FORMAT = 1
+MAX_ENTRIES = 20_000
+MAX_TOTAL_BYTES = 2 * 1024**3
+ALEMBIC_DIR = Path(__file__).resolve().parents[2] / "alembic"
+DATA_FILES = {
+    "notes": "data/notes.json",
+    "lessons": "data/lessons.json",
+    "ai_providers": "data/ai_providers.json",
+    "agent_providers": "data/agent_providers.json",
+    "agent_settings": "data/agent_settings.json",
+}
+SHA = re.compile(r"^[0-9a-f]{64}$")
+BLOB_KEY = re.compile(r"^blobs/([0-9a-f]{2})/([0-9a-f]{64})(\.html|\.htm|\.pdf)$")
+
+
+class Row(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="ignore")
+
+
+class NoteRow(Row):
+    id: uuid.UUID
+    title: str
+    body_text: str
+    original_name: str
+    size_bytes: int = Field(ge=0)
+    content_sha256: str = Field(pattern=SHA.pattern)
+    storage_key: str = Field(pattern=BLOB_KEY.pattern)
+    node_id: str | None = None
+    archived_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class LessonRow(Row):
+    node_id: str
+    body: str
+    source: str
+    updated_at: datetime
+
+
+class ProviderRow(Row):
+    """A provider configuration without any key column."""
+
+    id: uuid.UUID
+    name: str
+    provider_type: str
+    model_name: str
+    base_url: str | None = None
+    config: dict[str, Any] = Field(default_factory=dict)
+    is_active: bool = True
+    created_at: datetime
+    updated_at: datetime
+
+
+class AgentProviderRow(Row):
+    agent_id: str
+    role: str
+    provider_id: uuid.UUID
+    created_at: datetime
+    updated_at: datetime
+
+
+class AgentSettingRow(Row):
+    agent_id: str
+    web_search: bool
+    updated_at: datetime
+
+
+class Manifest(BaseModel):
+    format: int
+    app_version: str
+    migration: str
+    created_at: str
+    counts: dict[str, int]
+    skipped_notes: int = 0
+
+
+def migration_head() -> str:
+    config = Config()
+    config.set_main_option("script_location", str(ALEMBIC_DIR))
+    head = ScriptDirectory.from_config(config).get_current_head()
+    assert head is not None
+    return head
+
+
+def known_migrations() -> set[str]:
+    config = Config()
+    config.set_main_option("script_location", str(ALEMBIC_DIR))
+    return {s.revision for s in ScriptDirectory.from_config(config).walk_revisions()}
+
+
+def _dump(rows: list[Any], model: type[Row]) -> bytes:
+    items = [model.model_validate(row).model_dump(mode="json") for row in rows]
+    return json.dumps(items, ensure_ascii=False, indent=1).encode("utf-8")
+
+
+def build_backup(
+    session: Session, store: FileStore, app_version: str, now: datetime, out: IO[bytes]
+) -> dict[str, int]:
+    """Write the archive to ``out``; return the counts."""
+    notes = list(session.scalars(select(Note).order_by(Note.created_at, Note.id)))
+    lessons = list(session.scalars(select(Lesson).order_by(Lesson.node_id)))
+    providers = list(session.scalars(select(AIProvider).order_by(AIProvider.name)))
+    assignments = list(
+        session.scalars(select(AgentProvider).order_by(AgentProvider.agent_id, AgentProvider.role))
+    )
+    switches = list(session.scalars(select(AgentSetting).order_by(AgentSetting.agent_id)))
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as archive:
+        written: set[str] = set()
+        kept: list[Note] = []
+        for note in notes:
+            if note.storage_key not in written:
+                try:
+                    data = store.get(note.storage_key)
+                except FileNotFoundError:
+                    # A note without its file cannot be restored: leave the row out too.
+                    continue
+                archive.writestr(f"files/{note.storage_key}", data)
+                written.add(note.storage_key)
+            kept.append(note)
+        skipped = len(notes) - len(kept)
+        files = len(written)
+        counts = {
+            "notes": len(kept),
+            "files": files,
+            "lessons": len(lessons),
+            "providers": len(providers),
+            "agent_providers": len(assignments),
+            "agent_settings": len(switches),
+        }
+        manifest = {
+            "format": FORMAT,
+            "app_version": app_version,
+            "migration": migration_head(),
+            "created_at": now.isoformat(),
+            "counts": counts,
+            "skipped_notes": skipped,
+        }
+        archive.writestr("manifest.json", json.dumps(manifest, indent=1))
+        dumps = {
+            "notes": _dump(kept, NoteRow),
+            "lessons": _dump(lessons, LessonRow),
+            "ai_providers": _dump(providers, ProviderRow),
+            "agent_providers": _dump(assignments, AgentProviderRow),
+            "agent_settings": _dump(switches, AgentSettingRow),
+        }
+        for name, payload in dumps.items():
+            archive.writestr(DATA_FILES[name], payload)
+    return counts

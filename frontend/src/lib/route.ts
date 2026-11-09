@@ -6,6 +6,10 @@ export type Route =
   | { page: 'lesson'; domain: string; node: string }
   | { page: 'note'; id: string }
   | { page: 'settings' }
+  /** Settings > Sign-in (GitHub and Google client setup). */
+  | { page: 'sign-in-settings' }
+  /** Settings > Data & sync (backup, restore, sync). */
+  | { page: 'data-settings' }
   | { page: 'news' }
   /** The provider configuration page; id is `new` for a configuration not saved yet. */
   | { page: 'provider'; id: string }
@@ -19,6 +23,8 @@ export function parseRoute(hash: string): Route {
   if (parts[0] === 'lesson' && parts.length === 3) return { page: 'lesson', domain: parts[1], node: parts[2] }
   if (parts[0] === 'note' && parts.length === 2) return { page: 'note', id: parts[1] }
   if (parts[0] === 'settings' && parts.length === 1) return { page: 'settings' }
+  if (parts[0] === 'settings' && parts[1] === 'sign-in' && parts.length === 2) return { page: 'sign-in-settings' }
+  if (parts[0] === 'settings' && parts[1] === 'data' && parts.length === 2) return { page: 'data-settings' }
   if (parts[0] === 'news' && parts.length === 1) return { page: 'news' }
   if (parts[0] === 'settings' && parts[1] === 'providers' && parts.length === 3) {
     return { page: 'provider', id: parts[2] }
@@ -38,6 +44,10 @@ export function routeHash(route: Route): string {
       return `#/note/${route.id}`
     case 'settings':
       return '#/settings'
+    case 'sign-in-settings':
+      return '#/settings/sign-in'
+    case 'data-settings':
+      return '#/settings/data'
     case 'news':
       return '#/news'
     case 'provider':
@@ -48,7 +58,11 @@ export function routeHash(route: Route): string {
 // The last page opened outside Settings and its provider pages: where Settings' Back goes.
 let outsideSettings: Route | null = null
 
-const isSettings = (route: Route) => route.page === 'settings' || route.page === 'provider'
+const isSettings = (route: Route) =>
+  route.page === 'settings' ||
+  route.page === 'provider' ||
+  route.page === 'sign-in-settings' ||
+  route.page === 'data-settings'
 
 function remember(route: Route): Route {
   if (!isSettings(route)) outsideSettings = route

@@ -1,0 +1,417 @@
+"""Spec: data-sync - Download a backup; Restore a backup."""
+
+import io
+import json
+import zipfile
+from pathlib import Path
+from typing import Any
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import select
+
+from app.data_sync.backup import migration_head
+from app.db import AgentProvider, AgentSetting, AIProvider, Lesson, Note, User, UserSession
+
+KEY = "sk-ant-api03-SECRETKEYVALUE-9876"
+HTML = "text/html"
+
+
+def page(title: str) -> bytes:
+    return f"<html><head><title>{title}</title></head><body>{title} body</body></html>".encode()
+
+
+def import_note(client: TestClient, title: str) -> dict[str, Any]:
+    response = client.post(
+        "/api/notes/import", files=[("files", (f"{title}.html", page(title), HTML))]
+    )
+    assert response.status_code == 200, response.text
+    note: dict[str, Any] = response.json()["results"][0]["note"]
+    return note
+
+
+def seed(client: TestClient) -> dict[str, str]:
+    """Two notes with files, one lesson, a provider with a key, a keyless one, assignments."""
+    import_note(client, "Alpha")
+    import_note(client, "Beta")
+    with client.app.state.session_factory() as db:  # type: ignore[attr-defined]
+        db.add(Lesson(node_id="devops/docker", body="# Docker lesson", source="user"))
+        db.commit()
+    keyed = client.post(
+        "/api/ai-providers",
+        json={
+            "name": "Claude main",
+            "provider_type": "anthropic",
+            "model_name": "claude-sonnet-5-5",
+            "api_key": KEY,
+        },
+    )
+    assert keyed.status_code == 201, keyed.text
+    local = client.post(
+        "/api/ai-providers",
+        json={
+            "name": "Local qwen",
+            "provider_type": "local",
+            "model_name": "qwen3",
+            "base_url": "http://localhost:11434/v1",
+        },
+    )
+    assert local.status_code == 201, local.text
+    assert (
+        client.put(
+            "/api/agents/assistant/provider",
+            json={
+                "primary_provider_id": keyed.json()["id"],
+                "fallback_provider_id": local.json()["id"],
+            },
+        ).status_code
+        == 200
+    )
+    assert (
+        client.put("/api/agents/assistant/settings", json={"web_search": True}).status_code == 200
+    )
+    return {"keyed": keyed.json()["id"], "local": local.json()["id"]}
+
+
+def download(client: TestClient) -> bytes:
+    response = client.get("/api/data/backup")
+    assert response.status_code == 200
+    return response.content
+
+
+def restore(client: TestClient, data: bytes, confirm: str | None = "REPLACE") -> Any:
+    form = {} if confirm is None else {"confirm": confirm}
+    return client.post(
+        "/api/data/restore", files={"file": ("b.zip", data, "application/zip")}, data=form
+    )
+
+
+def snapshot(client: TestClient) -> dict[str, list[Any]]:
+    with client.app.state.session_factory() as db:  # type: ignore[attr-defined]
+        return {
+            "notes": [
+                (n.id, n.title, n.content_sha256, n.storage_key, n.created_at, n.archived_at)
+                for n in db.scalars(select(Note).order_by(Note.title))
+            ],
+            "lessons": [(x.node_id, x.body, x.source) for x in db.scalars(select(Lesson))],
+            "providers": [
+                (p.id, p.name, p.provider_type, p.model_name, p.base_url, p.config, p.created_at)
+                for p in db.scalars(select(AIProvider).order_by(AIProvider.name))
+            ],
+            "assignments": [
+                (a.agent_id, a.role, a.provider_id)
+                for a in db.scalars(select(AgentProvider).order_by(AgentProvider.role))
+            ],
+            "settings": [(s.agent_id, s.web_search) for s in db.scalars(select(AgentSetting))],
+        }
+
+
+def empty_data(client: TestClient) -> None:
+    with client.app.state.session_factory() as db:  # type: ignore[attr-defined]
+        for model in (AgentProvider, AgentSetting, Lesson, Note, AIProvider):
+            for row in db.scalars(select(model)):
+                db.delete(row)
+        db.commit()
+
+
+def rewrite(data: bytes, change: Any) -> bytes:
+    """A copy of the archive after ``change(entries: dict[str, bytes])``."""
+    with zipfile.ZipFile(io.BytesIO(data)) as source:
+        entries = {i.filename: source.read(i) for i in source.infolist()}
+    change(entries)
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as target:
+        for name, content in entries.items():
+            target.writestr(name, content)
+    return out.getvalue()
+
+
+# Scenario: Backup content
+def test_backup_content(client: TestClient) -> None:
+    seed(client)
+    response = client.get("/api/data/backup")
+    assert response.headers["content-type"] == "application/zip"
+    disposition = response.headers["content-disposition"]
+    assert "learninghub-backup-" in disposition and ".zip" in disposition
+    archive = zipfile.ZipFile(io.BytesIO(response.content))
+    names = set(archive.namelist())
+    assert {
+        "manifest.json",
+        "data/notes.json",
+        "data/lessons.json",
+        "data/ai_providers.json",
+        "data/agent_providers.json",
+        "data/agent_settings.json",
+    } <= names
+    assert len([n for n in names if n.startswith("files/blobs/")]) == 2
+    manifest = json.loads(archive.read("manifest.json"))
+    assert manifest["format"] == 1
+    assert manifest["migration"] == migration_head()
+    assert manifest["app_version"] == client.app.version  # type: ignore[attr-defined]
+    assert manifest["counts"] == {
+        "notes": 2,
+        "files": 2,
+        "lessons": 1,
+        "providers": 2,
+        "agent_providers": 2,
+        "agent_settings": 1,
+    }
+    assert {n["title"] for n in json.loads(archive.read("data/notes.json"))} == {"Alpha", "Beta"}
+    assert json.loads(archive.read("data/lessons.json"))[0]["node_id"] == "devops/docker"
+    providers = json.loads(archive.read("data/ai_providers.json"))
+    assert {(p["name"], p["model_name"]) for p in providers} == {
+        ("Claude main", "claude-sonnet-5-5"),
+        ("Local qwen", "qwen3"),
+    }
+    for provider in providers:
+        assert not {"api_key_enc", "key_hint", "key_kind"} & set(provider)
+        assert not any(k.startswith("last_") for k in provider)
+
+
+def test_backup_holds_no_key_token_or_password(client: TestClient) -> None:
+    seed(client)
+    with client.app.state.session_factory() as db:  # type: ignore[attr-defined]
+        encrypted = db.scalars(select(AIProvider.api_key_enc)).first()
+        user = db.scalars(select(User)).one()
+        user.password_hash = "scrypt$PASSWORDHASHVALUE"
+        db.commit()
+        session_hashes = list(db.scalars(select(UserSession.token_hash)))
+    assert encrypted
+    cookie = client.cookies.get("lh_session") or ""
+    secrets_ = [KEY, "SECRETKEYVALUE", encrypted, "PASSWORDHASHVALUE", *session_hashes]
+    if cookie:
+        secrets_.append(cookie)
+    archive = zipfile.ZipFile(io.BytesIO(download(client)))
+    for name in archive.namelist():
+        content = archive.read(name)
+        for secret in secrets_:
+            assert secret.encode() not in content, name
+    assert not any("users" in n or "session" in n for n in archive.namelist())
+
+
+# Scenario: Restore replaces the data
+def test_restore_replaces_data_and_keeps_auto_backup(client: TestClient, tmp_path: Path) -> None:
+    import_note(client, "Gamma")
+    import_note(client, "Delta")
+    backup = download(client)
+    empty_data(client)
+    old = import_note(client, "Old note")
+
+    response = restore(client, backup)
+    assert response.status_code == 200, response.text
+    assert response.json()["counts"]["notes"] == 2
+    assert response.json()["counts"]["files"] == 2
+    titles = [n["title"] for n in client.get("/api/notes").json()]
+    assert sorted(titles) == ["Delta", "Gamma"]
+    for note in client.get("/api/notes").json():
+        assert note["title"] in client.get(f"/api/notes/{note['id']}/original").text
+
+    autos = list((tmp_path / "storage" / "backups").glob("auto-*.zip"))
+    assert len(autos) == 1
+    held = json.loads(zipfile.ZipFile(autos[0]).read("data/notes.json"))
+    assert [n["id"] for n in held] == [old["id"]]
+
+
+def test_only_three_auto_backups_are_kept(client: TestClient, tmp_path: Path) -> None:
+    import_note(client, "One")
+    backup = download(client)
+    for _ in range(5):
+        assert restore(client, backup).status_code == 200
+    assert len(list((tmp_path / "storage" / "backups").glob("auto-*.zip"))) == 3
+
+
+def test_round_trip_gives_identical_rows(client: TestClient) -> None:
+    seed(client)
+    before = snapshot(client)
+    backup = download(client)
+    empty_data(client)
+    assert snapshot(client)["notes"] == []
+    response = restore(client, backup)
+    assert response.status_code == 200, response.text
+    assert snapshot(client) == before
+    assert response.json() == {
+        "counts": {
+            "notes": 2,
+            "files": 2,
+            "lessons": 1,
+            "providers": 2,
+            "agent_providers": 2,
+            "agent_settings": 1,
+        },
+        "providers_needing_key": ["Claude main"],
+    }
+
+
+# Scenario: Provider keys entered again
+def test_restored_provider_needs_its_key(client: TestClient) -> None:
+    seed(client)
+    backup = download(client)
+    assert restore(client, backup).status_code == 200
+    with client.app.state.session_factory() as db:  # type: ignore[attr-defined]
+        assert [p.api_key_enc for p in db.scalars(select(AIProvider))] == [None, None]
+    listed = {p["name"]: p for p in client.get("/api/ai-providers").json()}
+    assert set(listed) == {"Claude main", "Local qwen"}
+    assert listed["Claude main"]["has_key"] is False
+
+
+# Scenario: Unsafe archive refused
+@pytest.mark.parametrize(
+    ("label", "change"),
+    [
+        ("traversal", lambda e: e.update({"../evil.txt": b"x"})),
+        ("absolute", lambda e: e.update({"/etc/evil": b"x"})),
+        ("backslash", lambda e: e.update({"files\\evil.html": b"x"})),
+        ("unknown entry", lambda e: e.update({"data/users.json": b"[]"})),
+        (
+            "bad suffix",
+            lambda e: e.update({"files/blobs/aa/" + "a" * 64 + ".exe": b"x"}),
+        ),
+    ],
+)
+def test_unsafe_entries_are_refused(client: TestClient, label: str, change: Any) -> None:
+    import_note(client, "Keep")
+    before = snapshot(client)
+    response = restore(client, rewrite(download(client), change))
+    assert response.status_code == 422, label
+    assert response.json()["detail"]
+    assert snapshot(client) == before
+
+
+def test_checksum_mismatch_is_refused(client: TestClient) -> None:
+    import_note(client, "Keep")
+    before = snapshot(client)
+
+    def tamper(entries: dict[str, bytes]) -> None:
+        name = next(n for n in entries if n.startswith("files/blobs/"))
+        entries[name] = b"<html>changed</html>"
+
+    response = restore(client, rewrite(download(client), tamper))
+    assert response.status_code == 422
+    assert "checksum" in response.json()["detail"]
+    assert snapshot(client) == before
+
+
+@pytest.mark.parametrize("migration", ["9999", "zzzz-unknown"])
+def test_newer_or_unknown_migration_is_refused(client: TestClient, migration: str) -> None:
+    import_note(client, "Keep")
+    before = snapshot(client)
+
+    def newer(entries: dict[str, bytes]) -> None:
+        manifest = json.loads(entries["manifest.json"])
+        manifest["migration"] = migration
+        entries["manifest.json"] = json.dumps(manifest).encode()
+
+    response = restore(client, rewrite(download(client), newer))
+    assert response.status_code == 422
+    assert "migration" in response.json()["detail"]
+    assert snapshot(client) == before
+
+
+def test_wrong_format_is_refused(client: TestClient) -> None:
+    def wrong(entries: dict[str, bytes]) -> None:
+        manifest = json.loads(entries["manifest.json"])
+        manifest["format"] = 2
+        entries["manifest.json"] = json.dumps(manifest).encode()
+
+    assert restore(client, rewrite(download(client), wrong)).status_code == 422
+
+
+def test_invalid_json_shape_is_refused(client: TestClient) -> None:
+    import_note(client, "Keep")
+    before = snapshot(client)
+
+    def bad(entries: dict[str, bytes]) -> None:
+        entries["data/notes.json"] = b'[{"title": 1}]'
+
+    assert restore(client, rewrite(download(client), bad)).status_code == 422
+    assert snapshot(client) == before
+
+
+def test_too_many_entries_and_size_limits(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import_note(client, "Keep")
+    backup = download(client)
+    before = snapshot(client)
+    monkeypatch.setattr("app.data_sync.restore.MAX_ENTRIES", 3)
+    assert restore(client, backup).status_code == 422
+    monkeypatch.setattr("app.data_sync.restore.MAX_ENTRIES", 20_000)
+    monkeypatch.setattr("app.data_sync.restore.MAX_TOTAL_BYTES", 100)
+    response = restore(client, backup)
+    assert response.status_code == 422
+    assert "2 GB" in response.json()["detail"]
+    assert snapshot(client) == before
+
+
+def test_not_a_zip_is_refused(client: TestClient) -> None:
+    response = restore(client, b"this is not a zip file")
+    assert response.status_code == 422
+    assert "zip" in response.json()["detail"]
+
+
+@pytest.mark.parametrize("confirm", [None, "", "replace", "REPLACE "])
+def test_restore_needs_the_typed_confirmation(client: TestClient, confirm: str | None) -> None:
+    import_note(client, "Keep")
+    before = snapshot(client)
+    response = restore(client, download(client), confirm=confirm)
+    assert response.status_code == 422
+    assert snapshot(client) == before
+
+
+def test_failed_transaction_leaves_nothing_of_the_backup(client: TestClient) -> None:
+    import_note(client, "Keep")
+    other = import_note(client, "Other")
+    backup = download(client)
+    with client.app.state.session_factory() as db:  # type: ignore[attr-defined]
+        db.delete(db.get(Note, other["id"]))
+        db.commit()
+    before = snapshot(client)
+
+    def duplicate(entries: dict[str, bytes]) -> None:
+        notes = json.loads(entries["data/notes.json"])
+        notes.append({**notes[0], "id": "11111111-1111-1111-1111-111111111111"})
+        entries["data/notes.json"] = json.dumps(notes).encode()
+
+    response = restore(client, rewrite(backup, duplicate))
+    assert response.status_code == 422
+    assert snapshot(client) == before
+
+
+# Scenario: Only the Owner
+def test_backup_and_restore_need_a_session(client: TestClient, settings_factory: Any) -> None:
+    from app.main import create_app
+
+    app = create_app(settings_factory())
+    with TestClient(app, headers={"X-LearningHub": "1"}) as anonymous:
+        assert anonymous.get("/api/data/backup").status_code == 401
+        assert restore(anonymous, b"x").status_code == 401
+    app.state.engine.dispose()
+
+
+def test_restore_needs_the_app_header(client: TestClient) -> None:
+    response = client.post(
+        "/api/data/restore",
+        files={"file": ("b.zip", b"x", "application/zip")},
+        data={"confirm": "REPLACE"},
+        headers={"X-LearningHub": "0"},
+    )
+    assert response.status_code == 403
+
+
+def test_backup_without_a_note_file_leaves_the_note_out_and_restores(
+    client: TestClient, tmp_path: Path
+) -> None:
+    import_note(client, "Kept")
+    lost = import_note(client, "Lost")
+    with client.app.state.session_factory() as db:  # type: ignore[attr-defined]
+        key = db.get(Note, lost["id"]).storage_key  # type: ignore[union-attr]
+    (tmp_path / "storage" / key).unlink()
+    backup = download(client)
+    archive = zipfile.ZipFile(io.BytesIO(backup))
+    manifest = json.loads(archive.read("manifest.json"))
+    assert manifest["skipped_notes"] == 1
+    assert manifest["counts"]["notes"] == 1
+    assert [n["title"] for n in json.loads(archive.read("data/notes.json"))] == ["Kept"]
+    response = restore(client, backup)
+    assert response.status_code == 200, response.text
+    assert [n["title"] for n in client.get("/api/notes").json()] == ["Kept"]

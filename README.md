@@ -68,7 +68,7 @@ After pulling new code: run `.venv/Scripts/pip install -r requirements-dev.txt` 
 
 ### First sign-in
 
-The app has one Owner account. On the first visit it asks you to **create the owner account** (email and password, or GitHub/Google once configured); after that, sign-up is closed and every page needs a login. Optional settings in `backend/.env`:
+The app has one Owner account. On the first visit it asks you to **create the owner account** (email and password, or GitHub/Google once configured); after that, sign-up is closed and every page needs a login. GitHub and Google sign-in are easiest to set up in the app: **Settings -> Sign-in** shows the callback URL to register, with links to where the OAuth app is created; paste the Client ID and secret there and Save (no restart). They can also come from `backend/.env`:
 
 | Setting | What it does |
 |---|---|
@@ -85,6 +85,16 @@ To enable the agent, open **Settings** (top bar) -> **Add provider**:
 
 Under **Agents**, give the Learning assistant and the Lesson writer their own provider, plus an optional fallback. The fallback is used only on timeout, rate limit or unavailability. Keys are encrypted (`storage/secret.key` or `LH_SECRET_KEY`) and never shown again. Keys in `backend/.env` (`LH_ANTHROPIC_API_KEY`, ...) are imported once as "<Type> (from .env)". Chat calls are limited to 20 per minute (`LH_AGENT_RATE_PER_MINUTE`).
 
+### Move data from Local to Deploy
+
+**Settings -> Data & sync** (on both copies):
+
+1. On **Deploy**, under *Receive*, press **Create sync key** and copy it (shown once, valid 24 hours).
+2. On **Local**, under *Send*, enter Deploy's address (for example `https://hub.example.com`) and the key, then **Send**.
+3. Deploy's notes, files, lessons, AI provider settings and agent settings are replaced with Local's. Deploy keeps an automatic backup of what it had (`<storage>/backups/`, the last 3). Provider **keys are never copied**: enter them again under AI providers.
+
+The same page downloads a backup (.zip, without keys or passwords) and restores one after you type `REPLACE`. Data is sent in 50 MB parts, below Cloudflare's 100 MB request limit.
+
 ## Run a released version
 
 Each release is a Docker image with the backend and the built app on one port. Only Docker is needed:
@@ -94,7 +104,7 @@ curl -LO https://github.com/ViHa0509/LearningHub/releases/latest/download/docker
 docker compose -f docker-compose.release.yml up -d     # LH_VERSION=0.1.0 picks a version; default latest
 ```
 
-Open http://localhost:8080 and create the owner account. Migrations run when the container starts; the database and the uploaded files (and `secret.key`) are kept in the volumes `db-data` and `app-data`. Optional settings (`LH_GITHUB_*`, `LH_GOOGLE_*`, `LH_SMTP_*`, `LH_PUBLIC_URL`) go in a `.env` file next to the compose file.
+Open http://localhost:8080 and create the owner account. Migrations run when the container starts; the database and the uploaded files (and `secret.key`) are kept in the volumes `db-data` and `app-data`. Optional settings (`LH_PUBLIC_URL`, `LH_SMTP_*`, `LH_SECRET_KEY`; GitHub and Google can also be set in Settings -> Sign-in) go in a `.env` file next to the compose file. With a hosted Postgres (for example Supabase's Session pooler), set `LH_DATABASE_URL`; the migrations turn on row-level security for every table and remove the rights of Supabase's `anon` and `authenticated` roles, so its REST API reads nothing.
 
 The **Claude Code** provider type needs the `claude` CLI, which is not in the image: use it from a hand-run backend (above), or use an API-key provider in the image.
 

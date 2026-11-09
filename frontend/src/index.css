@@ -412,6 +412,13 @@ a { color: var(--accent); }
 
 /* Providers list, agents and the provider configuration page. */
 .settings-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.settings-nav { display: flex; gap: 6px; margin: 12px 0 16px; border-bottom: 1px solid var(--border); }
+.settings-nav a { padding: 6px 12px; text-decoration: none; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.settings-nav a[aria-current='page'] { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+.provider-card-form { display: flex; flex-direction: column; gap: 10px; }
+.copy-row { display: flex; gap: 8px; align-items: center; }
+.copy-row input { flex: 1; min-width: 0; }
+.steps { margin: 0; padding-left: 18px; font-size: 13px; color: var(--muted); }
 .provider-header h2 a { color: var(--text); text-decoration: none; }
 .provider-header h2 a:hover { color: var(--accent); }
 .provider-meta { margin: 0; font-size: 13px; }
@@ -788,3 +795,6 @@ button.auth-provider:disabled { color: var(--muted); border-color: var(--border)
 .account-popover [role='menuitem']:hover { background: var(--surface-2); }
 .account-popover .account-verify[role='menuitem'] { color: var(--warn); }
 .account-note { margin: 4px 0 0; padding: 6px 10px; font-size: 12px; }
+
+/* Settings forms (Sign-in, Data & sync): a disabled button must look disabled. */
+.settings-page button:disabled { opacity: 0.5; cursor: not-allowed; }

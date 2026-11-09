@@ -43,7 +43,8 @@ def clean_tables() -> None:
         connection.execute(
             text(
                 "TRUNCATE notes, lessons, agent_providers, ai_providers, node_resources, "
-                "news_items, agent_settings, users, oauth_accounts, sessions, auth_tokens"
+                "news_items, agent_settings, users, oauth_accounts, sessions, auth_tokens, "
+                "app_settings, sync_keys"
             )
         )
     engine.dispose()

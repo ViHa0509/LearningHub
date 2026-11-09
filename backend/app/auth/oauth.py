@@ -19,7 +19,11 @@ from dataclasses import dataclass
 from threading import Lock
 from typing import Any, Literal
 
+from sqlalchemy.orm import Session
+
+from app.agent.secrets import SecretBox, SecretUnreadable
 from app.config import Settings
+from app.db import AppSetting
 
 log = logging.getLogger(__name__)
 
@@ -57,8 +61,27 @@ class Provider:
     scope: str
 
 
-def provider_config(settings: Settings, name: ProviderName) -> Provider | None:
-    """The provider's configuration, or None when its client ID or secret is missing."""
+def stored_credentials(db: Session, box: SecretBox, name: ProviderName) -> tuple[str, str] | None:
+    """The client ID and secret saved in the app, or None when absent or unreadable."""
+    row = db.get(AppSetting, f"oauth.{name}")
+    if row is None or row.secret_enc is None:
+        return None
+    client_id = row.value.get("client_id")
+    if not isinstance(client_id, str) or not client_id.strip():
+        return None
+    try:
+        secret = box.decrypt(row.secret_enc).strip()
+    except SecretUnreadable:
+        return None
+    return (client_id.strip(), secret) if secret else None
+
+
+def provider_config(
+    settings: Settings, name: ProviderName, db: Session, box: SecretBox
+) -> Provider | None:
+    """The provider's configuration (the app's saved values win over the environment),
+    or None when its client ID or secret is missing."""
+    saved = stored_credentials(db, box, name)
     if name == "github":
         client_id, secret = settings.github_client_id, settings.github_client_secret
         authorize, token, scope = (
@@ -73,6 +96,8 @@ def provider_config(settings: Settings, name: ProviderName) -> Provider | None:
             settings.google_token_url,
             "openid email profile",
         )
+    if saved is not None:
+        return Provider(name, saved[0], saved[1], authorize, token, scope)
     if not client_id or not client_id.strip() or secret is None:
         return None
     secret_value = secret.get_secret_value().strip()

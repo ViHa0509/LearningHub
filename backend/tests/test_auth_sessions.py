@@ -48,7 +48,11 @@ def test_every_data_route_answers_401_without_a_session(
         for method, path in routes:
             response = client.request(method, path)
             assert response.status_code == 401, (method, path)
-            assert response.json() == {"detail": "Sign in to continue"}
+            if path.startswith("/api/data/upload"):
+                # Key-authenticated routes (the sync key, not a session): same 401, own message.
+                assert response.json() == {"detail": "the sync key is wrong or expired"}
+            else:
+                assert response.json() == {"detail": "Sign in to continue"}
     app.state.engine.dispose()
 
 

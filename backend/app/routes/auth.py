@@ -60,7 +60,7 @@ from app.auth.sessions import (
 )
 from app.config import Settings
 from app.db import OAuthAccount, User, UserSession, get_session
-from app.routes.guard import require_app_header
+from app.routes.guard import box_of, require_app_header
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -180,7 +180,9 @@ def status(request: Request, db: DbDep) -> AuthStatus:
         auth_required=settings.auth_required,
         has_owner=has_owner,
         providers={
-            name: ProviderStatus(configured=provider_config(settings, name) is not None)
+            name: ProviderStatus(
+                configured=provider_config(settings, name, db, box_of(request)) is not None
+            )
             for name in ("github", "google")
         },
         mail=MailStatus(mode=mailer.mode),
@@ -488,10 +490,13 @@ def owner_for(db: Session, identity: Identity, request: Request) -> User:
 
 @router.get("/oauth/{provider}/start", response_model=None)
 def oauth_start(
-    provider: ProviderName, request: Request, next: Annotated[str | None, Query()] = None
+    provider: ProviderName,
+    request: Request,
+    db: DbDep,
+    next: Annotated[str | None, Query()] = None,
 ) -> RedirectResponse:
     settings = settings_of(request)
-    config = provider_config(settings, provider)
+    config = provider_config(settings, provider, db, box_of(request))
     if config is None:
         return failed(settings, "not_configured")
     store: PendingStore = request.app.state.oauth_pending
@@ -533,7 +538,7 @@ def oauth_callback(
             raise OAuthError("access_denied")
         if not code:
             raise OAuthError("provider_error")
-        config = provider_config(settings, provider)
+        config = provider_config(settings, provider, db, box_of(request))
         if config is None:
             raise OAuthError("not_configured")
         identity = fetch_identity(settings, config, code, pending.verifier)

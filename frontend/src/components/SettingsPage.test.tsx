@@ -203,3 +203,19 @@ describe('agents section', () => {
     expect(writer).not.toHaveTextContent('same as the Learning assistant')
   })
 })
+
+describe('restored providers', () => {
+  // Spec: data-sync - Scenario: Provider keys entered again
+  it('marks a provider whose type needs a key and has none', async () => {
+    const state = installFakeApi()
+    state.providers = [
+      makeProvider('Restored OpenAI', 'openai', 'gpt-x', { has_key: false, key_hint: null, key_kind: null }),
+      makeProvider('Keyed Anthropic', 'anthropic', 'claude-x'),
+    ]
+    await renderAppReady('#/settings')
+    const restored = await card('Restored OpenAI')
+    expect(within(restored).getByText(/Needs its API key/)).toBeInTheDocument()
+    expect(within(restored).getByRole('link', { name: 'enter it again' })).toHaveAttribute('href', `#/settings/providers/${state.providers[0].id}`)
+    expect(within(await card('Keyed Anthropic')).queryByText(/Needs its API key/)).not.toBeInTheDocument()
+  })
+})
