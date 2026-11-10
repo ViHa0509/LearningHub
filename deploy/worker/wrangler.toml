@@ -1,0 +1,8 @@
+# Learning Hub front door on workers.dev (free plan). Deployed by
+# deploy/cloudflared/start-public.ps1, which passes the current tunnel address as ORIGIN.
+name = "learninghub"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+# Only the fixed workers.dev address; no per-version preview URLs.
+preview_urls = false

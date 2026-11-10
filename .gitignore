@@ -31,3 +31,6 @@ Thumbs.db
 
 # Local tunnel settings (tunnel id, hostname)
 deploy/cloudflared/config.yml
+
+# Wrangler local state (account cache)
+.wrangler/

@@ -131,6 +131,16 @@ The app stays on your machine; a Cloudflare Tunnel makes it reachable at your ow
 
 What stays local: the database, the files, the provider keys and the Claude Code CLI never leave your machine; only the pages and API answers go through the tunnel.
 
+### Free fixed address without a domain (workers.dev)
+
+Without a domain of your own, a Cloudflare Worker on your free `workers.dev` subdomain can be the fixed address: it forwards every request to a Quick Tunnel (`*.trycloudflare.com`), whose own address changes whenever it restarts.
+
+1. Once, in your own terminal: `cd deploy/worker && npx --yes wrangler@4.152.0 login`, and sign in to Cloudflare. If your Worker or subdomain differ, change `name` in `deploy/worker/wrangler.toml` and the address in `deploy/cloudflared/start-public.ps1`.
+2. Set `LH_PUBLIC_URL=https://<worker>.<subdomain>.workers.dev` and `LH_FORWARDED_ALLOW_IPS=*` in the `.env` next to `docker-compose.release.yml`, then start the release stack (port 8080).
+3. Run `deploy/cloudflared/start-public.ps1` after every reboot, or whenever the address stops answering. It starts a new Quick Tunnel if the old one is gone, and points the Worker at it.
+
+GitHub and Google callbacks then stay `https://<worker>.<subdomain>.workers.dev/api/auth/oauth/{github|google}/callback`.
+
 ## Checks
 
 | What | Command |
