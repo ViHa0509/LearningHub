@@ -106,7 +106,14 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install frontend and Edge
         working-directory: frontend
-        run: npm ci && npx playwright install --with-deps msedge
+        # The runner image ships Edge; installing it again needs the apt mirrors, which fail at times.
+        run: |
+          npm ci
+          if command -v microsoft-edge-stable >/dev/null; then
+            microsoft-edge-stable --version
+          else
+            npx playwright install --with-deps msedge
+          fi
       - name: E2E
         working-directory: frontend
         run: npm run e2e
