@@ -8,6 +8,9 @@ const backendDir = resolve(import.meta.dirname, '../backend')
 // The backend venv's programs: .venv/Scripts on Windows, .venv/bin elsewhere (CI on Linux).
 export const venvBin = (name: string) => join(backendDir, '.venv', process.platform === 'win32' ? 'Scripts' : 'bin', name)
 const python = venvBin('python')
+/** Login attempts per minute for the e2e backend (the app's default, 10, is covered by the backend tests). */
+export const AUTH_RATE_PER_MINUTE = 40
+
 export const E2E_ENV = {
   LH_DATABASE_URL: 'postgresql+psycopg://learninghub:learninghub@localhost:5434/learninghub_e2e',
   LH_STORAGE_DIR: join(tmpdir(), 'learninghub-e2e-storage'),
@@ -18,6 +21,8 @@ export const E2E_ENV = {
   // The suite sends many agent requests in a row (more than 20 a minute on a fast CI runner);
   // the limit itself is covered by the backend tests.
   LH_AGENT_RATE_PER_MINUTE: '1000',
+  // Every test logs in from the same address; rate-limit.e2e.ts checks this configured limit.
+  LH_AUTH_RATE_PER_MINUTE: String(AUTH_RATE_PER_MINUTE),
   LH_OLLAMA_URL: '',
   // The Claude Code provider runs this fake `claude` (a .py path runs with the backend's Python).
   LH_CLAUDE_BIN: join(import.meta.dirname, 'e2e', 'fake_claude.py'),

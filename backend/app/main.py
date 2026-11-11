@@ -141,7 +141,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.rate_limiter = RateLimiter(settings.agent_rate_per_minute)
     app.state.clock = utc_now
     app.state.sync_transport = None  # tests inject an httpx2 transport for the sync sender
-    app.state.auth_limiter = AuthLimiter(10)
+    app.state.auth_limiter = AuthLimiter(settings.auth_rate_per_minute)
     app.state.oauth_pending = PendingStore()
     app.state.mailer = mailer_from_settings(settings)
 

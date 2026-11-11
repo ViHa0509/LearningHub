@@ -70,3 +70,9 @@ def test_public_with_login_starts_and_answers_401_without_a_session(
     with TestClient(create_app(settings), base_url="https://hub.example.com") as client:
         assert client.get("/api/notes").status_code == 401
         assert client.get("/api/health").status_code == 200
+
+
+def test_login_limit_is_ten_by_default_and_follows_the_setting() -> None:
+    assert Settings().auth_rate_per_minute == 10
+    app = create_app(Settings(auth_rate_per_minute=3))
+    assert app.state.auth_limiter.per_minute == 3

@@ -1,30 +1,35 @@
 /**
- * The login rate limit (spec: owner-auth, "Too many attempts"). In a file of its own, which runs
- * minutes after auth.e2e.ts, so the per-address window holds only these attempts. It waits the
- * window out before it ends, so the files after it can log in again.
+ * The login rate limit (spec: owner-auth, "Too many attempts"), at the limit the e2e backend is
+ * configured with (AUTH_RATE_PER_MINUTE; the default of 10 is covered by the backend tests).
+ * Every test logs in from the same address, so this test first waits for that address's window
+ * to empty, and waits it out again before it ends, so the files after it can log in.
  */
 import { expect, test } from '@playwright/test'
-import { OWNER_STATE } from '../playwright.config.ts'
+import { AUTH_RATE_PER_MINUTE, OWNER_STATE } from '../playwright.config.ts'
 
 const APP = 'http://127.0.0.1:5174'
 const H = { 'X-LearningHub': '1' }
+const LIMIT = AUTH_RATE_PER_MINUTE
+const WINDOW_MS = 61_000
 
-test('11 failed logins within a minute: the 11th is refused with 429 and Retry-After', async ({ playwright }) => {
+test('one failed login more than the limit within a minute is refused with 429 and Retry-After', async ({ playwright }) => {
+  test.setTimeout(200_000)
+  // Earlier files logged in from this address within the last minute.
+  await new Promise((resolve) => setTimeout(resolve, WINDOW_MS))
   // Not the Owner's email, so the Owner's own email key is not used up.
-  test.setTimeout(120_000)
   const ctx = await playwright.request.newContext({ baseURL: APP, storageState: { cookies: [], origins: [] } })
-  let windowEnds = Date.now() + 61_000
+  let windowEnds = Date.now() + WINDOW_MS
   try {
     const email = 'rate-limit-probe@example.test'
     const answers = []
-    for (let i = 0; i < 11; i++) {
+    for (let i = 0; i <= LIMIT; i++) {
       answers.push(await ctx.post('/api/auth/login', { headers: H, data: { email, password: `wrong-password-${i}` } }))
     }
     const statuses = answers.map((a) => a.status())
-    expect(statuses, statuses.join(',')).toEqual([...Array(10).fill(401), 429])
+    expect(statuses, statuses.join(',')).toEqual([...Array(LIMIT).fill(401), 429])
     expect((await answers[0].json()).detail).toBe('Wrong email or password')
 
-    const refused = answers[10]
+    const refused = answers[LIMIT]
     const wait = Number(refused.headers()['retry-after'])
     expect(wait).toBeGreaterThanOrEqual(1)
     expect(wait).toBeLessThanOrEqual(60)

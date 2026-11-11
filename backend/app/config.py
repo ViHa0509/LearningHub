@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     ollama_url: str | None = None
     agent_max_steps: int = 6
     agent_rate_per_minute: int = 20
+    # Login, magic-link and reset attempts per minute, per address and per email.
+    auth_rate_per_minute: int = 10
     # Encrypts provider keys saved in the app; default: a key file in storage_dir.
     secret_key: SecretStr | None = None
     # The Claude Code CLI for the claude-code provider type; default: `claude` on the PATH.
