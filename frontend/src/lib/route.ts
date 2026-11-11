@@ -8,6 +8,8 @@ export type Route =
   | { page: 'settings' }
   /** Settings > Sign-in (GitHub and Google client setup). */
   | { page: 'sign-in-settings' }
+  /** Settings > Users (admin only). */
+  | { page: 'users-settings' }
   /** Settings > Data & sync (backup, restore, sync). */
   | { page: 'data-settings' }
   | { page: 'news' }
@@ -24,6 +26,7 @@ export function parseRoute(hash: string): Route {
   if (parts[0] === 'note' && parts.length === 2) return { page: 'note', id: parts[1] }
   if (parts[0] === 'settings' && parts.length === 1) return { page: 'settings' }
   if (parts[0] === 'settings' && parts[1] === 'sign-in' && parts.length === 2) return { page: 'sign-in-settings' }
+  if (parts[0] === 'settings' && parts[1] === 'users' && parts.length === 2) return { page: 'users-settings' }
   if (parts[0] === 'settings' && parts[1] === 'data' && parts.length === 2) return { page: 'data-settings' }
   if (parts[0] === 'news' && parts.length === 1) return { page: 'news' }
   if (parts[0] === 'settings' && parts[1] === 'providers' && parts.length === 3) {
@@ -46,6 +49,8 @@ export function routeHash(route: Route): string {
       return '#/settings'
     case 'sign-in-settings':
       return '#/settings/sign-in'
+    case 'users-settings':
+      return '#/settings/users'
     case 'data-settings':
       return '#/settings/data'
     case 'news':
@@ -62,6 +67,7 @@ const isSettings = (route: Route) =>
   route.page === 'settings' ||
   route.page === 'provider' ||
   route.page === 'sign-in-settings' ||
+  route.page === 'users-settings' ||
   route.page === 'data-settings'
 
 function remember(route: Route): Route {

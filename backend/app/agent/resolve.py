@@ -19,12 +19,13 @@ from sqlalchemy.orm import Session
 from app.agent.llm.errors import ProviderError
 from app.agent.llm.factory import ChatModel, ChatModelFactory, ProviderSettings, runs_own_loop
 from app.agent.llm.logs import event
+from app.agent.llm.params import CLAUDE_CODE_TYPE
 from app.agent.loop import tool_loop
 from app.agent.messages import Message, ToolSpec, Turn
 from app.agent.results import AgentResult
 from app.agent.secrets import SecretBox, SecretUnreadable
 from app.agent.tools import AgentTools
-from app.db import AgentProvider, AgentSetting, AIProvider
+from app.db import AgentProvider, AgentSetting, AIProvider, User
 
 T = TypeVar("T")
 
@@ -62,45 +63,61 @@ def settings_of(row: AIProvider, box: SecretBox) -> ProviderSettings:
     )
 
 
-def assignments(session: Session, agent_id: str) -> dict[str, AIProvider]:
+def assignments(session: Session, user_id: uuid.UUID, agent_id: str) -> dict[str, AIProvider]:
     rows = session.execute(
         select(AgentProvider.role, AIProvider)
         .join(AIProvider, AIProvider.id == AgentProvider.provider_id)
-        .where(AgentProvider.agent_id == agent_id)
+        .where(
+            AgentProvider.user_id == user_id,
+            AgentProvider.agent_id == agent_id,
+            AIProvider.user_id == user_id,
+        )
     )
     return {role: provider for role, provider in rows}
 
 
-def web_search_enabled(session: Session, agent_id: str) -> bool:
+def web_search_enabled(session: Session, user_id: uuid.UUID, agent_id: str) -> bool:
     """The agent's Internet search switch; off when never saved."""
-    row = session.get(AgentSetting, agent_id)
+    row = session.get(AgentSetting, (user_id, agent_id))
     return bool(row is not None and row.web_search)
 
 
-def first_active(session: Session) -> AIProvider | None:
-    return session.scalars(
+def usable(row: AIProvider, session: Session) -> bool:
+    """False for a Claude Code provider that does not belong to the admin (admin-only type)."""
+    if row.provider_type != CLAUDE_CODE_TYPE:
+        return True
+    owner = session.get(User, row.user_id)
+    return owner is not None and owner.role == "admin"
+
+
+def first_active(session: Session, user_id: uuid.UUID) -> AIProvider | None:
+    rows = session.scalars(
         select(AIProvider)
-        .where(AIProvider.is_active.is_(True))
+        .where(AIProvider.user_id == user_id, AIProvider.is_active.is_(True))
         .order_by(AIProvider.created_at, AIProvider.name)
-        .limit(1)
-    ).first()
+    )
+    return next((row for row in rows if usable(row, session)), None)
 
 
-def own_or_inherited(session: Session, agent_id: str) -> tuple[dict[str, AIProvider], bool]:
-    """The agent's assignments, or the assistant's when the agent has none (True)."""
-    own = assignments(session, agent_id)
+def own_or_inherited(
+    session: Session, user_id: uuid.UUID, agent_id: str
+) -> tuple[dict[str, AIProvider], bool]:
+    """The user's assignments of the agent, or their assistant's when it has none (True)."""
+    own = assignments(session, user_id, agent_id)
     if own or agent_id == DEFAULT_AGENT:
         return own, False
-    return assignments(session, DEFAULT_AGENT), True
+    return assignments(session, user_id, DEFAULT_AGENT), True
 
 
-def effective(session: Session, agent_id: str) -> tuple[AIProvider | None, EffectiveReason]:
-    """The provider an agent uses when the request names none."""
-    assigned, inherited = own_or_inherited(session, agent_id)
+def effective(
+    session: Session, user_id: uuid.UUID, agent_id: str
+) -> tuple[AIProvider | None, EffectiveReason]:
+    """The provider an agent uses for this user when the request names none."""
+    assigned, inherited = own_or_inherited(session, user_id, agent_id)
     primary = assigned.get("primary")
-    if primary is not None and primary.is_active:
+    if primary is not None and primary.is_active and usable(primary, session):
         return primary, "assistant" if inherited else "primary"
-    default = first_active(session)
+    default = first_active(session, user_id)
     return (default, "default") if default is not None else (None, "none")
 
 
@@ -278,6 +295,7 @@ class AgentModel:
 
 def resolve_chain(
     session: Session,
+    user_id: uuid.UUID,
     box: SecretBox,
     factory: ChatModelFactory,
     agent_id: str,
@@ -285,16 +303,22 @@ def resolve_chain(
 ) -> AgentModel:
     """The model for one agent request, or ResolveError (404 / 409) before any model call."""
     if override_id is not None:
-        row = session.get(AIProvider, override_id)
+        row = session.scalars(
+            select(AIProvider).where(AIProvider.id == override_id, AIProvider.user_id == user_id)
+        ).first()
         if row is None:
             raise ResolveError(404, f"no AI provider with id {override_id}")
+        if not usable(row, session):
+            raise ResolveError(409, NO_PROVIDER)
         if not row.is_active:
             raise ResolveError(409, f"{row.name} is switched off in Settings")
         return AgentModel(agent_id, row, None, box, factory)
-    chosen, _reason = effective(session, agent_id)
+    chosen, _reason = effective(session, user_id, agent_id)
     if chosen is None:
         raise ResolveError(409, NO_PROVIDER)
-    fallback = own_or_inherited(session, agent_id)[0].get("fallback")
-    if fallback is not None and (not fallback.is_active or fallback.id == chosen.id):
+    fallback = own_or_inherited(session, user_id, agent_id)[0].get("fallback")
+    if fallback is not None and (
+        not fallback.is_active or fallback.id == chosen.id or not usable(fallback, session)
+    ):
         fallback = None
     return AgentModel(agent_id, chosen, fallback, box, factory)

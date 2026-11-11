@@ -49,12 +49,12 @@ describe('first visit in a new browser', () => {
   })
 })
 
-describe('one owner account', () => {
-  it('offers to create the owner account on the first visit, with GitHub and Google', async () => {
+describe('first account is the admin', () => {
+  it('offers to create the admin account on the first visit, with GitHub and Google', async () => {
     const state = installFakeApi()
     requireLogin(state, { owner: null })
     renderApp()
-    const page = await screen.findByRole('main', { name: 'Create the owner account' })
+    const page = await screen.findByRole('main', { name: 'Create the admin account' })
     expect(within(page).getByLabelText('Display name (optional)')).toBeInTheDocument()
     expect(within(page).getByLabelText('Email')).toBeInTheDocument()
     expect(within(page).getByLabelText('Password')).toBeInTheDocument()
@@ -68,7 +68,7 @@ describe('one owner account', () => {
     const state = installFakeApi()
     requireLogin(state, { owner: null })
     const { user } = renderApp('#/news')
-    const page = await screen.findByRole('main', { name: 'Create the owner account' })
+    const page = await screen.findByRole('main', { name: 'Create the admin account' })
     const create = within(page).getByRole('button', { name: 'Create account' })
 
     await user.type(within(page).getByLabelText('Email'), 'not-an-email')
@@ -109,7 +109,7 @@ describe('one owner account', () => {
     const state = installFakeApi()
     requireLogin(state, { owner: null })
     const { user } = renderApp()
-    const page = await screen.findByRole('main', { name: 'Create the owner account' })
+    const page = await screen.findByRole('main', { name: 'Create the admin account' })
     // Someone else created the owner meanwhile.
     state.auth.owner = { ...OWNER }
     await user.type(within(page).getByLabelText('Email'), 'other@example.test')
@@ -361,5 +361,19 @@ describe('sessions protect the app', () => {
     renderApp()
     expect(await screen.findByRole('main', { name: 'Service unavailable' })).toBeInTheDocument()
     expect(screen.queryByRole('main', { name: 'Log in' })).not.toBeInTheDocument()
+  })
+})
+
+describe('auth page decoration (visual-polish)', () => {
+  it('shows a decorative background behind the card and keeps the Log in button name and type', async () => {
+    const state = installFakeApi()
+    requireLogin(state, { signedIn: false })
+    renderApp()
+    const page = await loginPage()
+    const background = page.querySelector(':scope > svg')
+    expect(background).toHaveAttribute('aria-hidden', 'true')
+    const button = within(page).getByRole('button', { name: 'Log in' })
+    expect(button).toHaveAttribute('type', 'submit')
+    expect(button).toBeEnabled()
   })
 })

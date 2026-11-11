@@ -43,9 +43,9 @@ def test_key_hint_shows_only_the_last_four() -> None:
 def test_rate_limiter_window() -> None:
     now = [0.0]
     limiter = RateLimiter(2, clock=lambda: now[0])
-    assert limiter.acquire() is None
-    assert limiter.acquire() is None
+    assert limiter.acquire("u") is None
+    assert limiter.acquire("u") is None
     now[0] = 10.0
-    assert limiter.acquire() == 50
+    assert limiter.acquire("u") == 50
     now[0] = 60.5
-    assert limiter.acquire() is None
+    assert limiter.acquire("u") is None

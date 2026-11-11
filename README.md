@@ -66,9 +66,19 @@ After pulling new code: run `.venv/Scripts/pip install -r requirements-dev.txt` 
 | An error about a missing table or column | Run `.venv/Scripts/alembic upgrade head` in `backend`, then restart the backend. |
 | The server refuses to start with a roadmap error | A file in `roadmaps/` is invalid; the message names the file and the node. |
 
+### Users and invitations
+
+The first account on a server is the **admin**; everyone else joins by invitation:
+
+1. Admin: **Settings -> Users -> Invite**, enter an email address. The person gets a link valid for 7 days. Without SMTP the link is shown to copy, and also written to `storage/outbox/`.
+2. The person opens the link and sets a password, or uses GitHub or Google with that same verified email.
+3. Anyone else, by any method, gets "You need an invitation to join".
+
+Each user has their own notes and files, lessons, AI providers and keys, agent settings, backups and sync. Roadmaps, references and news are shared. Only the admin can open Users and Sign-in and use the Claude Code provider. On the Users page, the admin can disable a member (this ends their sessions) or delete them with all their data, after typing their email.
+
 ### First sign-in
 
-The app has one Owner account. On the first visit it asks you to **create the owner account** (email and password, or GitHub/Google once configured); after that, sign-up is closed and every page needs a login. GitHub and Google sign-in are easiest to set up in the app: **Settings -> Sign-in** shows the callback URL to register, with links to where the OAuth app is created; paste the Client ID and secret there and Save (no restart). They can also come from `backend/.env`:
+On the first visit the app asks you to **create the admin account** (email and password, or GitHub/Google once configured); after that, people join by invitation only and every page needs a login. GitHub and Google sign-in are easiest to set up in the app: **Settings -> Sign-in** shows the callback URL to register, with links to where the OAuth app is created; paste the Client ID and secret there and Save (no restart). They can also come from `backend/.env`:
 
 | Setting | What it does |
 |---|---|
@@ -117,6 +127,26 @@ git tag v0.1.0 && git push origin v0.1.0
 The Release workflow runs every check, pushes `ghcr.io/viha0509/learninghub:0.1.0` and `:latest`, and creates a GitHub Release with generated notes and `docker-compose.release.yml`. It needs no secret beyond the default token. The first time, make the package public under GitHub -> Packages if others should pull it.
 
 CI (`.github/workflows/ci.yml`) runs the backend, frontend and e2e checks on every push to `main` and every pull request; the e2e screenshots are kept as a run artifact for 14 days.
+
+## Run on Render (free, always on)
+
+The public copy can run on Render's free plan, with no PC of yours involved and no credit card. Render runs the Docker image; the database is Supabase Postgres and the note files are in a Supabase Storage bucket. `render.yaml` is the Blueprint.
+
+1. **Supabase:**
+   - Storage -> **New bucket** `learninghub`, **private**.
+   - Copy the **Session pooler** connection string (Connect -> Session pooler, port 5432) and turn it into `postgresql+psycopg://...:5432/postgres?sslmode=require`. URL-encode special characters in the password.
+2. **Render:** sign in with GitHub, then New -> **Blueprint** -> this repository. Enter the secret values when asked, in Render only:
+   - `LH_DATABASE_URL`: the connection string from step 1;
+   - `LH_SUPABASE_SERVICE_KEY`: Supabase -> Project Settings -> API keys -> `service_role`;
+   - `LH_SECRET_KEY`: a random key that stays fixed. Generate it with `backend/.venv/Scripts/python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
+3. **Point the public address at Render** once the service is live: `deploy/worker/set-origin.ps1 https://<service>.onrender.com`.
+4. **First visit:** open `https://learninghub.vihc0509.workers.dev` and create the admin account. On Local, use Settings -> Data & sync -> Send to copy your data.
+
+Things to know about the free plan:
+- The service sleeps when idle, so the first visit after a while takes about a minute.
+- The disk is temporary. The automatic restore backups and the email outbox are lost on restart, so download your own backups. Without SMTP, the Users page shows each invitation link to copy.
+- The Claude Code provider needs the `claude` CLI and cannot run there; use an API-key provider.
+- Every push to `main` deploys again.
 
 ## Public access (Cloudflare Tunnel)
 

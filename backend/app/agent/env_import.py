@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.agent.llm import catalog
 from app.agent.llm.factory import key_kind
 from app.agent.secrets import SecretBox, key_hint
+from app.auth.current import find_admin
 from app.config import Settings
 from app.db import AIProvider
 
@@ -57,15 +58,24 @@ def env_sources(settings: Settings) -> list[tuple[EnvSource, str | None]]:
 
 
 def import_env_providers(session: Session, settings: Settings, box: SecretBox) -> list[str]:
-    """Create the missing "(from .env)" configurations; returns the names created."""
+    """Create the missing "(from .env)" configurations for the admin; returns the names created.
+
+    Without an admin yet nothing is imported.
+    """
     created: list[str] = []
+    admin = find_admin(session)
+    if admin is None:
+        return created
     for source, key in env_sources(settings):
         name = f"{source.label} (from .env)"
-        if session.scalars(select(AIProvider.id).where(AIProvider.name == name)).first():
+        if session.scalars(
+            select(AIProvider.id).where(AIProvider.user_id == admin.id, AIProvider.name == name)
+        ).first():
             continue
         session.add(
             AIProvider(
                 id=uuid.uuid4(),
+                user_id=admin.id,
                 name=name,
                 provider_type=source.provider_type,
                 model_name=source.model,

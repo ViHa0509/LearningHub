@@ -1,4 +1,4 @@
-"""The Owner login: email and password, magic links, email verification, sessions, OAuth.
+"""The login: email and password, magic links, email verification, sessions, OAuth.
 
 These routes work whether or not ``auth_required`` is on. Every POST needs the app header.
 Nothing here returns or logs a password, a cookie token or an emailed token.
@@ -6,6 +6,7 @@ Nothing here returns or logs a password, a cookie token or an emailed token.
 
 import hmac
 import re
+from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
@@ -15,7 +16,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.auth import tokens
+from app.auth import invitations, tokens
 from app.auth.mail import Mail, Mailer, send_quietly
 from app.auth.oauth import (
     PENDING_COOKIE,
@@ -31,8 +32,10 @@ from app.auth.oauth import (
 from app.auth.passwords import MIN_LENGTH, burn_time, hash_password, verify_password
 from app.auth.ratelimit import AuthLimiter
 from app.auth.schemas import (
+    AcceptIn,
     AuthStatus,
     EmailIn,
+    InvitationInfo,
     LoginIn,
     MailStatus,
     MeOut,
@@ -67,7 +70,9 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 guarded = [Depends(require_app_header)]
 DbDep = Annotated[Session, Depends(get_session)]
 
-OWNER_EXISTS = "This app has an owner already"
+INVITE_REQUIRED = "You need an invitation to join"
+DISABLED = "This account is disabled"
+INVALID_INVITATION = "This invitation has expired or was already used."
 WRONG_LOGIN = "Wrong email or password"
 INVALID_LINK = "This link is invalid or has expired. Ask for a new one."
 FORGOT_SENT = "If that email belongs to the owner, a reset link is on its way."
@@ -126,6 +131,7 @@ def me_out(db: Session, user: User) -> MeOut:
         id=user.id,
         email=user.email,
         email_verified=user.email_verified_at is not None,
+        role=user.role,
         display_name=user.display_name,
         bio=user.bio,
         # Avatar upload is not served yet; the frontend shows initials.
@@ -133,6 +139,35 @@ def me_out(db: Session, user: User) -> MeOut:
         has_password=user.password_hash is not None,
         linked=sorted(set(linked)),
     )
+
+
+def real_users(db: Session) -> int:
+    """Accounts that can sign in; the no-login placeholder admin does not count."""
+    return db.scalar(select(func.count()).select_from(User).where(User.placeholder.is_(False))) or 0
+
+
+def make_admin(
+    db: Session,
+    email: str,
+    now: datetime,
+    *,
+    password_hash: str | None = None,
+    display_name: str | None = None,
+    verified: bool = False,
+) -> User:
+    """The admin account (not committed): takes over the placeholder row when there is one,
+    so the data it owns stays with the admin."""
+    admin = db.scalar(select(User).where(User.placeholder.is_(True)))
+    if admin is None:
+        admin = User(preferences={})
+        db.add(admin)
+    admin.email = email
+    admin.role = "admin"
+    admin.placeholder = False
+    admin.password_hash = password_hash
+    admin.display_name = display_name
+    admin.email_verified_at = now if verified else None
+    return admin
 
 
 def owner_by_email(db: Session, email: str) -> User | None:
@@ -163,6 +198,8 @@ def verify_mail(request: Request, user: User, token: str) -> Mail:
 
 
 def start_session(db: Session, user: User, request: Request, response: Response) -> None:
+    if user.disabled_at is not None:
+        raise HTTPException(status_code=403, detail=DISABLED)
     token = create_session(db, user, request)
     db.commit()
     set_session_cookie(response, request, token)
@@ -175,7 +212,7 @@ def start_session(db: Session, user: User, request: Request, response: Response)
 def status(request: Request, db: DbDep) -> AuthStatus:
     settings = settings_of(request)
     mailer: Mailer = request.app.state.mailer
-    has_owner = (db.scalar(select(func.count()).select_from(User)) or 0) > 0
+    has_owner = real_users(db) > 0
     return AuthStatus(
         auth_required=settings.auth_required,
         has_owner=has_owner,
@@ -207,28 +244,62 @@ def signup(
 ) -> MeOut:
     email = normalize_email(body.email)
     limit(request, "signup", email)
-    if (db.scalar(select(func.count()).select_from(User)) or 0) > 0:
-        raise HTTPException(status_code=403, detail=OWNER_EXISTS)
+    if real_users(db) > 0:
+        raise HTTPException(status_code=403, detail=INVITE_REQUIRED)
     if not EMAIL_RE.match(email):
         raise HTTPException(status_code=400, detail=BAD_EMAIL)
     check_password(body.password)
     name = (body.display_name or "").strip() or None
-    user = User(
-        email=email,
+    user = make_admin(
+        db,
+        email,
+        clock_of(request)(),
         password_hash=hash_password(body.password),
         display_name=name,
-        role="owner",
-        preferences={},
     )
-    db.add(user)
     try:
         db.flush()
     except IntegrityError:
         db.rollback()
-        raise HTTPException(status_code=403, detail=OWNER_EXISTS) from None
+        raise HTTPException(status_code=403, detail=INVITE_REQUIRED) from None
     verify_token = tokens.issue(db, "verify_email", user, clock_of(request)())
     start_session(db, user, request, response)
     queue_mail(request, background, verify_mail(request, user, verify_token))
+    return me_out(db, user)
+
+
+@router.get("/invitation", response_model=InvitationInfo)
+def invitation_info(
+    request: Request, db: DbDep, token: Annotated[str, Query(max_length=200)] = ""
+) -> InvitationInfo:
+    found = invitations.find_pending_by_token(db, token, clock_of(request)())
+    if found is None:
+        raise HTTPException(status_code=404, detail=INVALID_INVITATION)
+    return InvitationInfo(email=found.email, expires_at=found.expires_at)
+
+
+@router.post("/invitation/accept", response_model=MeOut, status_code=201, dependencies=guarded)
+def accept_invitation(
+    body: AcceptIn, request: Request, response: Response, background: BackgroundTasks, db: DbDep
+) -> MeOut:
+    limit(request, "invitation")
+    now = clock_of(request)()
+    found = invitations.find_pending_by_token(db, body.token, now)
+    if found is None:
+        raise HTTPException(status_code=404, detail=INVALID_INVITATION)
+    check_password(body.password)
+    if owner_by_email(db, found.email) is not None:
+        raise HTTPException(status_code=409, detail="That email already has an account")
+    name = (body.display_name or "").strip() or None
+    user = invitations.accept(
+        db, found, now, password_hash=hash_password(body.password), display_name=name
+    )
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="That email already has an account") from None
+    start_session(db, user, request, response)
     return me_out(db, user)
 
 
@@ -242,6 +313,8 @@ def login(body: LoginIn, request: Request, response: Response, db: DbDep) -> MeO
         raise HTTPException(status_code=401, detail=WRONG_LOGIN)
     if not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=401, detail=WRONG_LOGIN)
+    # Only after the right password, so an unknown email learns nothing. start_session refuses
+    # a disabled account.
     start_session(db, user, request, response)
     return me_out(db, user)
 
@@ -317,7 +390,7 @@ def magic(body: EmailIn, request: Request, background: BackgroundTasks, db: DbDe
     email = normalize_email(body.email)
     limit(request, "magic", email)
     user = owner_by_email(db, email)
-    if user is not None and user.email_verified_at is not None:
+    if user is not None and user.email_verified_at is not None and user.disabled_at is None:
         token = tokens.issue(db, "magic_link", user, clock_of(request)())
         db.commit()
         mail = Mail(
@@ -447,45 +520,56 @@ def failed(settings: Settings, code: str) -> RedirectResponse:
     return RedirectResponse(app_url(settings, f"#/auth/login?error={code}"), status_code=302)
 
 
-def owner_for(db: Session, identity: Identity, request: Request) -> User:
-    """Apply the one-Owner rules to a verified provider identity (not committed)."""
+def user_for(db: Session, identity: Identity, request: Request) -> User:
+    """Apply the sign-in rules to a verified provider identity (not committed).
+
+    In order: a linked identity; the user with that verified email; a valid invitation for
+    it (creates a member); the first account on the server (creates the admin); else refused.
+    """
+    now = clock_of(request)()
     account = db.scalar(
         select(OAuthAccount).where(
             OAuthAccount.provider == identity.provider,
             OAuthAccount.provider_user_id == identity.provider_user_id,
         )
     )
+    user: User | None = None
     if account is not None:
         user = db.get(User, account.user_id)
         if user is None:
-            raise OAuthError("owner_exists")
-        return user
-    owner = db.scalar(select(User).order_by(User.created_at).limit(1))
-    if owner is None:
-        owner = User(
-            email=identity.email,
-            email_verified_at=clock_of(request)(),
-            display_name=identity.name,
-            role="owner",
-            preferences={},
+            raise OAuthError("not_invited")
+    else:
+        user = db.scalar(select(User).where(User.email == identity.email))
+        if user is not None and user.email_verified_at is None:
+            # An unverified account must not be taken over by whoever owns the email at GitHub.
+            raise OAuthError("not_invited")
+        if user is None:
+            invitation = invitations.find_pending_by_email(db, identity.email, now)
+            if invitation is not None:
+                user = invitations.accept(db, invitation, now, display_name=identity.name)
+            elif real_users(db) == 0:
+                user = make_admin(
+                    db, identity.email, now, display_name=identity.name, verified=True
+                )
+            else:
+                raise OAuthError("not_invited")
+            try:
+                db.flush()
+            except IntegrityError:
+                db.rollback()
+                raise OAuthError("not_invited") from None
+    if user.disabled_at is not None:
+        raise OAuthError("account_disabled")
+    if account is None:
+        db.add(
+            OAuthAccount(
+                user_id=user.id,
+                provider=identity.provider,
+                provider_user_id=identity.provider_user_id,
+                email=identity.email,
+            )
         )
-        db.add(owner)
-        try:
-            db.flush()
-        except IntegrityError:
-            db.rollback()
-            raise OAuthError("owner_exists") from None
-    elif owner.email_verified_at is None or owner.email != identity.email:
-        raise OAuthError("owner_exists")
-    db.add(
-        OAuthAccount(
-            user_id=owner.id,
-            provider=identity.provider,
-            provider_user_id=identity.provider_user_id,
-            email=identity.email,
-        )
-    )
-    return owner
+    return user
 
 
 @router.get("/oauth/{provider}/start", response_model=None)
@@ -542,7 +626,7 @@ def oauth_callback(
         if config is None:
             raise OAuthError("not_configured")
         identity = fetch_identity(settings, config, code, pending.verifier)
-        user = owner_for(db, identity, request)
+        user = user_for(db, identity, request)
         token = create_session(db, user, request)
         db.commit()
         response = RedirectResponse(app_url(settings, pending.next), status_code=302)

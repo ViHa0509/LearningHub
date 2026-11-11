@@ -1,8 +1,10 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
-import { ApiError, api, queryKeys, type AuthStatus, type OAuthProvider } from '../api'
+import { ApiError, api, queryKeys, type AuthStatus, type InvitationInfo, type OAuthProvider } from '../api'
 import { authErrorMessage, useSignedIn } from '../lib/auth'
 import { dropQuery, type AuthRoute } from '../lib/authRoute'
+import { DotPattern } from './magicui/dot-pattern'
+import { ShimmerButton } from './magicui/shimmer-button'
 
 const MIN_PASSWORD = 10
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
@@ -14,6 +16,7 @@ const OAUTH_ERRORS: Record<string, string> = {
   state_mismatch: 'The sign-in could not be confirmed (it was started in another browser or took too long). Try again.',
   access_denied: 'The sign-in was cancelled at the provider.',
   owner_exists: 'This app has an owner already',
+  not_invited: 'You need an invitation to join.',
   not_configured: 'This sign-in method is not configured on this server.',
   provider_error: 'The provider did not answer as expected. Try again.',
 }
@@ -47,12 +50,15 @@ export function AuthPages({ route, status, next }: Props) {
       return token ? <MagicOpenPage token={token} status={status} /> : <MagicRequestPage status={status} />
     case 'verify':
       return <VerifyPage token={token} />
+    case 'invite':
+      return <InvitePage token={token} status={status} next={next} />
   }
 }
 
 function Card({ title, children }: { title: string; children: ReactNode }) {
   return (
     <main className="auth-page" aria-label={title}>
+      <DotPattern glow />
       <section className="auth-card">
         <img className="auth-mark for-dark" src="/brand/logo-mark.svg" alt="" width="56" height="56" />
         <img className="auth-mark for-light" src="/brand/logo-mark-light.svg" alt="" width="56" height="56" />
@@ -179,9 +185,9 @@ function LoginPage({ status, next, error }: { status: AuthStatus | undefined; ne
         <Field label="Email" type="email" value={email} onChange={setEmail} autoComplete="email" autoFocus />
         <Field label="Password" type="password" value={password} onChange={setPassword} autoComplete="current-password" />
         <Problem text={problem} />
-        <button type="submit" className="primary" disabled={busy}>
+        <ShimmerButton type="submit" className="primary" borderRadius="6px" disabled={busy}>
           Log in
-        </button>
+        </ShimmerButton>
       </form>
       <p className="auth-links">
         <a href="#/auth/forgot">Forgot password?</a>
@@ -225,8 +231,8 @@ function CreateOwnerPage({ status, next }: { status: AuthStatus | undefined; nex
   }
 
   return (
-    <Card title="Create the owner account">
-      <p className="muted auth-lead">Learning Hub has one account, yours. Create it to start.</p>
+    <Card title="Create the admin account">
+      <p className="muted auth-lead">The first account is the admin, who invites everyone else. Create it to start.</p>
       <form className="auth-form" onSubmit={submit} noValidate>
         <Field label="Display name (optional)" type="text" value={name} onChange={setName} autoComplete="name" autoFocus />
         <Field label="Email" type="email" value={email} onChange={setEmail} autoComplete="email" />
@@ -234,9 +240,9 @@ function CreateOwnerPage({ status, next }: { status: AuthStatus | undefined; nex
         <Field label="Confirm password" type="password" value={confirm} onChange={setConfirm} autoComplete="new-password" />
         <p className="muted auth-hint">At least {MIN_PASSWORD} characters.</p>
         <Problem text={problem} />
-        <button type="submit" className="primary" disabled={busy}>
+        <ShimmerButton type="submit" className="primary" borderRadius="6px" disabled={busy}>
           Create account
-        </button>
+        </ShimmerButton>
       </form>
       <p className="auth-or muted">or</p>
       <ProviderButtons status={status} next={next} />
@@ -282,9 +288,9 @@ function EmailRequest(props: {
         <form className="auth-form" onSubmit={submit} noValidate>
           <Field label="Email" type="email" value={email} onChange={setEmail} autoComplete="email" autoFocus />
           <Problem text={problem} />
-          <button type="submit" className="primary" disabled={busy}>
+          <ShimmerButton type="submit" className="primary" borderRadius="6px" disabled={busy}>
             {props.action}
-          </button>
+          </ShimmerButton>
         </form>
       )}
     </>
@@ -419,13 +425,108 @@ function ResetPage({ token }: { token: string | null }) {
         <Field label="Confirm new password" type="password" value={confirm} onChange={setConfirm} autoComplete="new-password" />
         <p className="muted auth-hint">At least {MIN_PASSWORD} characters. Other sessions are logged out.</p>
         <Problem text={problem} />
-        <button type="submit" className="primary" disabled={busy}>
+        <ShimmerButton type="submit" className="primary" borderRadius="6px" disabled={busy}>
           Set new password
-        </button>
+        </ShimmerButton>
       </form>
       <p className="auth-links">
         <a href="#/auth/forgot">Ask for a new link</a>
       </p>
+    </Card>
+  )
+}
+
+const INVITE_GONE = 'This invitation has expired or was already used.'
+
+function InvitePage({ token, status, next }: { token: string | null; status: AuthStatus | undefined; next: string }) {
+  const signedIn = useSignedIn()
+  const [info, setInfo] = useState<InvitationInfo | null>(null)
+  const [gone, setGone] = useState(!token)
+  const [name, setName] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [problem, setProblem] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (!token) return
+    let live = true
+    once(`invite:${token}`, () => api.invitation(token)).then(
+      (found) => {
+        dropQuery('invite')
+        if (live) setInfo(found)
+      },
+      () => {
+        dropQuery('invite')
+        if (live) setGone(true)
+      },
+    )
+    return () => {
+      live = false
+    }
+  }, [token])
+
+  if (gone) {
+    return (
+      <Card title="Invitation not accepted">
+        <Problem text={INVITE_GONE} />
+        <p className="auth-links">
+          <a href="#/auth/login">Back to log in</a>
+        </p>
+      </Card>
+    )
+  }
+  if (!info || !token) {
+    return (
+      <Card title="Join Learning Hub">
+        <p className="muted" role="status">
+          Checking your invitation…
+        </p>
+      </Card>
+    )
+  }
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault()
+    const check =
+      password.length < MIN_PASSWORD
+        ? `Use at least ${MIN_PASSWORD} characters for the password.`
+        : password !== confirm
+          ? 'The passwords do not match.'
+          : null
+    setProblem(check)
+    if (check) return
+    setBusy(true)
+    try {
+      const displayName = name.trim()
+      signedIn(await api.acceptInvitation({ token, password, ...(displayName ? { display_name: displayName } : {}) }))
+    } catch (failure) {
+      if (failure instanceof ApiError && (failure.status === 404 || failure.status === 410)) setGone(true)
+      else setProblem(authErrorMessage(failure))
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Card title="Join Learning Hub">
+      <p className="muted auth-lead">You were invited as {info.email}</p>
+      <form className="auth-form" onSubmit={submit} noValidate>
+        <Field label="Display name (optional)" type="text" value={name} onChange={setName} autoComplete="name" autoFocus />
+        <Field label="Password" type="password" value={password} onChange={setPassword} autoComplete="new-password" />
+        <Field label="Confirm password" type="password" value={confirm} onChange={setConfirm} autoComplete="new-password" />
+        <p className="muted auth-hint">At least {MIN_PASSWORD} characters.</p>
+        <Problem text={problem} />
+        <ShimmerButton type="submit" className="primary" borderRadius="6px" disabled={busy}>
+          Create account
+        </ShimmerButton>
+      </form>
+      {(status?.providers.github?.configured || status?.providers.google?.configured) && (
+        <>
+          <p className="auth-or muted">or</p>
+          <ProviderButtons status={status} next={next} />
+          <p className="muted auth-hint">Use an account whose verified email is {info.email}.</p>
+        </>
+      )}
     </Card>
   )
 }

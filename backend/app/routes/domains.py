@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.auth.current import CurrentUser
 from app.db import Note, get_session
 from app.roadmaps import Domain, RoadmapCatalog
 from app.schemas import DomainSummary, NodeCounts, NodeOut, RoadmapOut
@@ -25,12 +26,12 @@ def require_domain(catalog: RoadmapCatalog, domain_id: str) -> Domain:
 
 @router.get("", response_model=list[DomainSummary])
 def list_domains(
-    request: Request, session: Annotated[Session, Depends(get_session)]
+    request: Request, session: Annotated[Session, Depends(get_session)], user: CurrentUser
 ) -> list[DomainSummary]:
     linked = set(
         session.scalars(
             select(Note.node_id)
-            .where(Note.node_id.is_not(None), Note.archived_at.is_(None))
+            .where(Note.user_id == user.id, Note.node_id.is_not(None), Note.archived_at.is_(None))
             .distinct()
         )
     )
@@ -68,14 +69,17 @@ def read_roadmap(domain_id: str, request: Request) -> RoadmapOut:
 
 @router.get("/{domain_id}/counts", response_model=NodeCounts)
 def read_counts(
-    domain_id: str, request: Request, session: Annotated[Session, Depends(get_session)]
+    domain_id: str,
+    request: Request,
+    session: Annotated[Session, Depends(get_session)],
+    user: CurrentUser,
 ) -> NodeCounts:
     """Number of notes per node of one domain; nodes without notes are left out."""
     domain = require_domain(get_catalog(request), domain_id)
     known = {n.full_id: n.id for n in domain.nodes}
     rows = session.execute(
         select(Note.node_id, func.count())
-        .where(Note.node_id.in_(list(known)), Note.archived_at.is_(None))
+        .where(Note.user_id == user.id, Note.node_id.in_(list(known)), Note.archived_at.is_(None))
         .group_by(Note.node_id)
     )
     return NodeCounts(domain=domain.id, counts={known[node]: count for node, count in rows if node})

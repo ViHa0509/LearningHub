@@ -11,8 +11,10 @@ from fastapi.testclient import TestClient
 from app.agent.llm.claude_code import ClaudeCodeAgent, StreamReader, SubprocessRunner
 from app.agent.loop import WEB_SEARCH_LINE
 from app.agent.messages import Message, Turn
+from app.agent.tools import AgentTools
 from tests.agent_fakes import FakeFactory
 from tests.claude_code_fakes import REPO_ROOT, ReplayRunner, fixture_lines, setup
+from tests.conftest import user_id_of
 from tests.test_claude_code_chat import MixedFactory, add_claude_code, add_local, assign, chat, use
 
 QUESTION = "please search the web: what is new in vector databases?"
@@ -227,14 +229,15 @@ def test_api_provider_ignores_the_setting(client: TestClient) -> None:
 
 
 # The e2e fake CLI (frontend/e2e/fake_claude.py) searches only when allowed and asked.
-def test_e2e_fake_cli_emits_a_websearch_only_when_allowed() -> None:
+def test_e2e_fake_cli_emits_a_websearch_only_when_allowed(client: TestClient) -> None:
     fake_cli = REPO_ROOT / "frontend" / "e2e" / "fake_claude.py"
     model = ClaudeCodeAgent("sonnet", setup(claude_bin=str(fake_cli)), SubprocessRunner())
     conversation = [Message(role="user", text=QUESTION)]
-    on = model.run(SYSTEM, conversation, None, 6, web_search=True)
+    tools = AgentTools(None, None, user_id=user_id_of(client.app))  # type: ignore[arg-type]
+    on = model.run(SYSTEM, conversation, tools, 6, web_search=True)
     assert [s.tool for s in on.steps] == ["search_notes", "web_search"]
     assert on.steps[1].summary.startswith("Searched the web for '")
     assert "Sources" in on.reply and "https://example.test/" in on.reply
-    off = model.run(SYSTEM, conversation, None, 6)
+    off = model.run(SYSTEM, conversation, tools, 6)
     assert "web_search" not in [s.tool for s in off.steps]
     assert "FAKE-CLAUDE-ANSWER" in off.reply and "Sources" not in off.reply

@@ -19,6 +19,7 @@ from app.agent.loop import AgentResult, Page, run_agent
 from app.agent.messages import Message
 from app.agent.tools import AgentTools
 from app.config import Settings
+from tests.conftest import user_id_of
 from tests.test_linking import HTML, link
 
 pytestmark = pytest.mark.live
@@ -136,7 +137,7 @@ def ask(client: TestClient, golden: Golden) -> AgentResult:
         return run_agent(
             LIVE,
             [Message(role="user", text=golden.question)],
-            AgentTools(session, app.state.catalog),
+            AgentTools(session, app.state.catalog, user_id=user_id_of(app)),
             app.state.catalog,
             golden.page,
             app.state.settings.agent_max_steps,

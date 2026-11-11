@@ -179,8 +179,7 @@ def test_unknown_provider_is_refused_and_nothing_changes(client: TestClient) -> 
     assign(client, "assistant", claude)
     missing = "00000000-0000-0000-0000-000000000000"
     response = assign(client, "assistant", missing)
-    assert response.status_code == 422
-    assert response.json()["detail"][0]["field"] == "primary_provider_id"
+    assert response.status_code == 404
     assert client.get("/api/agents/assistant/provider").json()["primary"]["id"] == claude
     bad_id = client.put("/api/agents/assistant/provider", json={"primary_provider_id": "x"})
     assert bad_id.status_code == 422

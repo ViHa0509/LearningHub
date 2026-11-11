@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.agent.tools import AgentTools
+from tests.conftest import user_id_of
 from tests.test_agent_chat import import_note
 from tests.test_linking import HTML, link, new_note
 
@@ -30,7 +31,11 @@ def session(client: TestClient) -> Iterator[Session]:
 
 @pytest.fixture
 def tools(client: TestClient, session: Session) -> AgentTools:
-    return AgentTools(session, client.app.state.catalog)  # type: ignore[attr-defined]
+    return AgentTools(
+        session,
+        client.app.state.catalog,  # type: ignore[attr-defined]
+        user_id=user_id_of(client.app),
+    )
 
 
 # knowledge-import - Scenario: Archive a note

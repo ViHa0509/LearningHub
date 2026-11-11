@@ -44,7 +44,7 @@ def clean_tables() -> None:
             text(
                 "TRUNCATE notes, lessons, agent_providers, ai_providers, node_resources, "
                 "news_items, agent_settings, users, oauth_accounts, sessions, auth_tokens, "
-                "app_settings, sync_keys"
+                "app_settings, sync_keys, invitations"
             )
         )
     engine.dispose()
@@ -86,13 +86,13 @@ OWNER_EMAIL = "owner@example.test"
 
 
 def owner_session_token(app: FastAPI) -> str:
-    """A fresh session of the Owner (created when missing, without a password)."""
+    """A fresh session of the admin (created when missing, without a password)."""
     now = datetime.now(UTC)
     token = new_token()
     with app.state.session_factory() as db:
-        user = db.scalar(select(User).limit(1))
+        user = db.scalar(select(User).where(User.role == "admin"))
         if user is None:
-            user = User(email=OWNER_EMAIL, email_verified_at=now, role="owner", preferences={})
+            user = User(email=OWNER_EMAIL, email_verified_at=now, role="admin", preferences={})
             db.add(user)
             db.flush()
         db.add(
@@ -107,9 +107,17 @@ def owner_session_token(app: FastAPI) -> str:
     return token
 
 
+def user_id_of(app: FastAPI, email: str | None = None) -> Any:
+    """The id of the admin (or of the user with ``email``)."""
+    with app.state.session_factory() as db:
+        query = select(User.id)
+        query = query.where(User.email == email) if email else query.where(User.role == "admin")
+        return db.scalars(query).one()
+
+
 @contextmanager
 def signed_in_client(app: FastAPI, headers: dict[str, str] | None = None) -> Iterator[TestClient]:
-    """A TestClient that carries the Owner's session cookie."""
+    """A TestClient that carries the admin's session cookie."""
     with TestClient(
         app, headers=headers or {}, cookies={COOKIE: owner_session_token(app)}
     ) as test_client:
@@ -138,3 +146,38 @@ def kit(settings_factory: Callable[..., Settings]) -> Iterator["AuthKit"]:
     """An app with the login on, no session yet, a capturing mailer and a settable clock."""
     with auth_kit(settings_factory()) as made:
         yield made
+
+
+MEMBER_EMAIL = "member@example.test"
+
+
+def member_session_token(app: FastAPI) -> str:
+    """A fresh session of a member (created when missing, without a password)."""
+    now = datetime.now(UTC)
+    token = new_token()
+    with app.state.session_factory() as db:
+        user = db.scalar(select(User).where(User.email == MEMBER_EMAIL))
+        if user is None:
+            user = User(email=MEMBER_EMAIL, email_verified_at=now, role="member", preferences={})
+            db.add(user)
+            db.flush()
+        db.add(
+            UserSession(
+                user_id=user.id,
+                token_hash=hash_token(token),
+                last_seen_at=now,
+                expires_at=now + LIFETIME,
+            )
+        )
+        db.commit()
+    return token
+
+
+@pytest.fixture
+def second_client(client: TestClient) -> Iterator[TestClient]:
+    """The same app as `client`, signed in as a second user (a member)."""
+    app: FastAPI = client.app  # type: ignore[assignment]
+    with TestClient(
+        app, headers={"X-LearningHub": "1"}, cookies={COOKIE: member_session_token(app)}
+    ) as other:
+        yield other

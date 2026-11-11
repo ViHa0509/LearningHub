@@ -167,7 +167,7 @@ test.describe('Signed out', () => {
     await expect(accountButton(page)).toHaveCount(0)
   })
 
-  test('sign-up is refused once the Owner exists, and the login page shows instead of create-owner', async ({
+  test('sign-up is refused once the admin exists, and the login page shows instead of create-admin', async ({
     page,
     request,
   }) => {
@@ -176,7 +176,8 @@ test.describe('Signed out', () => {
       data: { email: 'second@example.test', password: 'second-owner-password', display_name: 'Second' },
     })
     expect(refused.status()).toBe(403)
-    expect((await refused.json()).detail).toBe('This app has an owner already')
+    // Spec (multi-user, Invite only): once the admin exists, sign-up needs an invitation.
+    expect((await refused.json()).detail).toBe('You need an invitation to join')
     expect((await request.get('/api/auth/me')).status()).toBe(401)
     // The refused account was not created: its email cannot log in or ask for a link either way.
     expect((await (await request.get('/api/auth/status')).json()).has_owner).toBe(true)
@@ -184,7 +185,7 @@ test.describe('Signed out', () => {
     for (const address of ['/#/', '/#/auth/create']) {
       await page.goto(address)
       await expect(loginPage(page).getByRole('heading', { name: 'Log in' })).toBeVisible()
-      await expect(page.getByRole('heading', { name: 'Create the owner account' })).toHaveCount(0)
+      await expect(page.getByRole('heading', { name: 'Create the admin account' })).toHaveCount(0)
     }
   })
 
@@ -286,7 +287,7 @@ test.describe('Signed out', () => {
     expect(me.linked).toContain('github')
   })
 
-  test('a GitHub identity with another email is refused: "This app has an owner already", no session', async ({
+  test('a GitHub identity with another email and no invitation is refused: "You need an invitation to join", no session', async ({
     page,
     request,
   }) => {
@@ -295,7 +296,7 @@ test.describe('Signed out', () => {
       await page.goto('/#/')
       await loginPage(page).getByRole('link', { name: 'Continue with GitHub' }).click()
       const form = loginPage(page)
-      await expect(form.getByRole('alert')).toHaveText('This app has an owner already')
+      await expect(form.getByRole('alert')).toHaveText('You need an invitation to join.')
       // The error code leaves the address bar once shown.
       await expect(page).toHaveURL(/#\/auth\/login$/)
       await expect(accountButton(page)).toHaveCount(0)
@@ -417,7 +418,8 @@ test.describe('Forgot password', () => {
       await reset.getByLabel('New password', { exact: true }).fill(NEW_PASSWORD)
       await reset.getByLabel('Confirm new password', { exact: true }).fill(NEW_PASSWORD)
       await reset.getByRole('button', { name: 'Set new password' }).click()
-      await expect(accountButton(page)).toBeVisible()
+      // Hashing the new password and signing in take seconds under the full suite's load.
+      await expect(accountButton(page)).toBeVisible({ timeout: 15_000 })
       expect(page.url()).not.toContain(token)
 
       // The link works once.

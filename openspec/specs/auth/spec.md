@@ -5,24 +5,6 @@ One Owner account protects the app: sign-in with email and password, magic link,
 
 ## Requirements
 
-### Requirement: One Owner account
-The system SHALL allow creating exactly one account, the Owner, by email sign-up or by GitHub or Google while no account exists. Once the Owner exists, sign-up MUST be refused, and GitHub or Google MUST only sign in an identity linked to the Owner or one whose verified email equals the Owner's verified email (which links it).
-
-#### Scenario: First visit
-- **GIVEN** no account exists
-- **WHEN** the user opens the app
-- **THEN** the page offers to create the owner account with email and password, GitHub or Google
-
-#### Scenario: Sign-up closed
-- **GIVEN** the Owner exists
-- **WHEN** someone posts a sign-up
-- **THEN** it is refused and no account is created
-
-#### Scenario: Unknown GitHub identity
-- **GIVEN** the Owner exists with a different verified email
-- **WHEN** a GitHub account signs in
-- **THEN** it is refused with "This app has an owner already" and no session is created
-
 ### Requirement: Email and password
 The system SHALL let the Owner sign up with email and a password of at least 10 characters (confirmed), log in, log out, change the password, and reset a forgotten password with a single-use link valid 30 minutes. Passwords MUST be stored only as salted scrypt hashes, and a wrong email and a wrong password MUST give the same message.
 

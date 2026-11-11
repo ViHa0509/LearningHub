@@ -28,6 +28,7 @@ from app.resources.mapping import load_mappings
 from app.resources.sync import SyncJobs, http_get
 from app.roadmaps import RoadmapCatalog
 from app.routes import (
+    admin,
     agent,
     agents,
     ai_providers,
@@ -41,10 +42,32 @@ from app.routes import (
     resources,
     settings_signin,
 )
-from app.storage import LocalFileStore
+from app.storage import FileStore, LocalFileStore, SupabaseFileStore
 
 # Routes whose 422 answers use ``detail: [{field, msg}]`` (the provider settings forms).
 FIELD_ERROR_PREFIXES = ("/api/ai-providers", "/api/agents")
+
+
+def build_store(settings: Settings) -> FileStore:
+    """The note file store; a supabase backend with a missing setting refuses to start."""
+    if settings.storage_backend == "local":
+        return LocalFileStore(settings.storage_dir)
+    key = settings.supabase_service_key
+    missing = [
+        name
+        for name, value in (
+            ("LH_SUPABASE_URL", (settings.supabase_url or "").strip()),
+            ("LH_SUPABASE_SERVICE_KEY", key.get_secret_value().strip() if key else ""),
+            ("LH_SUPABASE_BUCKET", settings.supabase_bucket.strip()),
+        )
+        if not value
+    ]
+    if missing:
+        raise RuntimeError(f"LH_STORAGE_BACKEND=supabase needs {', '.join(missing)} to be set")
+    assert settings.supabase_url is not None and key is not None
+    return SupabaseFileStore(
+        settings.supabase_url, key.get_secret_value().strip(), settings.supabase_bucket.strip()
+    )
 
 
 def import_env(app: FastAPI) -> None:
@@ -109,7 +132,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.news_fetcher = default_fetcher
     app.state.engine = make_engine(settings.database_url)
     app.state.session_factory = make_session_factory(app.state.engine)
-    app.state.store = LocalFileStore(settings.storage_dir)
+    app.state.store = build_store(settings)
     app.state.box = SecretBox.from_settings(settings)
     app.state.url_resolver = socket.getaddrinfo
     app.state.llm_factory = LLMFactory(
@@ -158,6 +181,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         resources,
         news,
         settings_signin,
+        admin,
     ):
         app.include_router(module.router, dependencies=gate)
     # The upload routes authenticate with the sync key, not a session.

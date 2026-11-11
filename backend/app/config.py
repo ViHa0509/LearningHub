@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -16,6 +17,11 @@ class Settings(BaseSettings):
     roadmaps_dir: Path = REPO_ROOT / "roadmaps"
     storage_dir: Path = REPO_ROOT / "storage"
     max_upload_bytes: int = 10 * 1024 * 1024
+    # Where note files live: the local storage_dir, or a private Supabase Storage bucket.
+    storage_backend: Literal["local", "supabase"] = "local"
+    supabase_url: str | None = None
+    supabase_service_key: SecretStr | None = None  # server-side secret; never logged or returned
+    supabase_bucket: str = "learninghub"
 
     # Agent providers: a provider is offered only when its key (or Ollama URL) is set.
     anthropic_api_key: SecretStr | None = None

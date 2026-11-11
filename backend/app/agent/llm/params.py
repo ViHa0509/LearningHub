@@ -10,6 +10,9 @@ from typing import Any
 
 ProviderType = str  # one of PROVIDER_TYPES
 
+# Admin-only: it runs the admin's own Claude subscription through the local CLI.
+CLAUDE_CODE_TYPE = "claude-code"
+
 
 @dataclass(frozen=True)
 class TypeInfo:

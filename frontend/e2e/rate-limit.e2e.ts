@@ -1,6 +1,7 @@
 /**
  * The login rate limit (spec: owner-auth, "Too many attempts"). In a file of its own, which runs
- * minutes after auth.e2e.ts, so the per-address window holds only these attempts.
+ * minutes after auth.e2e.ts, so the per-address window holds only these attempts. It waits the
+ * window out before it ends, so the files after it can log in again.
  */
 import { expect, test } from '@playwright/test'
 import { OWNER_STATE } from '../playwright.config.ts'
@@ -10,7 +11,9 @@ const H = { 'X-LearningHub': '1' }
 
 test('11 failed logins within a minute: the 11th is refused with 429 and Retry-After', async ({ playwright }) => {
   // Not the Owner's email, so the Owner's own email key is not used up.
+  test.setTimeout(120_000)
   const ctx = await playwright.request.newContext({ baseURL: APP, storageState: { cookies: [], origins: [] } })
+  let windowEnds = Date.now() + 61_000
   try {
     const email = 'rate-limit-probe@example.test'
     const answers = []
@@ -25,6 +28,7 @@ test('11 failed logins within a minute: the 11th is refused with 429 and Retry-A
     const wait = Number(refused.headers()['retry-after'])
     expect(wait).toBeGreaterThanOrEqual(1)
     expect(wait).toBeLessThanOrEqual(60)
+    windowEnds = Date.now() + (wait + 1) * 1000
     expect((await refused.json()).detail).toBe(`Too many attempts. Try again in ${wait} seconds.`)
     expect((await ctx.get('/api/auth/me')).status()).toBe(401)
   } finally {
@@ -37,4 +41,6 @@ test('11 failed logins within a minute: the 11th is refused with 429 and Retry-A
   } finally {
     await owner.dispose()
   }
+  // Leave the per-address window empty for the files that run next.
+  await new Promise((resolve) => setTimeout(resolve, Math.max(0, windowEnds - Date.now())))
 })

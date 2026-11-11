@@ -65,6 +65,7 @@ export function AccountMenu({ user }: { user: Me }) {
       {open && (
         <div className="account-popover">
           <p className="account-email muted">{user.email}</p>
+          <p className="account-role muted small">{user.role === 'admin' ? 'Admin' : 'Member'}</p>
           <div role="menu" aria-label="Account">
             {!user.email_verified && (
               <button type="button" role="menuitem" className="account-verify" disabled={sending} onClick={resend}>

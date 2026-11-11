@@ -35,7 +35,10 @@ def seed(client: TestClient) -> dict[str, str]:
     import_note(client, "Alpha")
     import_note(client, "Beta")
     with client.app.state.session_factory() as db:  # type: ignore[attr-defined]
-        db.add(Lesson(node_id="devops/docker", body="# Docker lesson", source="user"))
+        admin_id = db.scalars(select(User.id).where(User.role == "admin")).one()
+        db.add(
+            Lesson(user_id=admin_id, node_id="devops/docker", body="# Docker lesson", source="user")
+        )
         db.commit()
     keyed = client.post(
         "/api/ai-providers",
@@ -86,20 +89,21 @@ def restore(client: TestClient, data: bytes, confirm: str | None = "REPLACE") ->
     )
 
 
+# Ids are new after a restore, so rows are compared without them (assignments by provider name).
 def snapshot(client: TestClient) -> dict[str, list[Any]]:
     with client.app.state.session_factory() as db:  # type: ignore[attr-defined]
         return {
             "notes": [
-                (n.id, n.title, n.content_sha256, n.storage_key, n.created_at, n.archived_at)
+                (n.title, n.content_sha256, n.storage_key, n.created_at, n.archived_at)
                 for n in db.scalars(select(Note).order_by(Note.title))
             ],
             "lessons": [(x.node_id, x.body, x.source) for x in db.scalars(select(Lesson))],
             "providers": [
-                (p.id, p.name, p.provider_type, p.model_name, p.base_url, p.config, p.created_at)
+                (p.name, p.provider_type, p.model_name, p.base_url, p.config, p.created_at)
                 for p in db.scalars(select(AIProvider).order_by(AIProvider.name))
             ],
             "assignments": [
-                (a.agent_id, a.role, a.provider_id)
+                (a.agent_id, a.role, db.get(AIProvider, a.provider_id).name)  # type: ignore[union-attr]
                 for a in db.scalars(select(AgentProvider).order_by(AgentProvider.role))
             ],
             "settings": [(s.agent_id, s.web_search) for s in db.scalars(select(AgentSetting))],

@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
+from uuid import UUID
 
 import httpx2
 from sqlalchemy.orm import Session
@@ -93,6 +94,7 @@ def _file_sha256(path: Path) -> str:
 
 def send_backup(
     session: Session,
+    user_id: UUID,
     store: FileStore,
     version: str,
     now: datetime,
@@ -107,7 +109,7 @@ def send_backup(
     host = urlsplit(base).hostname or "the target"
     try:
         with handle:
-            build_backup(session, store, version, now, handle)
+            build_backup(session, user_id, store, version, now, handle)
         size = path.stat().st_size
         size_of_part = part_size()
         parts = max(1, math.ceil(size / size_of_part))

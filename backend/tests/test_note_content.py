@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.agent.tools import AgentTools
 from app.config import Settings
+from tests.conftest import user_id_of
 from tests.test_notes import import_one
 
 NEW_PAGE = "<html><head><title>Ignored</title></head><body><p>Use volatile-lru.</p></body></html>"
@@ -47,7 +48,11 @@ def test_saved_text_is_searchable(client: TestClient) -> None:
     note = redis_note(client)
     put(client, note["id"], html=NEW_PAGE)
     with client.app.state.session_factory() as session:  # type: ignore[attr-defined]
-        tools = AgentTools(session, client.app.state.catalog)  # type: ignore[attr-defined]
+        tools = AgentTools(
+            session,
+            client.app.state.catalog,  # type: ignore[attr-defined]
+            user_id=user_id_of(client.app),
+        )
         found = json.loads(tools.run("search_notes", {"query": "volatile-lru"}).result)["notes"]
     assert [n["title"] for n in found] == ["Redis TTL"]
 

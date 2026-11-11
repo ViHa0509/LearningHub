@@ -2,6 +2,8 @@ import { useEffect, useEffectEvent, useId, useRef, useState } from 'react'
 import type { NewsItem, NewsRefreshStatus } from '../api'
 import { useNews, useNewsRefresh } from '../hooks'
 import { Icon } from './Icon'
+import { BlurFade } from './magicui/blur-fade'
+import { NumberTicker } from './magicui/number-ticker'
 
 /** How long the text filter waits after the last key before it asks the server. */
 const FILTER_DELAY_MS = 300
@@ -119,7 +121,10 @@ export function NewsPage({ onAskAgent }: Props) {
         {sources.length > 0 && (
           <div className="chip-list news-chips" role="group" aria-label="Sources">
             <button type="button" className="chip" aria-pressed={source === ''} onClick={() => setSource('')}>
-              All <span className="chip-count">{total}</span>
+              All{' '}
+              <span className="chip-count">
+                <NumberTicker value={total} />
+              </span>
             </button>
             {sources.map((s) => (
               <button
@@ -129,7 +134,10 @@ export function NewsPage({ onAskAgent }: Props) {
                 aria-pressed={source === s.id}
                 onClick={() => setSource(s.id)}
               >
-                {s.name} <span className="chip-count">{s.count}</span>
+                {s.name}{' '}
+                <span className="chip-count">
+                  <NumberTicker value={s.count} />
+                </span>
               </button>
             ))}
           </div>
@@ -165,8 +173,8 @@ export function NewsPage({ onAskAgent }: Props) {
         <section key={group.key} className="news-day" aria-label={group.label}>
           <h2>{group.label}</h2>
           <ul className="news-list">
-            {group.items.map((item) => (
-              <NewsCard key={item.id} item={item} onAskAgent={onAskAgent} />
+            {group.items.map((item, index) => (
+              <NewsCard key={item.id} item={item} index={index} onAskAgent={onAskAgent} />
             ))}
           </ul>
         </section>
@@ -186,11 +194,23 @@ export function NewsPage({ onAskAgent }: Props) {
   )
 }
 
-function NewsCard({ item, onAskAgent }: { item: NewsItem; onAskAgent: (text: string) => void }) {
+/** Items fade in one after the other for the first ten of a day, then at once. */
+const FADE_STEP_S = 0.04
+const FADE_STAGGERED = 10
+
+function NewsCard({
+  item,
+  index,
+  onAskAgent,
+}: {
+  item: NewsItem
+  index: number
+  onAskAgent: (text: string) => void
+}) {
   const titleId = useId()
   const published = new Date(item.published_at)
   return (
-    <li className="news-item">
+    <BlurFade as="li" className="news-item" delay={index < FADE_STAGGERED ? index * FADE_STEP_S : 0}>
       <div className="news-meta muted">
         <span>{item.source_name}</span>
         {!Number.isNaN(published.getTime()) && (
@@ -215,7 +235,7 @@ function NewsCard({ item, onAskAgent }: { item: NewsItem; onAskAgent: (text: str
       >
         <Icon name="sparkle" /> Ask the agent
       </button>
-    </li>
+    </BlurFade>
   )
 }
 

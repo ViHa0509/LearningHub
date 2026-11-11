@@ -3,9 +3,9 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { E2E_ENV } from '../playwright.config.ts'
 
-export type LinkKind = 'verify' | 'reset' | 'magic'
+export type LinkKind = 'verify' | 'reset' | 'magic' | 'invite'
 
-/** The newest token link of one kind in the outbox (verify, reset or magic). */
+/** The newest token link of one kind in the outbox (verify, reset, magic or invite). */
 export function outboxToken(kind: LinkKind): string {
   const dir = join(E2E_ENV.LH_STORAGE_DIR, 'outbox')
   if (!existsSync(dir)) throw new Error('no outbox folder yet')

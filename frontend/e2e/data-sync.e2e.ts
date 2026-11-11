@@ -105,6 +105,28 @@ async function noteIdsOn(request: APIRequestContext): Promise<{ noteIds: string[
   return { noteIds: [...notes, ...archived].map((n) => n.id).sort() }
 }
 
+/**
+ * Every note on the server (archived ones too) as "title | node | archived", sorted. A restore or
+ * a sync gives the notes new ids (multi-user design: restoring into another user or server never
+ * collides with someone else's ids), so the data after one is compared by content, not by id.
+ */
+async function noteKeysOn(request: APIRequestContext): Promise<string[]> {
+  type N = { title: string; node_id: string | null }
+  const notes = (await (await request.get(`${API}/api/notes`)).json()) as N[]
+  const archived = (await (await request.get(`${API}/api/notes?archived=true`)).json()) as N[]
+  return [
+    ...notes.map((n) => `${n.title} | ${n.node_id ?? '-'} | active`),
+    ...archived.map((n) => `${n.title} | ${n.node_id ?? '-'} | archived`),
+  ].sort()
+}
+
+async function noteIdByTitle(request: APIRequestContext, title: string): Promise<string> {
+  const notes = (await (await request.get(`${API}/api/notes`)).json()) as { id: string; title: string }[]
+  const note = notes.find((n) => n.title === title)
+  expect(note, `note ${title}`).toBeTruthy()
+  return note!.id
+}
+
 async function importExtraNote(request: APIRequestContext, title: string): Promise<string> {
   const html = `<!doctype html><html><head><title>${title}</title></head><body><h1>${title}</h1><p>Replaced by a restore.</p></body></html>`
   const res = await request.post(`${API}/api/notes/import`, {
@@ -234,7 +256,7 @@ test.describe('Data & sync', () => {
   }) => {
     expect(backup, 'the backup of the first test').not.toBeNull()
     // A note written after the backup: the restore removes it (scenario: Restore replaces the data).
-    const before = (await noteIdsOn(request)).noteIds
+    const before = await noteKeysOn(request)
     const extraTitle = `${NOTE_PREFIX} after the backup ${Date.now().toString(36)}`
     const extraId = await importExtraNote(request, extraTitle)
 
@@ -264,9 +286,9 @@ test.describe('Data & sync', () => {
     await expect(result).toContainText(`Enter the key again for: ${PROVIDER_NAME}`)
     await expect(result.getByRole('link', { name: 'Open AI providers' })).toHaveAttribute('href', '#/settings')
 
-    const after = (await noteIdsOn(request)).noteIds
+    const after = await noteKeysOn(request)
     expect(after).toEqual(before)
-    expect(after).not.toContain(extraId)
+    expect(after.some((k) => k.startsWith(`${extraTitle} |`))).toBe(false)
     expect((await request.get(`${API}/api/notes/${extraId}`)).status()).toBe(404)
 
     // Scenario: Provider keys entered again: listed on AI providers and marked as needing its key.
@@ -276,7 +298,10 @@ test.describe('Data & sync', () => {
       has_key: boolean
     }[]
     const mine = providers.find((p) => p.name === PROVIDER_NAME)
-    expect(mine).toMatchObject({ id: providerId, has_key: false })
+    // Restored under a new id (multi-user: restore gives providers new ids), without its key.
+    expect(mine).toMatchObject({ has_key: false })
+    expect(mine!.id).not.toBe(providerId)
+    expect(providers.filter((p) => p.name === PROVIDER_NAME)).toHaveLength(1)
     await result.getByRole('link', { name: 'Open AI providers' }).click()
     const card = page.getByRole('article', { name: PROVIDER_NAME })
     await expect(card).toBeVisible()
@@ -349,7 +374,7 @@ test.describe('Data & sync', () => {
       await bearer.dispose()
     }
 
-    const before = (await noteIdsOn(request)).noteIds
+    const before = await noteKeysOn(request)
     const lessonsBefore = unzip(Buffer.from(await (await request.get(`${API}/api/data/backup`)).body())).get(
       'data/lessons.json',
     )!
@@ -376,7 +401,8 @@ test.describe('Data & sync', () => {
     expect(refused.status()).toBe(422)
 
     // Scenario: Send Local to Deploy, here to the e2e backend itself.
-    const extraId = await importExtraNote(request, `${NOTE_PREFIX} sent by sync ${Date.now().toString(36)}`)
+    const sentTitle = `${NOTE_PREFIX} sent by sync ${Date.now().toString(36)}`
+    await importExtraNote(request, sentTitle)
     await send.getByLabel('Target address').fill('http://127.0.0.1:8001')
     await send.getByLabel('Sync key').fill(key)
     await sendButton.click()
@@ -386,9 +412,11 @@ test.describe('Data & sync', () => {
     await expect(sent).toContainText(`Enter the key again for: ${PROVIDER_NAME}`)
     await expect(send.getByLabel('Sync key')).toHaveValue('')
     const sentNotes = Number((await sent.textContent())!.match(/Sent: (\d+) notes/)![1])
-    const after = (await noteIdsOn(request)).noteIds
-    expect(after).toEqual([...before, extraId].sort())
+    // The sync replaced this user's data with the same content (new ids, see noteKeysOn).
+    const after = await noteKeysOn(request)
+    expect(after).toEqual([...before, `${sentTitle} | - | active`].sort())
     expect(sentNotes).toBe(after.length)
+    const extraId = await noteIdByTitle(request, sentTitle)
     const lessonsAfter = unzip(Buffer.from(await (await request.get(`${API}/api/data/backup`)).body())).get(
       'data/lessons.json',
     )!
@@ -409,7 +437,7 @@ test.describe('Data & sync', () => {
     })
     expect(revoked.status()).toBe(502)
     expect((await revoked.json()).detail).toBe(WRONG_KEY)
-    expect((await noteIdsOn(request)).noteIds).toEqual(after)
+    expect(await noteKeysOn(request)).toEqual(after)
   })
 
   test('Without a session the data routes answer 401', async ({ playwright }) => {

@@ -1,6 +1,8 @@
-"""Migrations upgrade and downgrade cleanly; 0004 moves saved provider settings."""
+"""Migrations upgrade and downgrade cleanly; 0004 moves saved provider settings; 0012 gives
+existing data to the admin."""
 
 import uuid
+from typing import Any
 
 import pytest
 from alembic import command
@@ -27,6 +29,7 @@ def test_downgrade_base_then_upgrade_head() -> None:
         "auth_tokens",
         "app_settings",
         "sync_keys",
+        "invitations",
     }
     try:
         command.downgrade(config, "base")
@@ -64,17 +67,30 @@ def test_downgrade_base_then_upgrade_head() -> None:
         }
         assert news_indexes["ix_news_items_published_at"] == ["published_at"]
         settings = {c["name"]: c for c in inspect(engine).get_columns("agent_settings")}
-        assert set(settings) == {"agent_id", "web_search", "updated_at"}
+        assert set(settings) == {"user_id", "agent_id", "web_search", "updated_at"}
         assert settings["web_search"]["nullable"] is False
         assert inspect(engine).get_pk_constraint("agent_settings")["constrained_columns"] == [
-            "agent_id"
+            "user_id",
+            "agent_id",
         ]
         with engine.begin() as connection:
-            connection.execute(text("INSERT INTO agent_settings (agent_id) VALUES ('probe')"))
+            connection.execute(
+                text(
+                    "INSERT INTO users (id, email, role) "
+                    "VALUES ('00000000-0000-0000-0000-000000000001', 'probe@x.test', 'admin')"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO agent_settings (user_id, agent_id) "
+                    "VALUES ('00000000-0000-0000-0000-000000000001', 'probe')"
+                )
+            )
             stored = connection.execute(
                 text("SELECT web_search FROM agent_settings WHERE agent_id = 'probe'")
             ).scalar()
             connection.execute(text("DELETE FROM agent_settings"))
+            connection.execute(text("DELETE FROM users"))
         assert stored is False
         users = {c["name"]: c for c in inspect(engine).get_columns("users")}
         assert set(users) == {
@@ -86,6 +102,8 @@ def test_downgrade_base_then_upgrade_head() -> None:
             "avatar_key",
             "password_hash",
             "role",
+            "disabled_at",
+            "placeholder",
             "preferences",
             "created_at",
         }
@@ -130,11 +148,18 @@ def test_downgrade_base_then_upgrade_head() -> None:
                 text("INSERT INTO users (id, email) VALUES (gen_random_uuid(), 'a@x.test')")
             )
             role = connection.execute(text("SELECT role FROM users")).scalar()
-        assert role == "owner"
-        # One owner at most, and emails only in lower case.
+            connection.execute(
+                text(
+                    "INSERT INTO users (id, email, role) "
+                    "VALUES (gen_random_uuid(), 'admin@x.test', 'admin')"
+                )
+            )
+        assert role == "member"
+        # One admin at most, only the two roles, and emails only in lower case.
         for statement in (
-            "INSERT INTO users (id, email) VALUES (gen_random_uuid(), 'b@x.test')",
-            "INSERT INTO users (id, email, role) VALUES (gen_random_uuid(), 'C@x.test', 'x')",
+            "INSERT INTO users (id, email, role) VALUES (gen_random_uuid(), 'b@x.test', 'admin')",
+            "INSERT INTO users (id, email, role) VALUES (gen_random_uuid(), 'c@x.test', 'owner')",
+            "INSERT INTO users (id, email, role) VALUES (gen_random_uuid(), 'C@x.test', 'member')",
         ):
             with pytest.raises(IntegrityError), engine.begin() as connection:
                 connection.execute(text(statement))
@@ -269,3 +294,151 @@ def test_upgrade_with_a_url_encoded_password(monkeypatch: pytest.MonkeyPatch) ->
         command.upgrade(config, "head")
     finally:
         get_settings.cache_clear()
+
+
+# --- 0012: existing data goes to the admin -------------------------------------------------------
+
+OWNER_ID = "00000000-0000-0000-0000-0000000000a1"
+PERSONAL_TABLES = (
+    "notes",
+    "lessons",
+    "ai_providers",
+    "agent_providers",
+    "agent_settings",
+    "sync_keys",
+)
+
+
+def seed_0011(connection: Any) -> None:
+    """One row in every personal table, written against the schema of revision 0011."""
+    sha = "a" * 64
+    connection.execute(
+        text(
+            "INSERT INTO notes (id, title, body_text, original_name, size_bytes, content_sha256, "
+            "storage_key) VALUES (gen_random_uuid(), 'Old', 'text', 'old.html', 4, "
+            f"'{sha}', 'blobs/old')"
+        )
+    )
+    connection.execute(
+        text("INSERT INTO lessons (node_id, body, source) VALUES ('devops/docker', '# L', 'user')")
+    )
+    connection.execute(
+        text(
+            "INSERT INTO ai_providers (id, name, provider_type, model_name) VALUES "
+            "('00000000-0000-0000-0000-0000000000b1', 'Claude', 'anthropic', 'claude-x')"
+        )
+    )
+    connection.execute(
+        text(
+            "INSERT INTO agent_providers (agent_id, role, provider_id) VALUES "
+            "('assistant', 'primary', '00000000-0000-0000-0000-0000000000b1')"
+        )
+    )
+    connection.execute(text("INSERT INTO agent_settings (agent_id) VALUES ('assistant')"))
+    connection.execute(
+        text(
+            "INSERT INTO sync_keys (id, token_hash, expires_at) "
+            "VALUES (gen_random_uuid(), 'h', now() + interval '1 day')"
+        )
+    )
+
+
+# Scenario: Existing data kept
+def test_0012_gives_existing_data_to_the_owner_who_becomes_admin() -> None:
+    config = alembic_config()
+    engine = create_engine(TEST_DATABASE_URL)
+    try:
+        command.downgrade(config, "0011")
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO users (id, email, email_verified_at) "
+                    f"VALUES ('{OWNER_ID}', 'owner@x.test', now())"
+                )
+            )
+            assert connection.execute(text("SELECT role FROM users")).scalar() == "owner"
+            seed_0011(connection)
+        command.upgrade(config, "0012")
+        with engine.connect() as connection:
+            [user] = connection.execute(text("SELECT id, role, placeholder FROM users")).all()
+            assert (str(user.id), user.role, user.placeholder) == (OWNER_ID, "admin", False)
+            for table in PERSONAL_TABLES:
+                owners = connection.execute(text(f"SELECT DISTINCT user_id FROM {table}")).all()
+                assert [str(o.user_id) for o in owners] == [OWNER_ID], table
+    finally:
+        with engine.begin() as connection:
+            connection.execute(text("TRUNCATE users CASCADE"))
+        command.upgrade(config, "head")
+        engine.dispose()
+
+
+# Scenario: Existing data kept (a server that ran with the login off has no user yet)
+def test_0012_inserts_a_placeholder_admin_when_data_exists_but_no_user() -> None:
+    config = alembic_config()
+    engine = create_engine(TEST_DATABASE_URL)
+    try:
+        command.downgrade(config, "0011")
+        with engine.begin() as connection:
+            seed_0011(connection)
+        command.upgrade(config, "0012")
+        with engine.connect() as connection:
+            [user] = connection.execute(
+                text("SELECT id, email, role, placeholder, password_hash FROM users")
+            ).all()
+            assert (user.email, user.role, user.placeholder) == (
+                "admin@localhost.invalid",
+                "admin",
+                True,
+            )
+            assert user.password_hash is None
+            for table in PERSONAL_TABLES:
+                owned = connection.execute(
+                    text(f"SELECT count(*) FROM {table} WHERE user_id = :id"), {"id": user.id}
+                ).scalar()
+                orphans = connection.execute(
+                    text(f"SELECT count(*) FROM {table} WHERE user_id IS NULL")
+                ).scalar()
+                assert (owned, orphans) == (1, 0), table
+    finally:
+        with engine.begin() as connection:
+            connection.execute(text("TRUNCATE users CASCADE"))
+        command.upgrade(config, "head")
+        engine.dispose()
+
+
+def test_0012_creates_no_user_on_an_empty_database() -> None:
+    config = alembic_config()
+    engine = create_engine(TEST_DATABASE_URL)
+    try:
+        command.downgrade(config, "0011")
+        command.upgrade(config, "0012")
+        with engine.connect() as connection:
+            assert connection.execute(text("SELECT count(*) FROM users")).scalar() == 0
+    finally:
+        command.upgrade(config, "head")
+        engine.dispose()
+
+
+def test_0012_downgrade_is_refused_with_more_than_one_user() -> None:
+    config = alembic_config()
+    engine = create_engine(TEST_DATABASE_URL)
+    try:
+        command.upgrade(config, "head")
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO users (id, email, role) VALUES "
+                    "(gen_random_uuid(), 'a@x.test', 'admin'), "
+                    "(gen_random_uuid(), 'm@x.test', 'member')"
+                )
+            )
+        with pytest.raises(RuntimeError, match="more than one user"):
+            command.downgrade(config, "0011")
+        with engine.connect() as connection:
+            assert connection.execute(text("SELECT count(*) FROM users")).scalar() == 2
+        assert "invitations" in inspect(engine).get_table_names()
+    finally:
+        with engine.begin() as connection:
+            connection.execute(text("TRUNCATE users CASCADE"))
+        command.upgrade(config, "head")
+        engine.dispose()

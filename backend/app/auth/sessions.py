@@ -109,6 +109,8 @@ def find_session(db: Session, request: Request) -> Signed | None:
     if row is None:
         return None
     session, user = row
+    if user.disabled_at is not None:
+        return None  # a disabled account's sessions never work, even if one was left behind
     if now - session.last_seen_at >= SLIDE_EVERY:
         session.last_seen_at = now
         session.expires_at = now + LIFETIME

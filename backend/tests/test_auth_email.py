@@ -70,7 +70,7 @@ def test_signup_is_refused_once_the_owner_exists(kit: AuthKit) -> None:
     stranger = kit.browser()
     refused = kit.signup(stranger, email="other@example.test")
     assert refused.status_code == 403
-    assert refused.json()["detail"] == "This app has an owner already"
+    assert refused.json()["detail"] == "You need an invitation to join"
     assert "lh_session" not in refused.cookies
     assert db_scalar("SELECT count(*) FROM users") == 1
 

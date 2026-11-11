@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import sys
+import uuid
 from collections.abc import Callable, Iterable
 from typing import IO, Any
 
@@ -21,6 +22,7 @@ from app.agent.tools import AgentTools, ToolOutcome
 LOG = logging.getLogger("learninghub.mcp")
 
 SERVER_NAME = "learninghub"
+USER_VARIABLE = "LH_AGENT_USER_ID"
 DEFAULT_PROTOCOL = "2025-06-18"
 PROTOCOL_VERSIONS = frozenset({"2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"})
 # Variables the server must never hold, whatever the parent process passes on.
@@ -143,18 +145,32 @@ def serve(server: McpServer, lines: Iterable[bytes], out: IO[bytes]) -> None:
 
 
 def database_tools() -> RunTool:
-    """Runs each tool in its own session, on the database and roadmaps of LH_* settings."""
+    """Runs each tool in its own session, on the database and roadmaps of LH_* settings.
+
+    The tools act for the user in ``LH_AGENT_USER_ID``; without a valid id of an existing user
+    the server refuses to start (``SystemExit`` with a message on stderr, exit code 1).
+    """
     from app.config import Settings
-    from app.db import make_engine, make_session_factory
+    from app.db import User, make_engine, make_session_factory
     from app.roadmaps import RoadmapCatalog
 
+    raw = os.environ.get(USER_VARIABLE, "").strip()
+    if not raw:
+        raise SystemExit(f"{USER_VARIABLE} is not set: the tool server needs the user it acts for")
+    try:
+        user_id = uuid.UUID(raw)
+    except ValueError:
+        raise SystemExit(f"{USER_VARIABLE} is not a valid user id") from None
     settings = Settings()
     catalog = RoadmapCatalog.load(settings.roadmaps_dir)
     sessions = make_session_factory(make_engine(settings.database_url))
+    with sessions() as session:
+        if session.get(User, user_id) is None:
+            raise SystemExit(f"{USER_VARIABLE} does not name an existing user")
 
     def run_tool(name: str, arguments: dict[str, Any]) -> ToolOutcome:
         with sessions() as session:
-            return AgentTools(session, catalog).run(name, arguments)
+            return AgentTools(session, catalog, user_id=user_id).run(name, arguments)
 
     return run_tool
 

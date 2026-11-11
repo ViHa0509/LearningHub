@@ -155,7 +155,7 @@ def test_unknown_github_identity_is_refused_when_the_owner_differs(
     sessions_before = count("SELECT count(*) FROM sessions")
     browser = okit.browser()
     response = approve(browser, state, "github", start(browser, "github"))
-    assert error_of(response) == "owner_exists"
+    assert error_of(response) == "not_invited"
     assert "lh_session" not in response.headers.get("set-cookie", "")
     assert browser.get("/api/notes").status_code == 401
     assert count("SELECT count(*) FROM sessions") == sessions_before
@@ -169,7 +169,7 @@ def test_same_email_links_only_when_the_owner_email_is_verified(
     okit.signup(email="owner@example.test", password=PASSWORD)
     browser = okit.browser()
     refused = approve(browser, state, "google", start(browser, "google"))
-    assert error_of(refused) == "owner_exists"
+    assert error_of(refused) == "not_invited"
     okit.client.post(
         "/api/auth/verify", json={"token": okit.mailer.token("verify-email")}
     ).raise_for_status()

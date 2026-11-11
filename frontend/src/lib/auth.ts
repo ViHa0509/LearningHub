@@ -79,6 +79,16 @@ export function useSignedIn(): (user: Me) => void {
   )
 }
 
+/** The signed-in user from the session cache (no request); undefined until known or without a session. */
+export function useMe(): Me | null | undefined {
+  return useQuery({ queryKey: queryKeys.me, queryFn: api.me, enabled: false }).data
+}
+
+/** False only for a signed-in member; without a required session the app is the admin's. */
+export function useIsAdmin(): boolean {
+  return useMe()?.role !== 'member'
+}
+
 /** Logs out (after asking about unsaved changes) and shows the login page. */
 export function useLogout(): () => Promise<void> {
   const client = useQueryClient()

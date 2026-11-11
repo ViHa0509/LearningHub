@@ -2,9 +2,11 @@ from typing import Annotated, cast
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db import Lesson, get_session
+from app.auth.current import CurrentUser
+from app.db import Lesson, User, get_session
 from app.lesson_pdf import PdfImportError, extract_pdf
 from app.roadmaps import RoadmapCatalog
 from app.routes.guard import require_app_header
@@ -46,6 +48,12 @@ def require_node(request: Request, domain_id: str, node_id: str) -> str:
     return full_id
 
 
+def find_lesson(session: Session, user: User, full_id: str) -> Lesson | None:
+    return session.scalar(
+        select(Lesson).where(Lesson.user_id == user.id, Lesson.node_id == full_id)
+    )
+
+
 def to_out(full_id: str, lesson: Lesson | None) -> LessonOut:
     if lesson is None:
         return LessonOut(node_id=full_id, body="", source=None, updated_at=None)
@@ -63,9 +71,10 @@ def read_lesson(
     node_id: str,
     request: Request,
     session: Annotated[Session, Depends(get_session)],
+    user: CurrentUser,
 ) -> LessonOut:
     full_id = require_node(request, domain_id, node_id)
-    return to_out(full_id, session.get(Lesson, full_id))
+    return to_out(full_id, find_lesson(session, user, full_id))
 
 
 @router.put("/{domain_id}/{node_id}", response_model=LessonOut)
@@ -75,17 +84,18 @@ def write_lesson(
     payload: LessonWrite,
     request: Request,
     session: Annotated[Session, Depends(get_session)],
+    user: CurrentUser,
 ) -> LessonOut:
     """Replace the node's lesson; an empty or whitespace-only body removes it."""
     full_id = require_node(request, domain_id, node_id)
-    lesson = session.get(Lesson, full_id)
+    lesson = find_lesson(session, user, full_id)
     if not payload.body.strip():
         if lesson is not None:
             session.delete(lesson)
             session.commit()
         return to_out(full_id, None)
     if lesson is None:
-        lesson = Lesson(node_id=full_id, body=payload.body, source=payload.source)
+        lesson = Lesson(user_id=user.id, node_id=full_id, body=payload.body, source=payload.source)
         session.add(lesson)
     else:
         lesson.body = payload.body

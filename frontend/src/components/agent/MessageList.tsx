@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm'
 import { effortLabel } from '../../lib/agentPrefs'
 import { formatSize } from '../../lib/attachments'
 import { Icon } from '../Icon'
+import { AnimatedShinyText } from '../magicui/animated-shiny-text'
 import { CodeBlock } from './CodeBlock'
 import { CopyButton } from './CopyButton'
 import type { Entry } from './useAgentChat'
@@ -49,13 +50,8 @@ export function MessageList({ entries, busy, onRetry, onStarter }: Props) {
         <div className="agent-row">
           <Avatar />
           <div className="agent-bubble assistant agent-working-bubble">
-            <span className="agent-dots" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </span>
             <p className="agent-working" role="status">
-              Agent is working…
+              <AnimatedShinyText>Thinking…</AnimatedShinyText>
             </p>
           </div>
         </div>

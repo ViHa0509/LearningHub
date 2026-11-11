@@ -78,11 +78,15 @@ export default defineConfig({
       timeout: 60_000,
     },
     {
-      command: 'npm run dev -- --port 5174 --strictPort --host 127.0.0.1',
+      // The built app, as users get it: the dev server's on-demand module compiling made
+      // first loads in fresh browsers take longer than the checks wait on a busy machine.
+      command:
+        'npx vite build --outDir e2e-results/app-dist --emptyOutDir && ' +
+        'npx vite preview --outDir e2e-results/app-dist --port 5174 --strictPort --host 127.0.0.1',
       env: { LH_API_URL: 'http://127.0.0.1:8001' },
       url: 'http://127.0.0.1:5174',
       reuseExistingServer: false,
-      timeout: 60_000,
+      timeout: 180_000,
     },
     {
       // Fake OpenAI-compatible LLM for the provider tests (local providers point at it).

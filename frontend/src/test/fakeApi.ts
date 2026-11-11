@@ -1,6 +1,9 @@
 import { vi } from 'vitest'
 import type {
+  AdminUser,
   AgentOut,
+  Invitation,
+  Role,
   ChatReply,
   ChatRequest,
   ExtractedPdf,
@@ -265,6 +268,19 @@ export interface FakeState {
   signIn: FakeSignIn
   /** Backup, restore and sync. */
   data: FakeData
+  /** The admin's Users page and the invitation links. */
+  admin: FakeAdmin
+}
+
+export interface FakeAdmin {
+  users: AdminUser[]
+  invitations: Invitation[]
+  /** Invitation token -> email, for the invitation page; each works once. */
+  inviteTokens: Record<string, string>
+  /** When set, POST /api/admin/invitations answers 409 with this detail. */
+  inviteConflict: string | null
+  /** When set, creating an invitation also answers this invite_url (a server without SMTP). */
+  inviteUrl: string | null
 }
 
 export interface FakeSignIn {
@@ -286,6 +302,8 @@ export interface FakeData {
 }
 
 export interface FakeOwner {
+  /** Defaults to admin. */
+  role?: Role
   email: string
   password: string | null
   display_name: string | null
@@ -444,6 +462,7 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
       env: { github: null, google: null },
       saveError: null,
     },
+    admin: { users: [], invitations: [], inviteTokens: {}, inviteConflict: null, inviteUrl: null },
     data: {
       syncKey: null,
       restore: { counts: { notes: 2, files: 2, lessons: 1, providers: 1 }, providers_needing_key: [] },
@@ -468,6 +487,7 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
   let tokenSeq = 0
   const me = (owner: FakeOwner) => ({
     id: 'u1',
+    role: owner.role ?? 'admin',
     email: owner.email,
     email_verified: owner.email_verified,
     display_name: owner.display_name,
@@ -500,6 +520,13 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
     if (url === '/api/auth/me') {
       return auth.signedIn && auth.owner ? respond(me(auth.owner)) : respond({ detail: 'Sign in to continue' }, 401)
     }
+    if (url.startsWith('/api/auth/invitation?token=') && method === 'GET') {
+      const token = decodeURIComponent(url.split('token=')[1] ?? '')
+      const invited = state.admin.inviteTokens[token]
+      return invited
+        ? respond({ email: invited, expires_at: '2026-11-17T09:00:00Z' })
+        : respond({ detail: 'This invitation has expired or was already used.' }, 404)
+    }
     if (method !== 'POST') return null
     if (auth.limited) return respond({ detail: auth.limited }, 429)
     const email = (body?.email ?? '').trim().toLowerCase()
@@ -526,6 +553,25 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
         }
         auth.signedIn = true
         return respond(me(auth.owner))
+      case '/api/auth/invitation/accept': {
+        const invited = state.admin.inviteTokens[body?.token ?? '']
+        if (!invited) return respond({ detail: 'This invitation has expired or was already used.' }, 404)
+        if ((body?.password ?? '').length < 10) {
+          return respond({ detail: 'Use at least 10 characters for the password.' }, 400)
+        }
+        delete state.admin.inviteTokens[body?.token ?? '']
+        state.admin.invitations = state.admin.invitations.filter((i) => i.email !== invited)
+        auth.owner = {
+          role: 'member',
+          email: invited,
+          password: body?.password ?? '',
+          display_name: body?.display_name ?? null,
+          email_verified: true,
+          avatar_url: null,
+        }
+        auth.signedIn = true
+        return respond(me(auth.owner), 201)
+      }
       case '/api/auth/logout':
         auth.signedIn = false
         return respond(null, 204)
@@ -712,6 +758,49 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
       }
       if (HEADER_REQUIRED.has(method) && headers['X-LearningHub'] !== '1') {
         return respond({ detail: 'missing X-LearningHub header' }, 403)
+      }
+
+      if (url.startsWith('/api/admin/')) {
+        if (state.auth.owner?.role === 'member') return respond({ detail: 'Only the admin can do this' }, 403)
+        const admin = state.admin
+        if (url === '/api/admin/users' && method === 'GET') return respond(admin.users)
+        if (url === '/api/admin/invitations' && method === 'GET') return respond(admin.invitations)
+        if (url === '/api/admin/invitations' && method === 'POST') {
+          const address = String(body?.email ?? '').trim().toLowerCase()
+          if (admin.inviteConflict || admin.users.some((u) => u.email === address)) {
+            return respond({ detail: admin.inviteConflict ?? 'That email already has an account' }, 409)
+          }
+          const invitation: Invitation = {
+            id: `inv-${admin.invitations.length + 1}`,
+            email: address,
+            created_at: '2026-11-10T09:00:00Z',
+            expires_at: '2026-11-17T09:00:00Z',
+          }
+          admin.invitations = [...admin.invitations.filter((i) => i.email !== address), invitation]
+          admin.inviteTokens[`token-${address}`] = address
+          return respond(admin.inviteUrl ? { ...invitation, invite_url: admin.inviteUrl } : invitation, 201)
+        }
+        const invitationMatch = url.match(/^\/api\/admin\/invitations\/([^/]+)$/)
+        if (invitationMatch && method === 'DELETE') {
+          admin.invitations = admin.invitations.filter((i) => i.id !== invitationMatch[1])
+          return respond(null, 204)
+        }
+        const disabledMatch = url.match(/^\/api\/admin\/users\/([^/]+)\/disabled$/)
+        if (disabledMatch && method === 'PUT') {
+          const found = admin.users.find((u) => u.id === disabledMatch[1])
+          if (!found || found.role === 'admin') return respond({ detail: 'Not allowed' }, 422)
+          found.disabled = Boolean(body?.disabled)
+          return respond(found)
+        }
+        const userMatch = url.match(/^\/api\/admin\/users\/([^/]+)$/)
+        if (userMatch && method === 'DELETE') {
+          const found = admin.users.find((u) => u.id === userMatch[1])
+          if (!found || found.role === 'admin') return respond({ detail: 'Not allowed' }, 422)
+          if (body?.confirm_email !== found.email) return respond({ detail: 'Type the email to confirm' }, 422)
+          admin.users = admin.users.filter((u) => u.id !== found.id)
+          return respond(null, 204)
+        }
+        return respond({ detail: 'Not found' }, 404)
       }
 
       if (url === '/api/settings/sign-in' && method === 'GET') return respond(signInOut())

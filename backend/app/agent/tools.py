@@ -152,8 +152,12 @@ class AgentTools:
         session: Session,
         catalog: RoadmapCatalog,
         fetch: Callable[[str], Fetched] = fetch_text,
+        *,
+        user_id: uuid.UUID,
     ) -> None:
         self._session = session
+        # Every note and lesson query and write is filtered by this user; there is no default.
+        self._user_id = user_id
         self._catalog = catalog
         self._fetch = fetch
         self._handlers: dict[str, Callable[[dict[str, Any]], ToolOutcome]] = {
@@ -165,6 +169,13 @@ class AgentTools:
             "list_node_resources": self.list_node_resources,
             "fetch_reference": self.fetch_reference,
         }
+
+    @property
+    def user_id(self) -> uuid.UUID:
+        return self._user_id
+
+    def _owner_id(self) -> uuid.UUID:
+        return self._user_id
 
     @staticmethod
     def specs() -> tuple[ToolSpec, ...]:
@@ -190,6 +201,7 @@ class AgentTools:
         rows = self._session.scalars(
             select(Note)
             .where(
+                Note.user_id == self._user_id,
                 Note.archived_at.is_(None),
                 or_(
                     Note.title.ilike(pattern, escape="\\"),
@@ -218,7 +230,9 @@ class AgentTools:
             note_id = uuid.UUID(raw)
         except ValueError:
             return _error(f"'{raw}' is not a note id")
-        note = self._session.get(Note, note_id)
+        note = self._session.scalars(
+            select(Note).where(Note.id == note_id, Note.user_id == self._user_id)
+        ).first()
         if note is None:
             return _error(f"no note with id {raw}")
         text = note.body_text[:NOTE_TEXT_LIMIT]
@@ -242,12 +256,20 @@ class AgentTools:
         counts = dict(
             self._session.execute(
                 select(Note.node_id, func.count())
-                .where(Note.node_id.in_(ids), Note.archived_at.is_(None))
+                .where(
+                    Note.user_id == self._user_id,
+                    Note.node_id.in_(ids),
+                    Note.archived_at.is_(None),
+                )
                 .group_by(Note.node_id)
             ).all()
         )
         with_lesson = set(
-            self._session.scalars(select(Lesson.node_id).where(Lesson.node_id.in_(ids)))
+            self._session.scalars(
+                select(Lesson.node_id).where(
+                    Lesson.user_id == self._owner_id(), Lesson.node_id.in_(ids)
+                )
+            )
         )
         topics = [
             {
@@ -268,7 +290,7 @@ class AgentTools:
         node_id = _text(args, "node_id")
         if not self._catalog.has_node(node_id):
             return _error(f"unknown node '{node_id}'")
-        lesson = self._session.get(Lesson, node_id)
+        lesson = self._session.get(Lesson, (self._owner_id(), node_id))
         if lesson is None:
             return _ok(
                 {"node_id": node_id, "body": "", "source": None}, f"Read lesson {node_id}: empty"
@@ -285,14 +307,16 @@ class AgentTools:
             return _error(f"unknown node '{node_id}'")
         if len(markdown) > LESSON_LIMIT:
             return _error(f"lesson is longer than {LESSON_LIMIT} characters")
-        lesson = self._session.get(Lesson, node_id)
+        lesson = self._session.get(Lesson, (self._owner_id(), node_id))
         if lesson is not None and lesson.source == "user":
             return _error(
                 f"the lesson of {node_id} was written by the user and cannot be overwritten; "
                 "show your draft in the chat instead"
             )
         if lesson is None:
-            self._session.add(Lesson(node_id=node_id, body=markdown, source="agent"))
+            self._session.add(
+                Lesson(user_id=self._owner_id(), node_id=node_id, body=markdown, source="agent")
+            )
         else:
             lesson.body = markdown
             lesson.source = "agent"

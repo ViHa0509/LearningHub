@@ -6,6 +6,7 @@ import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response
@@ -14,6 +15,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
+from app.auth.current import CurrentUser
 from app.auth.sessions import clock_of
 from app.data_sync.backup import MAX_TOTAL_BYTES, build_backup
 from app.data_sync.restore import RestoreRefused, restore_archive
@@ -34,14 +36,14 @@ class RestoreOut(BaseModel):
 
 
 @router.get("/backup")
-def download_backup(request: Request, db: DbDep) -> FileResponse:
+def download_backup(request: Request, db: DbDep, user: CurrentUser) -> FileResponse:
     now = datetime.now(UTC)
     store: FileStore = request.app.state.store
     handle = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)  # noqa: SIM115
     path = Path(handle.name)
     try:
         with handle:
-            build_backup(db, store, request.app.version, now, handle)
+            build_backup(db, user.id, store, request.app.version, now, handle)
     except BaseException:
         path.unlink(missing_ok=True)
         raise
@@ -71,7 +73,7 @@ def spool(upload: UploadFile) -> Path:
     return path
 
 
-def run_restore(request: Request, path: Path) -> dict[str, Any]:
+def run_restore(request: Request, path: Path, user_id: UUID) -> dict[str, Any]:
     state = request.app.state
     try:
         return restore_archive(
@@ -81,6 +83,7 @@ def run_restore(request: Request, path: Path) -> dict[str, Any]:
             Path(state.settings.storage_dir),
             request.app.version,
             lambda: datetime.now(UTC),
+            user_id,
         )
     except RestoreRefused as refused:
         raise HTTPException(status_code=422, detail=refused.detail) from None
@@ -90,13 +93,14 @@ def run_restore(request: Request, path: Path) -> dict[str, Any]:
 def restore(
     request: Request,
     file: Annotated[UploadFile, File()],
+    user: CurrentUser,
     confirm: Annotated[str, Form()] = "",
 ) -> dict[str, Any]:
     if confirm != CONFIRM:
         raise HTTPException(status_code=422, detail=f"type {CONFIRM} to confirm the restore")
     path = spool(file)
     try:
-        return run_restore(request, path)
+        return run_restore(request, path, user.id)
     finally:
         path.unlink(missing_ok=True)
 
@@ -117,26 +121,34 @@ class SyncKeyState(BaseModel):
 
 
 @router.post("/sync-key", response_model=SyncKeyCreated, dependencies=[Depends(require_app_header)])
-def create_sync_key(request: Request, db: DbDep) -> SyncKeyCreated:
+def create_sync_key(request: Request, db: DbDep, user: CurrentUser) -> SyncKeyCreated:
     """A new key replaces any other; the key is shown once and only its hash is stored."""
     key = secrets.token_urlsafe(32)
     expires = clock_of(request)() + KEY_LIFETIME
-    db.execute(delete(SyncKey))
-    db.add(SyncKey(token_hash=hashlib.sha256(key.encode("utf-8")).hexdigest(), expires_at=expires))
+    db.execute(delete(SyncKey).where(SyncKey.user_id == user.id))
+    db.add(
+        SyncKey(
+            user_id=user.id,
+            token_hash=hashlib.sha256(key.encode("utf-8")).hexdigest(),
+            expires_at=expires,
+        )
+    )
     db.commit()
     return SyncKeyCreated(key=key, expires_at=expires)
 
 
 @router.get("/sync-key", response_model=SyncKeyState)
-def read_sync_key(request: Request, db: DbDep) -> SyncKeyState:
+def read_sync_key(request: Request, db: DbDep, user: CurrentUser) -> SyncKeyState:
     now = clock_of(request)()
-    row = db.scalars(select(SyncKey).where(SyncKey.expires_at > now)).first()
+    row = db.scalars(
+        select(SyncKey).where(SyncKey.user_id == user.id, SyncKey.expires_at > now)
+    ).first()
     return SyncKeyState(active=row is not None, expires_at=row.expires_at if row else None)
 
 
 @router.delete("/sync-key", status_code=204, dependencies=[Depends(require_app_header)])
-def revoke_sync_key(db: DbDep) -> Response:
-    db.execute(delete(SyncKey))
+def revoke_sync_key(db: DbDep, user: CurrentUser) -> Response:
+    db.execute(delete(SyncKey).where(SyncKey.user_id == user.id))
     db.commit()
     return Response(status_code=204)
 
@@ -150,7 +162,7 @@ class SyncIn(BaseModel):
 
 
 @router.post("/sync", response_model=RestoreOut, dependencies=[Depends(require_app_header)])
-def send_to_target(body: SyncIn, request: Request, db: DbDep) -> dict[str, Any]:
+def send_to_target(body: SyncIn, request: Request, db: DbDep, user: CurrentUser) -> dict[str, Any]:
     try:
         base = parse_target(body.target_url)
     except TargetAddressInvalid as invalid:
@@ -159,6 +171,7 @@ def send_to_target(body: SyncIn, request: Request, db: DbDep) -> dict[str, Any]:
     try:
         return send_backup(
             db,
+            user.id,
             state.store,
             request.app.version,
             datetime.now(UTC),

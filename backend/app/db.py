@@ -25,15 +25,24 @@ class Base(DeclarativeBase):
     pass
 
 
+def user_fk(*, primary_key: bool = False) -> Mapped[uuid.UUID]:
+    """The owner of a row of personal data; deleting the user deletes the row."""
+    return mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=primary_key, nullable=False
+    )
+
+
 class Note(Base):
     __tablename__ = "notes"
+    __table_args__ = (UniqueConstraint("user_id", "content_sha256", name="uq_notes_user_sha"),)
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = user_fk()
     title: Mapped[str] = mapped_column(Text)
     body_text: Mapped[str] = mapped_column(Text)
     original_name: Mapped[str] = mapped_column(Text)
     size_bytes: Mapped[int] = mapped_column(BigInteger)
-    content_sha256: Mapped[str] = mapped_column(String(64), unique=True)
+    content_sha256: Mapped[str] = mapped_column(String(64))
     storage_key: Mapped[str] = mapped_column(Text)
     node_id: Mapped[str | None] = mapped_column(Text, index=True)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -44,10 +53,11 @@ class Note(Base):
 
 
 class Lesson(Base):
-    """Markdown lesson text for one roadmap node; at most one per node."""
+    """Markdown lesson text for one roadmap node; at most one per user and node."""
 
     __tablename__ = "lessons"
 
+    user_id: Mapped[uuid.UUID] = user_fk(primary_key=True)
     node_id: Mapped[str] = mapped_column(Text, primary_key=True)
     body: Mapped[str] = mapped_column(Text)
     source: Mapped[str] = mapped_column(Text)
@@ -60,9 +70,11 @@ class AIProvider(Base):
     """A named provider configuration; the key is stored encrypted (SecretBox)."""
 
     __tablename__ = "ai_providers"
+    __table_args__ = (UniqueConstraint("user_id", "name", name="uq_ai_providers_user_name"),)
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    name: Mapped[str] = mapped_column(Text, unique=True)
+    user_id: Mapped[uuid.UUID] = user_fk()
+    name: Mapped[str] = mapped_column(Text)
     provider_type: Mapped[str] = mapped_column(Text)
     model_name: Mapped[str] = mapped_column(Text)
     api_key_enc: Mapped[str | None] = mapped_column(Text)
@@ -87,6 +99,7 @@ class AgentProvider(Base):
 
     __tablename__ = "agent_providers"
 
+    user_id: Mapped[uuid.UUID] = user_fk(primary_key=True)
     agent_id: Mapped[str] = mapped_column(Text, primary_key=True)
     role: Mapped[str] = mapped_column(Text, primary_key=True)
     provider_id: Mapped[uuid.UUID] = mapped_column(
@@ -103,6 +116,7 @@ class AgentSetting(Base):
 
     __tablename__ = "agent_settings"
 
+    user_id: Mapped[uuid.UUID] = user_fk(primary_key=True)
     agent_id: Mapped[str] = mapped_column(Text, primary_key=True)
     web_search: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     updated_at: Mapped[datetime] = mapped_column(
@@ -131,6 +145,7 @@ class SyncKey(Base):
     __tablename__ = "sync_keys"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = user_fk()
     token_hash: Mapped[str] = mapped_column(Text, unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -169,7 +184,11 @@ class NewsItem(Base):
 
 
 class User(Base):
-    """The Owner account (the only account). The email is stored lower-case."""
+    """An account: the admin (at most one) or a member. The email is stored lower-case.
+
+    ``placeholder`` marks the no-login admin row made by the migration (or by running without
+    a login) to own data until the first real admin signs up and takes it over.
+    """
 
     __tablename__ = "users"
 
@@ -181,13 +200,16 @@ class User(Base):
     avatar_key: Mapped[str | None] = mapped_column(Text)
     # None for an account that only signs in with GitHub, Google or magic links.
     password_hash: Mapped[str | None] = mapped_column(Text)
-    role: Mapped[str] = mapped_column(Text, default="owner", server_default="owner")
+    # "admin" or "member"; always set by the code that creates the user.
+    role: Mapped[str] = mapped_column(Text, server_default="member")
+    disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    placeholder: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     preferences: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class OAuthAccount(Base):
-    """A GitHub or Google identity linked to the Owner."""
+    """A GitHub or Google identity linked to a user."""
 
     __tablename__ = "oauth_accounts"
     __table_args__ = (
@@ -232,6 +254,23 @@ class AuthToken(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Invitation(Base):
+    """A single-use invitation to join as a member; only the token's SHA-256 hash is stored."""
+
+    __tablename__ = "invitations"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    email: Mapped[str] = mapped_column(Text)
+    token_hash: Mapped[str] = mapped_column(Text, unique=True)
+    invited_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 def make_engine(database_url: str) -> Engine:

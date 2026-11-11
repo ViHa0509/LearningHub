@@ -25,6 +25,7 @@ import sys
 import tempfile
 import threading
 import time
+import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -281,20 +282,27 @@ def render_conversation(messages: Sequence[Message]) -> str:
     )
 
 
-def mcp_config(setup: ClaudeCodeSetup) -> dict[str, Any]:
-    """The MCP configuration of one run: only the app's tool server, with only what it needs."""
+def mcp_config(setup: ClaudeCodeSetup, user_id: uuid.UUID | None = None) -> dict[str, Any]:
+    """The MCP configuration of one run: only the app's tool server, with only what it needs.
+
+    ``LH_AGENT_USER_ID`` names the user the tools act for; the server refuses to start without
+    it, so a run without a user (``None``) has no working tools.
+    """
+    env = {
+        "LH_DATABASE_URL": setup.database_url,
+        "LH_ROADMAPS_DIR": str(setup.roadmaps_dir),
+        "LH_STORAGE_DIR": str(setup.storage_dir),
+        "PYTHONPATH": str(BACKEND_DIR),
+    }
+    if user_id is not None:
+        env["LH_AGENT_USER_ID"] = str(user_id)
     return {
         "mcpServers": {
             SERVER_NAME: {
                 "type": "stdio",
                 "command": setup.python,
                 "args": ["-m", "app.agent.mcp_server"],
-                "env": {
-                    "LH_DATABASE_URL": setup.database_url,
-                    "LH_ROADMAPS_DIR": str(setup.roadmaps_dir),
-                    "LH_STORAGE_DIR": str(setup.storage_dir),
-                    "PYTHONPATH": str(BACKEND_DIR),
-                },
+                "env": env,
             }
         }
     }
@@ -558,6 +566,7 @@ class ClaudeCodeAgent:
         max_steps: int,
         with_tools: bool,
         web_search: bool = False,
+        user_id: uuid.UUID | None = None,
     ) -> AgentResult:
         if not self.model or self.model.startswith("-"):
             raise ProviderError("the model name cannot start with '-'", "invalid_config")
@@ -569,7 +578,9 @@ class ClaudeCodeAgent:
             config_path: Path | None = None
             if with_tools:
                 config_path = folder / "mcp.json"
-                config_path.write_text(json.dumps(mcp_config(self._setup)), encoding="utf-8")
+                config_path.write_text(
+                    json.dumps(mcp_config(self._setup, user_id)), encoding="utf-8"
+                )
             argv = self.command(system, config_path, web_search)
             env = build_env(
                 os.environ if self._environ is None else self._environ,
@@ -632,7 +643,14 @@ class ClaudeCodeAgent:
             from app.agent.loop import with_web_search  # the loop imports this module
 
             system = with_web_search(system)
-        return self._run(system, conversation, max_steps, with_tools=True, web_search=web_search)
+        return self._run(
+            system,
+            conversation,
+            max_steps,
+            with_tools=True,
+            web_search=web_search,
+            user_id=tools.user_id if tools is not None else None,
+        )
 
     def complete(self, system: str, messages: Sequence[Message], tools: Sequence[ToolSpec]) -> Turn:
         """One answer without any tool (the connection test)."""

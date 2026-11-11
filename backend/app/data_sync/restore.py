@@ -13,9 +13,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ValidationError
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -36,7 +37,7 @@ from app.data_sync.backup import (
     known_migrations,
 )
 from app.db import AgentProvider, AgentSetting, AIProvider, Lesson, Note
-from app.storage import FileStore
+from app.storage import FileStore, release_blob
 
 KEEP_AUTO_BACKUPS = 3
 CHUNK = 1024 * 1024
@@ -173,13 +174,18 @@ def validate(path: Path) -> Parsed:
 
 
 def write_auto_backup(
-    session: Session, store: FileStore, storage_dir: Path, version: str, now: datetime
+    session: Session,
+    user_id: UUID,
+    store: FileStore,
+    storage_dir: Path,
+    version: str,
+    now: datetime,
 ) -> Path:
     folder = storage_dir / "backups"
     folder.mkdir(parents=True, exist_ok=True)
     target = folder / f"auto-{now:%Y%m%d-%H%M%S-%f}.zip"
     with target.open("wb") as handle:
-        build_backup(session, store, version, now, handle)
+        build_backup(session, user_id, store, version, now, handle)
     for old in sorted(folder.glob("auto-*.zip"))[:-KEEP_AUTO_BACKUPS]:
         old.unlink(missing_ok=True)
     return target
@@ -192,11 +198,16 @@ def restore_archive(
     storage_dir: Path,
     version: str,
     now: Callable[[], datetime],
+    user_id: UUID,
 ) -> dict[str, Any]:
-    """Validate, back up the current data, write the files, replace the rows."""
+    """Validate, back up the user's data, write the files, replace the user's rows.
+
+    Notes and providers get new ids (the archive may come from another user or server);
+    only ``user_id``'s rows are deleted. Blobs no note refers to any more are released.
+    """
     parsed = validate(path)
     with factory() as session:
-        write_auto_backup(session, store, storage_dir, version, now())
+        write_auto_backup(session, user_id, store, storage_dir, version, now())
     with zipfile.ZipFile(path) as archive:
         for name in parsed.blob_names:
             key = name.removeprefix("files/")
@@ -207,24 +218,44 @@ def restore_archive(
                 pass
             store.put(key, archive.read(name))
     with factory() as session:
+        old_keys = set(session.scalars(select(Note.storage_key).where(Note.user_id == user_id)))
+        provider_ids = {p.id: uuid4() for p in parsed.providers}
         try:
             for table in (AgentProvider, AgentSetting, Lesson, Note, AIProvider):
-                session.execute(delete(table))
+                session.execute(delete(table).where(table.user_id == user_id))
             session.add_all(
-                AIProvider(**p.model_dump(), api_key_enc=None, key_hint=None, key_kind=None)
+                AIProvider(
+                    **(p.model_dump() | {"id": provider_ids[p.id]}),
+                    user_id=user_id,
+                    api_key_enc=None,
+                    key_hint=None,
+                    key_kind=None,
+                )
                 for p in parsed.providers
             )
-            session.add_all(Note(**n.model_dump()) for n in parsed.notes)
-            session.add_all(Lesson(**item.model_dump()) for item in parsed.lessons)
-            session.add_all(AgentSetting(**s.model_dump()) for s in parsed.switches)
+            session.add_all(
+                Note(**(n.model_dump() | {"id": uuid4()}), user_id=user_id) for n in parsed.notes
+            )
+            session.add_all(Lesson(**item.model_dump(), user_id=user_id) for item in parsed.lessons)
+            session.add_all(
+                AgentSetting(**s.model_dump(), user_id=user_id) for s in parsed.switches
+            )
             session.flush()
-            session.add_all(AgentProvider(**a.model_dump()) for a in parsed.assignments)
+            session.add_all(
+                AgentProvider(
+                    **(a.model_dump() | {"provider_id": provider_ids[a.provider_id]}),
+                    user_id=user_id,
+                )
+                for a in parsed.assignments
+            )
             session.commit()
         except SQLAlchemyError:
             session.rollback()
             raise RestoreRefused(
                 "the archive's data is inconsistent; nothing was changed"
             ) from None
+        for key in old_keys:
+            release_blob(session, store, key)
     return {
         "counts": {
             "notes": len(parsed.notes),

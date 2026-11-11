@@ -1,4 +1,4 @@
-"""Build a backup archive: notes with their files, lessons, providers (no keys), agent data.
+"""Build a backup archive of one user: notes with files, lessons, providers (no keys), agent data.
 
 The archive never holds accounts, sessions, one-time tokens, passwords, API keys or OAuth
 secrets: those tables are not read, and the provider rows are built without key columns.
@@ -118,16 +118,41 @@ def _dump(rows: list[Any], model: type[Row]) -> bytes:
 
 
 def build_backup(
-    session: Session, store: FileStore, app_version: str, now: datetime, out: IO[bytes]
+    session: Session,
+    user_id: uuid.UUID,
+    store: FileStore,
+    app_version: str,
+    now: datetime,
+    out: IO[bytes],
 ) -> dict[str, int]:
-    """Write the archive to ``out``; return the counts."""
-    notes = list(session.scalars(select(Note).order_by(Note.created_at, Note.id)))
-    lessons = list(session.scalars(select(Lesson).order_by(Lesson.node_id)))
-    providers = list(session.scalars(select(AIProvider).order_by(AIProvider.name)))
-    assignments = list(
-        session.scalars(select(AgentProvider).order_by(AgentProvider.agent_id, AgentProvider.role))
+    """Write the archive of ``user_id``'s data to ``out``; return the counts."""
+    notes = list(
+        session.scalars(
+            select(Note).where(Note.user_id == user_id).order_by(Note.created_at, Note.id)
+        )
     )
-    switches = list(session.scalars(select(AgentSetting).order_by(AgentSetting.agent_id)))
+    lessons = list(
+        session.scalars(select(Lesson).where(Lesson.user_id == user_id).order_by(Lesson.node_id))
+    )
+    providers = list(
+        session.scalars(
+            select(AIProvider).where(AIProvider.user_id == user_id).order_by(AIProvider.name)
+        )
+    )
+    assignments = list(
+        session.scalars(
+            select(AgentProvider)
+            .where(AgentProvider.user_id == user_id)
+            .order_by(AgentProvider.agent_id, AgentProvider.role)
+        )
+    )
+    switches = list(
+        session.scalars(
+            select(AgentSetting)
+            .where(AgentSetting.user_id == user_id)
+            .order_by(AgentSetting.agent_id)
+        )
+    )
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as archive:
         written: set[str] = set()
         kept: list[Note] = []

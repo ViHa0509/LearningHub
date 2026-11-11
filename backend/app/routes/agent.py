@@ -13,6 +13,7 @@ from app.agent.messages import Message, ProviderError
 from app.agent.ratelimit import RateLimiter
 from app.agent.resolve import ResolveError, resolve_chain, web_search_enabled
 from app.agent.tools import AgentTools
+from app.auth.current import CurrentUser
 from app.db import get_session
 from app.roadmaps import RoadmapCatalog
 from app.routes.guard import box_of, factory_of, require_app_header
@@ -73,7 +74,10 @@ class ChatOut(BaseModel):
 
 @router.post("/chat", response_model=ChatOut, dependencies=[Depends(require_app_header)])
 def chat(
-    payload: ChatIn, request: Request, session: Annotated[Session, Depends(get_session)]
+    payload: ChatIn,
+    request: Request,
+    session: Annotated[Session, Depends(get_session)],
+    user: CurrentUser,
 ) -> ChatOut:
     agent = AGENTS.get(payload.agent_id)
     if agent is None:
@@ -82,12 +86,12 @@ def chat(
         raise HTTPException(status_code=400, detail="the last message must be the user's")
     try:
         chat_model = resolve_chain(
-            session, box_of(request), factory_of(request), agent.id, payload.provider_id
+            session, user.id, box_of(request), factory_of(request), agent.id, payload.provider_id
         )
     except ResolveError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     limiter: RateLimiter = request.app.state.rate_limiter
-    wait = limiter.acquire()
+    wait = limiter.acquire(str(user.id))
     if wait is not None:
         raise HTTPException(
             status_code=429,
@@ -103,14 +107,14 @@ def chat(
         result = run_agent(
             chat_model,
             conversation,
-            AgentTools(session, catalog),
+            AgentTools(session, catalog, user_id=user.id),
             catalog,
             page,
             request.app.state.settings.agent_max_steps,
             agent.instructions,
             payload.effort,
             [Attachment(name=a.name, text=a.text) for a in payload.attachments],
-            web_search=web_search_enabled(session, agent.id),
+            web_search=web_search_enabled(session, user.id, agent.id),
         )
     except ProviderError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc

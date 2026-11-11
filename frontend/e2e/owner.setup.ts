@@ -20,8 +20,8 @@ setup('create the Owner and save its session', async ({ request, page }) => {
   // First visit (spec: "First visit"): the app offers to create the owner account, with email
   // and password, GitHub (configured on the fake provider) or Google (not configured).
   await page.goto('/')
-  const create = page.getByRole('main', { name: 'Create the owner account' })
-  await expect(create.getByRole('heading', { name: 'Create the owner account' })).toBeVisible()
+  const create = page.getByRole('main', { name: 'Create the admin account' })
+  await expect(create.getByRole('heading', { name: 'Create the admin account' })).toBeVisible()
   for (const label of ['Email', 'Password', 'Confirm password']) {
     await expect(create.getByLabel(label, { exact: true })).toBeVisible()
   }

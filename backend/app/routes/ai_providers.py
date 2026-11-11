@@ -24,12 +24,19 @@ from app.agent.llm.factory import (
     normalize_key,
 )
 from app.agent.llm.logs import event
-from app.agent.llm.params import PROVIDER_TYPES, FieldError, clean_config, validate_config
+from app.agent.llm.params import (
+    CLAUDE_CODE_TYPE,
+    PROVIDER_TYPES,
+    FieldError,
+    clean_config,
+    validate_config,
+)
 from app.agent.llm.urls import Resolver, validate_base_url
 from app.agent.messages import Message
 from app.agent.resolve import settings_of
 from app.agent.secrets import SecretBox, key_hint
-from app.db import AgentProvider, AIProvider, get_session
+from app.auth.current import CurrentUser
+from app.db import AgentProvider, AIProvider, User, get_session
 from app.routes.guard import box_of, factory_of, require_app_header, resolver_of
 
 router = APIRouter(prefix="/api/ai-providers", tags=["ai-providers"])
@@ -40,6 +47,7 @@ MAX_NAME = 100
 MAX_KEY = 500
 MAX_URL = 500
 MAX_MESSAGE = 500
+CLAUDE_CODE_ADMIN_ONLY = "Only the admin can use the Claude Code provider"
 TEST_SYSTEM = "You are a connection test. Answer with one word."
 TEST_PROMPT = "Reply with the word OK."
 
@@ -126,13 +134,15 @@ class ModelsOut(BaseModel):
 # --- helpers ---------------------------------------------------------------------
 
 
-def used_by(session: Session, provider_ids: list[uuid.UUID]) -> dict[uuid.UUID, list[UsedBy]]:
+def used_by(
+    session: Session, user_id: uuid.UUID, provider_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, list[UsedBy]]:
     out: dict[uuid.UUID, list[UsedBy]] = {pid: [] for pid in provider_ids}
     if not provider_ids:
         return out
     rows = session.scalars(
         select(AgentProvider)
-        .where(AgentProvider.provider_id.in_(provider_ids))
+        .where(AgentProvider.user_id == user_id, AgentProvider.provider_id.in_(provider_ids))
         .order_by(AgentProvider.agent_id, AgentProvider.role.desc())
     )
     for row in rows:
@@ -175,12 +185,15 @@ def to_out(row: AIProvider, uses: list[UsedBy]) -> ProviderOut:
     )
 
 
-def out_of(session: Session, row: AIProvider) -> ProviderOut:
-    return to_out(row, used_by(session, [row.id])[row.id])
+def out_of(session: Session, user: User, row: AIProvider) -> ProviderOut:
+    return to_out(row, used_by(session, user.id, [row.id])[row.id])
 
 
-def get_row(session: Session, provider_id: uuid.UUID) -> AIProvider:
-    row = session.get(AIProvider, provider_id)
+def get_row(session: Session, user: User, provider_id: uuid.UUID) -> AIProvider:
+    """The user's own configuration; another user's id answers 404 like a missing one."""
+    row = session.scalars(
+        select(AIProvider).where(AIProvider.id == provider_id, AIProvider.user_id == user.id)
+    ).first()
     if row is None:
         raise HTTPException(status_code=404, detail=f"no AI provider with id {provider_id}")
     return row
@@ -266,8 +279,14 @@ def stored_kind(row: AIProvider | None) -> str | None:
     return row.key_kind or "api_key"
 
 
-def name_taken(session: Session, name: str, exclude: uuid.UUID | None = None) -> None:
-    query = select(AIProvider.id).where(AIProvider.name == name)
+def require_claude_code_access(user: User, provider_type: str) -> None:
+    """The Claude Code type runs the admin's own subscription: members cannot use it."""
+    if provider_type == CLAUDE_CODE_TYPE and user.role != "admin":
+        raise HTTPException(status_code=403, detail=CLAUDE_CODE_ADMIN_ONLY)
+
+
+def name_taken(session: Session, user: User, name: str, exclude: uuid.UUID | None = None) -> None:
+    query = select(AIProvider.id).where(AIProvider.user_id == user.id, AIProvider.name == name)
     if exclude is not None:
         query = query.where(AIProvider.id != exclude)
     if session.scalars(query).first() is not None:
@@ -336,7 +355,7 @@ def run_test(settings: ProviderSettings, factory: ChatModelFactory) -> TestResul
 
 
 @router.get("/types", response_model=list[TypeOut])
-def list_types() -> list[TypeOut]:
+def list_types(user: CurrentUser) -> list[TypeOut]:
     return [
         TypeOut(
             type=info.type,
@@ -352,15 +371,22 @@ def list_types() -> list[TypeOut]:
             ],
         )
         for info in PROVIDER_TYPES.values()
+        if info.type != CLAUDE_CODE_TYPE or user.role == "admin"
     ]
 
 
 @router.get("", response_model=list[ProviderOut])
-def list_providers(session: Annotated[Session, Depends(get_session)]) -> list[ProviderOut]:
+def list_providers(
+    session: Annotated[Session, Depends(get_session)], user: CurrentUser
+) -> list[ProviderOut]:
     rows = list(
-        session.scalars(select(AIProvider).order_by(AIProvider.created_at, AIProvider.name))
+        session.scalars(
+            select(AIProvider)
+            .where(AIProvider.user_id == user.id)
+            .order_by(AIProvider.created_at, AIProvider.name)
+        )
     )
-    uses = used_by(session, [r.id for r in rows])
+    uses = used_by(session, user.id, [r.id for r in rows])
     return [to_out(row, uses[row.id]) for row in rows]
 
 
@@ -369,8 +395,12 @@ def test_unsaved(
     payload: ProviderTestIn,
     request: Request,
     session: Annotated[Session, Depends(get_session)],
+    user: CurrentUser,
 ) -> TestResult:
-    stored = get_row(session, payload.provider_id) if payload.provider_id else None
+    require_claude_code_access(user, payload.provider_type.strip())
+    stored = get_row(session, user, payload.provider_id) if payload.provider_id else None
+    if stored is not None:
+        require_claude_code_access(user, stored.provider_type)
     values = check(
         payload,
         resolver_of(request),
@@ -400,22 +430,26 @@ def test_unsaved(
 
 @router.get("/{provider_id}", response_model=ProviderOut)
 def read_provider(
-    provider_id: uuid.UUID, session: Annotated[Session, Depends(get_session)]
+    provider_id: uuid.UUID, session: Annotated[Session, Depends(get_session)], user: CurrentUser
 ) -> ProviderOut:
-    return out_of(session, get_row(session, provider_id))
+    return out_of(session, user, get_row(session, user, provider_id))
 
 
 @router.post("", response_model=ProviderOut, status_code=201, dependencies=guarded)
 def create_provider(
-    payload: ProviderIn, request: Request, session: Annotated[Session, Depends(get_session)]
+    payload: ProviderIn,
+    request: Request,
+    session: Annotated[Session, Depends(get_session)],
+    user: CurrentUser,
 ) -> ProviderOut:
+    require_claude_code_access(user, payload.provider_type.strip())
     values = check(payload, resolver_of(request), has_stored_key=False)
-    name_taken(session, values.name)
-    row = AIProvider(id=uuid.uuid4())
+    name_taken(session, user, values.name)
+    row = AIProvider(id=uuid.uuid4(), user_id=user.id)
     apply(row, values, box_of(request), payload.is_active)
     session.add(row)
     commit_or_conflict(session, values.name)
-    return out_of(session, row)
+    return out_of(session, user, row)
 
 
 @router.put("/{provider_id}", response_model=ProviderOut, dependencies=guarded)
@@ -424,27 +458,30 @@ def update_provider(
     payload: ProviderIn,
     request: Request,
     session: Annotated[Session, Depends(get_session)],
+    user: CurrentUser,
 ) -> ProviderOut:
-    row = get_row(session, provider_id)
+    row = get_row(session, user, provider_id)
+    require_claude_code_access(user, row.provider_type)
+    require_claude_code_access(user, payload.provider_type.strip())
     values = check(
         payload,
         resolver_of(request),
         has_stored_key=row.api_key_enc is not None,
         stored_key_kind=stored_kind(row),
     )
-    name_taken(session, values.name, exclude=row.id)
+    name_taken(session, user, values.name, exclude=row.id)
     apply(row, values, box_of(request), payload.is_active)
     commit_or_conflict(session, values.name)
     session.refresh(row)
-    return out_of(session, row)
+    return out_of(session, user, row)
 
 
 @router.delete("/{provider_id}", status_code=204, response_model=None, dependencies=guarded)
 def delete_provider(
-    provider_id: uuid.UUID, session: Annotated[Session, Depends(get_session)]
+    provider_id: uuid.UUID, session: Annotated[Session, Depends(get_session)], user: CurrentUser
 ) -> Response:
-    row = get_row(session, provider_id)
-    uses = used_by(session, [row.id])[row.id]
+    row = get_row(session, user, provider_id)
+    uses = used_by(session, user.id, [row.id])[row.id]
     if uses:
         names = ", ".join(f"{u.agent_name} ({u.role})" for u in uses)
         return JSONResponse(
@@ -462,9 +499,13 @@ def delete_provider(
 
 @router.post("/{provider_id}/test", response_model=TestResult, dependencies=guarded)
 def test_saved(
-    provider_id: uuid.UUID, request: Request, session: Annotated[Session, Depends(get_session)]
+    provider_id: uuid.UUID,
+    request: Request,
+    session: Annotated[Session, Depends(get_session)],
+    user: CurrentUser,
 ) -> TestResult:
-    row = get_row(session, provider_id)
+    row = get_row(session, user, provider_id)
+    require_claude_code_access(user, row.provider_type)
     try:
         settings = settings_of(row, box_of(request))
     except ProviderError as exc:
@@ -490,9 +531,13 @@ def test_saved(
 
 @router.get("/{provider_id}/models", response_model=ModelsOut)
 def list_models(
-    provider_id: uuid.UUID, request: Request, session: Annotated[Session, Depends(get_session)]
+    provider_id: uuid.UUID,
+    request: Request,
+    session: Annotated[Session, Depends(get_session)],
+    user: CurrentUser,
 ) -> ModelsOut | JSONResponse:
-    row = get_row(session, provider_id)
+    row = get_row(session, user, provider_id)
+    require_claude_code_access(user, row.provider_type)
     try:
         model = factory_of(request).create(settings_of(row, box_of(request)))
         return ModelsOut(models=model.list_models())

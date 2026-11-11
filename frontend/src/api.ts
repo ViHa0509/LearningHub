@@ -362,9 +362,12 @@ export interface AuthStatus {
   mail: { mode: 'smtp' | 'outbox' }
 }
 
-/** The signed-in Owner (GET /api/auth/me). */
+export type Role = 'admin' | 'member'
+
+/** The signed-in user (GET /api/auth/me). */
 export interface Me {
   id: string
+  role: Role
   email: string
   email_verified: boolean
   display_name: string | null
@@ -372,6 +375,33 @@ export interface Me {
   avatar_url: string | null
   has_password: boolean
   linked: string[]
+}
+
+/** A row of the Users page (GET /api/admin/users). */
+export interface AdminUser {
+  id: string
+  email: string
+  display_name: string | null
+  role: Role
+  created_at: string
+  last_seen_at: string | null
+  disabled: boolean
+}
+
+/** A pending invitation (GET /api/admin/invitations). */
+export interface Invitation {
+  id: string
+  email: string
+  created_at: string
+  expires_at: string
+  /** Only in the answer of creating it, and only when the server has no SMTP. */
+  invite_url?: string
+}
+
+/** What an invitation link is for (GET /api/auth/invitation?token=). */
+export interface InvitationInfo {
+  email: string
+  expires_at: string
 }
 
 export class ApiError extends Error {
@@ -561,6 +591,17 @@ export const api = {
   consumeMagicLink: (token: string) => request<Me>('/api/auth/magic/consume', json('POST', { token })),
   verifyEmail: (token: string) => request<{ email_verified: boolean }>('/api/auth/verify', json('POST', { token })),
   resendVerification: () => request<{ message: string }>('/api/auth/verify/resend', { method: 'POST' }),
+  adminUsers: () => request<AdminUser[]>('/api/admin/users'),
+  adminInvitations: () => request<Invitation[]>('/api/admin/invitations'),
+  invite: (email: string) => request<Invitation>('/api/admin/invitations', json('POST', { email })),
+  revokeInvitation: (id: string) => request<void>(`/api/admin/invitations/${id}`, { method: 'DELETE' }),
+  setUserDisabled: (id: string, disabled: boolean) =>
+    request<AdminUser>(`/api/admin/users/${id}/disabled`, json('PUT', { disabled })),
+  deleteUser: (id: string, confirmEmail: string) =>
+    request<void>(`/api/admin/users/${id}`, json('DELETE', { confirm_email: confirmEmail })),
+  invitation: (token: string) => request<InvitationInfo>(`/api/auth/invitation?token=${encodeURIComponent(token)}`),
+  acceptInvitation: (body: { token: string; password: string; display_name?: string }) =>
+    request<Me>('/api/auth/invitation/accept', json('POST', body)),
   signInSettings: () => request<SignInSettings>('/api/settings/sign-in'),
   /** client_secret is left out to keep the secret already saved. */
   saveSignIn: (provider: OAuthProvider, body: { client_id: string; client_secret?: string }) =>
@@ -610,5 +651,7 @@ export const queryKeys = {
   authStatus: ['auth', 'status'] as const,
   me: ['auth', 'me'] as const,
   signInSettings: ['settings', 'sign-in'] as const,
+  adminUsers: ['admin', 'users'] as const,
+  adminInvitations: ['admin', 'invitations'] as const,
   syncKey: ['data', 'sync-key'] as const,
 }

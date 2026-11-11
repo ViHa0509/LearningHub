@@ -6,8 +6,9 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Res
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.auth.current import CurrentUser
 from app.config import Settings
-from app.db import Note, get_session
+from app.db import Note, User, get_session
 from app.extract import UndecodableError, decode_html, extract
 from app.lesson_pdf import PdfImportError, extract_pdf, pdf_note_html
 from app.roadmaps import RoadmapCatalog
@@ -21,7 +22,7 @@ from app.schemas import (
     NoteOut,
     NoteUpdate,
 )
-from app.storage import FileStore, blob_key, sha256_hex
+from app.storage import FileStore, blob_key, release_blob, sha256_hex
 
 router = APIRouter(prefix="/api/notes", tags=["notes"])
 
@@ -77,8 +78,9 @@ def note_detail(note: Note, catalog: RoadmapCatalog) -> NoteDetail:
     )
 
 
-def require_note(session: Session, note_id: UUID) -> Note:
-    note = session.get(Note, note_id)
+def require_note(session: Session, user: User, note_id: UUID) -> Note:
+    """The user's note; another user's id answers 404 exactly like a missing one."""
+    note = session.scalar(select(Note).where(Note.id == note_id, Note.user_id == user.id))
     if note is None:
         raise HTTPException(status_code=404, detail="note not found")
     return note
@@ -92,6 +94,7 @@ def rejected(filename: str, reason: str) -> ImportOutcome:
 def import_notes(
     request: Request,
     session: SessionDep,
+    user: CurrentUser,
     files: Annotated[list[UploadFile], File()],
 ) -> ImportResult:
     catalog = get_catalog(request)
@@ -132,7 +135,9 @@ def import_notes(
                 continue
 
         sha = sha256_hex(data)
-        existing = session.scalar(select(Note).where(Note.content_sha256 == sha))
+        existing = session.scalar(
+            select(Note).where(Note.user_id == user.id, Note.content_sha256 == sha)
+        )
         if existing is not None:
             results.append(
                 ImportOutcome(
@@ -145,6 +150,7 @@ def import_notes(
         key = blob_key(sha)
         store.put(key, data)
         note = Note(
+            user_id=user.id,
             title=extracted.title,
             body_text=extracted.text,
             original_name=filename,
@@ -166,6 +172,7 @@ def import_notes(
 def list_notes(
     request: Request,
     session: SessionDep,
+    user: CurrentUser,
     node: Annotated[str | None, Query()] = None,
     unsorted: Annotated[bool, Query()] = False,
     archived: Annotated[bool, Query()] = False,
@@ -174,12 +181,14 @@ def list_notes(
     if archived and node is None and not unsorted:
         query = (
             select(Note)
-            .where(Note.archived_at.is_not(None))
+            .where(Note.user_id == user.id, Note.archived_at.is_not(None))
             .order_by(Note.archived_at.desc(), Note.id)
         )
     else:
         query = (
-            select(Note).where(Note.archived_at.is_(None)).order_by(Note.created_at.desc(), Note.id)
+            select(Note)
+            .where(Note.user_id == user.id, Note.archived_at.is_(None))
+            .order_by(Note.created_at.desc(), Note.id)
         )
     if node is not None:
         query = query.where(Note.node_id == node)
@@ -190,16 +199,18 @@ def list_notes(
 
 
 @router.get("/{note_id}", response_model=NoteDetail)
-def read_note(note_id: UUID, request: Request, session: SessionDep) -> NoteDetail:
-    return note_detail(require_note(session, note_id), get_catalog(request))
+def read_note(
+    note_id: UUID, request: Request, session: SessionDep, user: CurrentUser
+) -> NoteDetail:
+    return note_detail(require_note(session, user, note_id), get_catalog(request))
 
 
 @router.patch("/{note_id}", response_model=NoteDetail)
 def update_note(
-    note_id: UUID, update: NoteUpdate, request: Request, session: SessionDep
+    note_id: UUID, update: NoteUpdate, request: Request, session: SessionDep, user: CurrentUser
 ) -> NoteDetail:
     catalog = get_catalog(request)
-    note = require_note(session, note_id)
+    note = require_note(session, user, note_id)
     fields = update.model_fields_set
 
     if "title" in fields:
@@ -227,12 +238,16 @@ def update_note(
     dependencies=[Depends(require_app_header)],
 )
 def replace_content(
-    note_id: UUID, update: NoteContentUpdate, request: Request, session: SessionDep
+    note_id: UUID,
+    update: NoteContentUpdate,
+    request: Request,
+    session: SessionDep,
+    user: CurrentUser,
 ) -> NoteDetail:
     catalog = get_catalog(request)
     store = get_store(request)
     limit = get_settings_from(request).max_upload_bytes
-    note = require_note(session, note_id)
+    note = require_note(session, user, note_id)
 
     html = update.html.strip()
     if not html:
@@ -248,7 +263,9 @@ def replace_content(
     sha = sha256_hex(data)
     if sha == note.content_sha256:
         return note_detail(note, catalog)
-    other = session.scalar(select(Note.id).where(Note.content_sha256 == sha))
+    other = session.scalar(
+        select(Note.id).where(Note.user_id == user.id, Note.content_sha256 == sha)
+    )
     if other is not None:
         raise HTTPException(status_code=409, detail="another note already has this exact page")
 
@@ -261,34 +278,35 @@ def replace_content(
     note.body_text = extract(html, note.original_name).text
     session.commit()
     session.refresh(note)
-    if (
-        old_key != key
-        and session.scalar(select(Note.id).where(Note.storage_key == old_key)) is None
-    ):
-        store.delete(old_key)
+    if old_key != key:
+        release_blob(session, store, old_key)
     return note_detail(note, catalog)
 
 
 @router.delete("/{note_id}", status_code=204)
-def delete_note(note_id: UUID, request: Request, session: SessionDep) -> Response:
-    note = require_note(session, note_id)
+def delete_note(
+    note_id: UUID, request: Request, session: SessionDep, user: CurrentUser
+) -> Response:
+    note = require_note(session, user, note_id)
     key = note.storage_key
     session.delete(note)
     session.commit()
-    get_store(request).delete(key)
+    release_blob(session, get_store(request), key)
     return Response(status_code=204)
 
 
 @router.get("/{note_id}/print")
-def print_note(note_id: UUID, request: Request, session: SessionDep) -> Response:
+def print_note(note_id: UUID, request: Request, session: SessionDep, user: CurrentUser) -> Response:
     """The note's page in its own tab, isolated like the original, that opens the print dialog."""
-    note = require_note(session, note_id)
+    note = require_note(session, user, note_id)
     data = get_store(request).get(note.storage_key) + PRINT_SCRIPT
     return Response(content=data, media_type="text/html", headers=PRINT_HEADERS)
 
 
 @router.get("/{note_id}/original")
-def read_original(note_id: UUID, request: Request, session: SessionDep) -> Response:
-    note = require_note(session, note_id)
+def read_original(
+    note_id: UUID, request: Request, session: SessionDep, user: CurrentUser
+) -> Response:
+    note = require_note(session, user, note_id)
     data = get_store(request).get(note.storage_key)
     return Response(content=data, media_type="text/html", headers=ORIGINAL_HEADERS)

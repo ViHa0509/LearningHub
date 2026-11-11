@@ -742,11 +742,11 @@ details.provider-section[open] > summary { margin-bottom: 10px; }
 .news-more { display: block; margin: 20px auto 0; }
 
 /* Auth pages: a centered card on the app background (login, create owner, links from emails). */
-.auth-page { flex: 1; min-height: 0; overflow: auto; display: grid; place-items: center; padding: 48px 16px; }
+.auth-page { position: relative; isolation: isolate; flex: 1; min-height: 0; overflow: auto; display: grid; place-items: center; padding: 48px 16px; }
 .auth-card {
   width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 12px;
   padding: 32px; background: var(--surface); border: 1px solid var(--border);
-  border-radius: 12px; box-shadow: var(--shadow-pop);
+  border-radius: 12px; box-shadow: var(--shadow-pop); position: relative; z-index: 1;
 }
 .auth-mark { width: 56px; height: 56px; align-self: center; }
 .auth-mark.for-light { display: var(--brand-light); }
@@ -798,3 +798,10 @@ button.auth-provider:disabled { color: var(--muted); border-color: var(--border)
 
 /* Settings forms (Sign-in, Data & sync): a disabled button must look disabled. */
 .settings-page button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Settings > Users */
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.plain-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.users-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+.users-table th, .users-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.account-role { margin: 0 0 6px; }

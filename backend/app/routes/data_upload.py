@@ -39,14 +39,17 @@ def require_sync_key(request: Request, db: Annotated[Session, Depends(get_sessio
     header = request.headers.get("authorization", "")
     scheme, _, key = header.partition(" ")
     valid = False
+    owner: uuid.UUID | None = None
     if scheme.lower() == "bearer" and key.strip():
         wanted = hash_key(key.strip()).encode("ascii")
         now = clock_of(request)()
         for row in db.scalars(select(SyncKey)):
             if hmac.compare_digest(wanted, row.token_hash.encode("ascii")) and row.expires_at > now:
                 valid = True
-    if not valid:
+                owner = row.user_id
+    if not valid or owner is None:
         raise HTTPException(status_code=401, detail=KEY_ERROR)
+    request.state.sync_user_id = owner
 
 
 router = APIRouter(
@@ -137,6 +140,6 @@ def finish_upload(upload_id: str, body: FinishIn, request: Request) -> dict[str,
             raise HTTPException(
                 status_code=422, detail="the upload does not match its checksum; send it again"
             )
-        return run_restore(request, joined)
+        return run_restore(request, joined, request.state.sync_user_id)
     finally:
         shutil.rmtree(folder, ignore_errors=True)

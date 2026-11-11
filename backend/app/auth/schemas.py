@@ -30,6 +30,7 @@ class MeOut(BaseModel):
     id: UUID
     email: str
     email_verified: bool
+    role: str
     display_name: str | None
     bio: str | None
     avatar_url: str | None
@@ -64,6 +65,17 @@ class TokenIn(BaseModel):
 class ResetIn(BaseModel):
     token: Token
     password: Password
+
+
+class InvitationInfo(BaseModel):
+    email: str
+    expires_at: datetime
+
+
+class AcceptIn(BaseModel):
+    token: Token
+    password: Password
+    display_name: str | None = Field(default=None, max_length=200)
 
 
 class MessageOut(BaseModel):

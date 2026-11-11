@@ -62,3 +62,28 @@ describe('home page', () => {
     expect(await screen.findByTestId('node-backend/caching')).toBeInTheDocument()
   })
 })
+
+describe('home page decoration (visual-polish)', () => {
+  it('keeps each card a link named by its title, with its progress label', async () => {
+    installFakeApi([makeNote('Images', 'devops/docker')])
+    renderApp()
+    const card = await screen.findByRole('link', { name: /^DevOps/ })
+    expect(card).toHaveAttribute('href', '#/roadmap/devops')
+    expect(card).toHaveAccessibleName('DevOps 1 of 2 topics with notes')
+    expect(within(card).getByLabelText('1 of 2 topics with notes')).toHaveTextContent('1 / 2 topics')
+    // The ticker exposes the final number; the beam only shows while hovered or focused.
+    expect(within(card).getByLabelText('1')).toBeInTheDocument()
+    expect(card.parentElement?.querySelector('.mu-beam')).toBeNull()
+  })
+
+  it('shows a decorative border beam while a card has the keyboard focus, and takes it away on blur', async () => {
+    installFakeApi()
+    const { user } = renderApp()
+    const card = await screen.findByRole('link', { name: /^DevOps/ })
+    await user.hover(card)
+    const beam = card.parentElement?.querySelector('.mu-beam')
+    expect(beam).toHaveAttribute('aria-hidden', 'true')
+    await user.unhover(card)
+    expect(card.parentElement?.querySelector('.mu-beam')).toBeNull()
+  })
+})

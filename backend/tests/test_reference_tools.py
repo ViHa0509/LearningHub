@@ -12,6 +12,7 @@ from app.agent.loop import Page, system_prompt
 from app.agent.tools import AgentTools
 from app.db import NodeResource
 from app.resources.fetch import Fetched, FetchError
+from tests.conftest import user_id_of
 
 NODE = "frontend/html"
 
@@ -55,7 +56,12 @@ def session(client: TestClient) -> Iterator[Session]:
 
 
 def tools_with(client: TestClient, session: Session, fetch: FakeFetcher) -> AgentTools:
-    return AgentTools(session, client.app.state.catalog, fetch=fetch)  # type: ignore[attr-defined]
+    return AgentTools(
+        session,
+        client.app.state.catalog,  # type: ignore[attr-defined]
+        fetch=fetch,
+        user_id=user_id_of(client.app),
+    )
 
 
 def result(tools: AgentTools, name: str, **args: str) -> dict[str, object]:
