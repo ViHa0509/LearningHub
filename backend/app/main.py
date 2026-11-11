@@ -42,7 +42,7 @@ from app.routes import (
     resources,
     settings_signin,
 )
-from app.storage import FileStore, LocalFileStore, SupabaseFileStore
+from app.storage import FileStore, LocalFileStore, StorageError, SupabaseFileStore
 
 # Routes whose 422 answers use ``detail: [{field, msg}]`` (the provider settings forms).
 FIELD_ERROR_PREFIXES = ("/api/ai-providers", "/api/agents")
@@ -154,6 +154,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             loc = [str(p) for p in error.get("loc", ()) if p != "body" and not isinstance(p, int)]
             detail.append({"field": loc[-1] if loc else "body", "msg": str(error.get("msg"))})
         return JSONResponse(status_code=422, content={"detail": detail})
+
+    @app.exception_handler(StorageError)
+    async def storage_refused(request: Request, exc: StorageError) -> Response:
+        # The message holds only the status and a fixed reason (app/storage.py).
+        logging.getLogger(__name__).warning("file storage error on %s: %s", request.url.path, exc)
+        return JSONResponse(status_code=502, content={"detail": f"File storage: {exc}"})
 
     @app.get("/api/health")
     def health() -> JSONResponse:

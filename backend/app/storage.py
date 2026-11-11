@@ -128,36 +128,61 @@ class SupabaseFileStore:
             content=data,
         )
         if not response.is_success:
-            raise StorageError(f"storage upload failed (HTTP {response.status_code})")
+            raise StorageError(self._failure("upload", response))
 
     @staticmethod
-    def _not_found(response: httpx2.Response) -> bool:
-        """Supabase answers a missing object with 404, or with 400 and statusCode "404"."""
-        if response.status_code == 404:
-            return True
-        if response.status_code != 400:
-            return False
+    def _body(response: httpx2.Response) -> dict[str, object]:
         try:
             body = response.json()
         except ValueError:
-            return False
-        return isinstance(body, dict) and (
-            str(body.get("statusCode")) == "404" or body.get("error") == "not_found"
+            return {}
+        return body if isinstance(body, dict) else {}
+
+    @classmethod
+    def _bucket_missing(cls, response: httpx2.Response) -> bool:
+        body = cls._body(response)
+        return "bucket not found" in (
+            str(body.get("error")).lower(),
+            str(body.get("message")).lower(),
         )
+
+    @classmethod
+    def _not_found(cls, response: httpx2.Response) -> bool:
+        """A missing object: 404, or 400 with statusCode "404" (but not a missing bucket)."""
+        if response.status_code not in (400, 404) or cls._bucket_missing(response):
+            return False
+        if response.status_code == 404:
+            return True
+        body = cls._body(response)
+        return str(body.get("statusCode")) == "404" or body.get("error") == "not_found"
+
+    @classmethod
+    def _failure(cls, action: str, response: httpx2.Response) -> str:
+        """The error message: the status and a fixed reason, never text from the response."""
+        if cls._bucket_missing(response):
+            reason = ": the bucket does not exist"
+        elif response.status_code in (401, 403) or str(cls._body(response).get("statusCode")) in (
+            "401",
+            "403",
+        ):
+            reason = ": the service key was refused"
+        else:
+            reason = ""
+        return f"storage {action} failed (HTTP {response.status_code}){reason}"
 
     def get(self, key: str) -> bytes:
         response = self._call("GET", self._object_url(key))
         if self._not_found(response):
             raise FileNotFoundError(key)
         if not response.is_success:
-            raise StorageError(f"storage read failed (HTTP {response.status_code})")
+            raise StorageError(self._failure("read", response))
         return response.content
 
     def delete(self, key: str) -> None:
         check_key(key)
         response = self._call("DELETE", self._base, json={"prefixes": [key]})
         if not response.is_success and not self._not_found(response):
-            raise StorageError(f"storage delete failed (HTTP {response.status_code})")
+            raise StorageError(self._failure("delete", response))
 
 
 def release_blob(db: Session, store: FileStore, key: str) -> None:

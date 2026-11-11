@@ -212,3 +212,43 @@ def test_another_400_is_a_storage_error() -> None:
     store = store_with(lambda request: httpx2.Response(400, json={"statusCode": "400"}))
     with pytest.raises(StorageError):
         store.get("blobs/ab/x.html")
+
+
+def test_a_missing_bucket_is_a_storage_error_that_says_so() -> None:
+    body = {"statusCode": "404", "error": "Bucket not found", "message": "Bucket not found"}
+    store = store_with(lambda request: httpx2.Response(400, json=body))
+    for action in (lambda: store.get(KEY), lambda: store.put(KEY, b"x"), lambda: store.delete(KEY)):
+        with pytest.raises(StorageError, match="the bucket does not exist"):
+            action()
+
+
+def test_a_refused_service_key_is_named() -> None:
+    body = {"statusCode": "403", "error": "Unauthorized", "message": "invalid signature"}
+    store = store_with(lambda request: httpx2.Response(400, json=body))
+    with pytest.raises(StorageError, match="the service key was refused") as raised:
+        store.put(KEY, b"x")
+    assert "invalid signature" not in str(raised.value)
+
+
+def test_a_storage_error_answers_502_with_the_reason(settings: Settings) -> None:
+    app = create_app(settings)
+    app.state.store = FakeSupabase().store()
+    app.state.url_resolver = fake_resolver()
+    app.state.llm_factory = NoNetworkFactory()
+    page = b"<html><head><title>Kept</title></head><body>x</body></html>"
+    with signed_in_client(app, headers={"X-LearningHub": "1"}) as client:
+        imported = client.post(
+            "/api/notes/import", files=[("files", ("k.html", page, "text/html"))]
+        )
+        note = imported.json()["results"][0]["note"]
+        app.state.store = store_with(
+            lambda request: httpx2.Response(
+                400, json={"statusCode": "404", "error": "Bucket not found"}
+            )
+        )
+        answer = client.get(f"/api/notes/{note['id']}/original")
+    app.state.engine.dispose()
+    assert answer.status_code == 502
+    assert answer.json()["detail"] == (
+        "File storage: storage read failed (HTTP 400): the bucket does not exist"
+    )
