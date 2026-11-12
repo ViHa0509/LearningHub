@@ -28,6 +28,17 @@ describe('lesson PDF import', () => {
     vi.restoreAllMocks()
   })
 
+  it('refuses a PDF over the server limit before sending it', async () => {
+    const state = installFakeApi()
+    state.auth.maxUploadBytes = 4 * 1024 * 1024
+    const { lesson, upload } = await openDocker(state)
+
+    await upload(new File([new Uint8Array(4 * 1024 * 1024 + 1)], 'huge.pdf', { type: 'application/pdf' }))
+
+    expect(await within(lesson).findByRole('alert')).toHaveTextContent('Could not import huge.pdf: larger than 4 MB')
+    expect(state.calls.some((c) => c.url === '/api/lessons/extract-pdf')).toBe(false)
+  })
+
   it('opens the PDF text in the editor and saves it only on Save', async () => {
     const state = installFakeApi()
     state.extractPdf = () => ({ markdown: 'Docker images\n\n- layers', pages: 1, truncated: false, warning: null })

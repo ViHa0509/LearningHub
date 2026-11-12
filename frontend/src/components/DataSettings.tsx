@@ -73,8 +73,12 @@ function RestoreCard() {
   const client = useQueryClient()
   const [file, setFile] = useState<File | null>(null)
   const [confirm, setConfirm] = useState('')
+  const [progress, setProgress] = useState<{ part: number; parts: number } | null>(null)
   const restore = useMutation({
-    mutationFn: (f: File) => api.restoreBackup(f),
+    mutationFn: (f: File) => {
+      setProgress(null)
+      return api.restoreBackup(f, setProgress)
+    },
     // The data changed under every page.
     onSuccess: () => client.invalidateQueries(),
   })
@@ -122,7 +126,11 @@ function RestoreCard() {
           <button type="submit" className="primary" disabled={!ready}>
             Restore
           </button>
-          {restore.isPending && <span className="muted">Restoring…</span>}
+          {restore.isPending && (
+            <span className="muted" role="status">
+              {progress ? `Uploading part ${progress.part} of ${progress.parts}` : 'Restoring…'}
+            </span>
+          )}
         </div>
       </form>
       {restore.data && <ResultSummary title="Restored" result={restore.data} />}

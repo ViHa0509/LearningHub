@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import Settings
 from app.db import get_session
+from app.job_status import load_status, save_status
 from app.resources.mapping import ResourceMapping
 from app.resources.store import node_resources
 from app.resources.sync import SOURCE, SyncJob, SyncJobs
@@ -27,6 +28,10 @@ def _mappings(request: Request) -> dict[str, ResourceMapping]:
 def _jobs(request: Request) -> SyncJobs:
     jobs: SyncJobs = request.app.state.resource_sync
     return jobs
+
+
+def _job_key(domain: str) -> str:
+    return f"job.resources.{domain}"
 
 
 def _status(job: SyncJob) -> ResourceSyncStatus:
@@ -55,17 +60,24 @@ def start_sync(payload: ResourceSyncRequest, request: Request) -> ResourceSyncSt
     if started:
         settings: Settings = request.app.state.settings
         sessions: sessionmaker[Session] = request.app.state.session_factory
-        threading.Thread(
-            target=jobs.run,
-            args=(mapping, settings, sessions, request.app.state.resource_getter),
-            name=f"resource-sync-{mapping.domain}",
-            daemon=True,
-        ).start()
+        args = (mapping, settings, sessions, request.app.state.resource_getter)
+        if settings.serverless:
+            # No thread outlives the answer there: run now and save the final status, which
+            # another instance may be asked for.
+            jobs.run(*args)
+            job = jobs.status(mapping.domain)
+            save_status(sessions, _job_key(mapping.domain), SyncJob, job)
+        else:
+            threading.Thread(
+                target=jobs.run, args=args, name=f"resource-sync-{mapping.domain}", daemon=True
+            ).start()
     return _status(job)
 
 
 @router.get("/sync/{domain}", response_model=ResourceSyncStatus)
-def sync_status(domain: str, request: Request) -> ResourceSyncStatus:
+def sync_status(
+    domain: str, request: Request, session: Annotated[Session, Depends(get_session)]
+) -> ResourceSyncStatus:
     """A roadmap without a mapping is "unavailable" (200, so lesson pages log no error);
     a domain that is not in the catalog is 404."""
     if domain not in _mappings(request):
@@ -82,6 +94,10 @@ def sync_status(domain: str, request: Request) -> ResourceSyncStatus:
             started_at=None,
             finished_at=None,
         )
+    if request.app.state.settings.serverless:
+        saved = load_status(session, _job_key(domain), SyncJob)
+        if saved is not None:
+            return _status(saved)
     return _status(_jobs(request).status(domain))
 
 

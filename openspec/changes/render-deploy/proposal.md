@@ -1,5 +1,7 @@
 ## Why
 
+> Superseded in part (2026-11-12): Render sleeps when idle and takes about a minute to start, so the hosted copy moves to Vercel in `vercel-deploy`. The Supabase file store, `$PORT` and invitation links from this change stay.
+
 The public copy (`https://learninghub.vihc0509.workers.dev`) is served from the owner's PC through a Quick Tunnel, so it is offline whenever that PC is off. The owner wants it always available, for free and without a credit card (2026-11-11). Render's free web service runs our Docker image with no card. It has no persistent disk and sleeps when idle, so the database moves to Supabase Postgres (which the owner already has) and note files move to Supabase Storage.
 
 ## What Changes

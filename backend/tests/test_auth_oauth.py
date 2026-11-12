@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 from sqlalchemy import create_engine, text
 
+from app.auth.oauth import pkce_challenge
 from app.config import Settings
 from tests.auth_fakes import EMAIL, PASSWORD, AuthKit, ProviderState, auth_kit, fake_provider
 from tests.auth_fakes import provider_settings as provider_values
@@ -286,3 +287,71 @@ def test_oauth_never_leaks_tokens(
         assert secret not in caplog.text
         assert secret not in response.headers["location"]
     assert "fake-access-token-123" not in okit.client.get("/api/auth/me").text
+
+
+# Scenario: Callback on another instance
+def test_callback_completes_on_another_instance(
+    settings_factory: Callable[..., Settings], provider: tuple[str, ProviderState]
+) -> None:
+    base, state = provider
+    values = provider_values(base)
+    with (
+        auth_kit(settings_factory(**values)) as first,
+        auth_kit(settings_factory(**values)) as second,
+    ):
+        query = start(first.client, "github", "#/notes")
+        second.client.cookies.set(
+            "lh_oauth", first.client.cookies.get("lh_oauth"), path="/api/auth/oauth"
+        )
+        response = approve(second.client, state, "github", query)
+        assert response.headers["location"] == f"{APP}/#/notes"
+        assert "lh_session=" in response.headers["set-cookie"]
+        # Used once: the first instance no longer has it either.
+        assert error_of(approve(first.client, state, "github", query)) == "state_mismatch"
+
+
+# Scenario: Too old
+def test_a_callback_after_ten_minutes_is_refused_and_removed(
+    okit: AuthKit, provider: tuple[str, ProviderState]
+) -> None:
+    _, state = provider
+    query = start(okit.client, "github")
+    assert count("SELECT count(*) FROM oauth_pending") == 1
+    okit.clock.advance(minutes=11)
+    assert error_of(approve(okit.client, state, "github", query)) == "state_mismatch"
+    assert count("SELECT count(*) FROM oauth_pending") == 0
+    assert count("SELECT count(*) FROM sessions") == 0
+
+
+def test_only_a_hash_and_an_encrypted_verifier_are_stored(okit: AuthKit) -> None:
+    query = start(okit.client, "github")
+    key = okit.client.cookies.get("lh_oauth")
+    engine = create_engine(TEST_DATABASE_URL)
+    with engine.connect() as connection:
+        row = connection.execute(
+            text("SELECT key_hash, state, verifier_enc FROM oauth_pending")
+        ).one()
+    engine.dispose()
+    assert key and row.key_hash != key and len(row.key_hash) == 64
+    assert row.state == query["state"]
+    # The stored verifier is not the one the challenge was made from.
+    assert pkce_challenge(row.verifier_enc) != query["code_challenge"]
+    assert pkce_challenge(okit.app.state.box.decrypt(row.verifier_enc)) == query["code_challenge"]
+
+
+def test_started_sign_ins_are_capped(okit: AuthKit, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.auth.oauth.MAX_PENDING", 3)
+    store = okit.app.state.oauth_pending
+    keys = []
+    for _ in range(5):
+        keys.append(store.start("github", "#/")[0])
+        okit.clock.advance(seconds=1)
+    assert count("SELECT count(*) FROM oauth_pending") == 3
+    # The oldest were dropped, the newest still work.
+    assert store.take(keys[0]) is None
+    assert store.take(keys[4]) is not None
+
+
+def test_status_tells_the_upload_limit(settings_factory: Callable[..., Settings]) -> None:
+    with auth_kit(settings_factory(max_upload_bytes=4 * 1024 * 1024)) as small:
+        assert small.client.get("/api/auth/status").json()["max_upload_bytes"] == 4194304

@@ -3,6 +3,7 @@ import { useRef, useState } from 'react'
 import Markdown from 'react-markdown'
 import { api, queryKeys, type Note, type RoadmapNode } from '../api'
 import { routeHash } from '../lib/route'
+import { tooLargeReason, useMaxUploadBytes } from '../lib/uploadLimit'
 import { Icon } from './Icon'
 import { LessonReferences } from './LessonReferences'
 
@@ -131,6 +132,7 @@ function LessonContent({ domain, node, title, onDraft }: LessonContentProps) {
   const [pdfNote, setPdfNote] = useState<string | null>(null)
   const [pdfError, setPdfError] = useState<string | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
+  const maxBytes = useMaxUploadBytes()
 
   const save = async () => {
     if (draft === null) return
@@ -154,6 +156,12 @@ function LessonContent({ domain, node, title, onDraft }: LessonContentProps) {
     setReading(true)
     setPdfError(null)
     setPdfNote(null)
+    const tooLarge = tooLargeReason(file, maxBytes)
+    if (tooLarge) {
+      setPdfError(`Could not import ${file.name}: ${tooLarge}`)
+      setReading(false)
+      return
+    }
     try {
       const extracted = await api.extractPdf(file)
       if (!extracted.markdown.trim()) {

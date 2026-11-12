@@ -26,7 +26,7 @@ from app.main import create_app
 from app.resources.mapping import ResourceRef
 from app.resources.sync import SyncError, collect
 from app.sync_resources import main as sync_command
-from tests.conftest import TEST_DATABASE_URL, signed_in_client
+from tests.conftest import SERVERLESS, TEST_DATABASE_URL, signed_in_client
 
 COMMIT = "abc1234"
 REPO = "/kamranahmedse/developer-roadmap"
@@ -363,3 +363,32 @@ def test_read_unknown_node_is_404(api: TestClient) -> None:
     response = api.get("/api/resources/frontend/not-a-node")
     assert response.status_code == 404
     assert response.json()["detail"] == "unknown node 'frontend/not-a-node'"
+
+
+# Spec: delivery - Jobs finish inside the request in serverless mode
+def test_serverless_sync_answers_the_final_status_and_saves_it(
+    resource_settings: Settings,
+) -> None:
+    settings = resource_settings.model_copy(update=SERVERLESS)
+    app, twin = create_app(settings), create_app(settings)
+    headers = {"X-LearningHub": "1"}
+    with (
+        signed_in_client(app, headers=headers) as api,
+        signed_in_client(twin, headers=headers) as other,
+    ):
+        response = api.post("/api/resources/sync", json={"domain": "frontend"})
+        assert response.status_code == 202
+        status = response.json()
+        assert (status["state"], status["nodes"], status["links"]) == ("done", 2, 8)
+        assert stored() == EXPECTED
+        # Another instance (its own memory) reads the saved status.
+        assert other.get("/api/resources/sync/frontend").json() == status
+
+        # Scenario: Failed reference sync
+        Source.failing = {"html/content/forms@h2.md"}
+        failed = other.post("/api/resources/sync", json={"domain": "frontend"}).json()
+        assert failed["state"] == "failed" and "forms@h2" in failed["error"]
+        assert api.get("/api/resources/sync/frontend").json() == failed
+        assert stored() == EXPECTED
+    app.state.engine.dispose()
+    twin.state.engine.dispose()

@@ -128,25 +128,47 @@ The Release workflow runs every check, pushes `ghcr.io/viha0509/learninghub:0.1.
 
 CI (`.github/workflows/ci.yml`) runs the backend, frontend and e2e checks on every push to `main` and every pull request; the e2e screenshots are kept as a run artifact for 14 days.
 
-## Run on Render (free, always on)
+## Run on Vercel (free)
 
-The public copy can run on Render's free plan, with no PC of yours involved and no credit card. Render runs the Docker image; the database is Supabase Postgres and the note files are in a Supabase Storage bucket. `render.yaml` is the Blueprint.
+The public copy can run on Vercel's free Hobby plan, with no PC of yours involved and no credit card. Vercel runs the backend as a serverless function and serves the built app; the database is Supabase Postgres and the note files are in a Supabase Storage bucket. `vercel.json` defines the two services. It moved here from Render.
 
-1. **Supabase:**
+1. **Supabase** (keep the project you already have):
    - Storage -> **New bucket** `learninghub`, **private**.
-   - Copy the **Session pooler** connection string (Connect -> Session pooler, port 5432) and turn it into `postgresql+psycopg://...:5432/postgres?sslmode=require`. URL-encode special characters in the password.
-2. **Render:** sign in with GitHub, then New -> **Blueprint** -> this repository. Enter the secret values when asked, in Render only:
-   - `LH_DATABASE_URL`: the connection string from step 1;
-   - `LH_SUPABASE_SERVICE_KEY`: Supabase -> Project Settings -> API keys -> `service_role`;
-   - `LH_SECRET_KEY`: a random key that stays fixed. Generate it with `backend/.venv/Scripts/python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
-3. **Point the public address at Render** once the service is live: `deploy/worker/set-origin.ps1 https://<service>.onrender.com`.
-4. **First visit:** open `https://learninghub.vihc0509.workers.dev` and create the admin account. On Local, use Settings -> Data & sync -> Send to copy your data.
+   - From **Connect**, copy two connection strings and turn each into `postgresql+psycopg://...?sslmode=require` (URL-encode special characters in the password): the **Transaction pooler** (port 6543) is for the app, the **Session pooler** (port 5432) is for migrations. The direct host is IPv6 only and is not used.
+2. **Vercel:** sign in with GitHub, then Add New -> **Project** -> import this repository, with the framework preset **Services**. `vercel.json` defines the services `web` (from `frontend/`) and `api` (from `backend/`) and the region `icn1`. Automatic production deploys from `main` are turned off in `vercel.json`, because CI deploys after the migration (step 4).
+3. **Environment values** (Project Settings -> Environment Variables, **Production** only). Secrets are entered in Vercel only, never in the repository.
 
-Things to know about the free plan:
-- The service sleeps when idle, so the first visit after a while takes about a minute.
-- The disk is temporary. The automatic restore backups and the email outbox are lost on restart, so download your own backups. Without SMTP, the Users page shows each invitation link to copy.
-- The Claude Code provider needs the `claude` CLI and cannot run there; use an API-key provider.
-- Every push to `main` deploys again.
+   | Name | Value | Secret |
+   |---|---|---|
+   | `LH_SERVERLESS` | `true` | no |
+   | `LH_DATABASE_URL` | Transaction pooler string (port 6543) from step 1 | yes |
+   | `LH_SECRET_KEY` | A random key that stays fixed; it decrypts the saved provider keys, so reuse the value from the previous host. To make one: `backend/.venv/Scripts/python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` | yes |
+   | `LH_STORAGE_BACKEND` | `supabase` | no |
+   | `LH_SUPABASE_URL` | Supabase -> Project Settings -> API -> Project URL | no |
+   | `LH_SUPABASE_SERVICE_KEY` | Supabase -> Project Settings -> API keys -> `service_role` | yes |
+   | `LH_SUPABASE_BUCKET` | `learninghub` | no |
+   | `LH_PUBLIC_URL` | The public address, for example `https://learninghub.vihc0509.workers.dev` | no |
+   | `LH_STORAGE_DIR` | `/tmp` | no |
+   | `LH_MAX_UPLOAD_BYTES` | `4194304` | no |
+   | `LH_ROADMAPS_DIR` | `_data/roadmaps` | no |
+   | `LH_NEWS_SOURCES_FILE` | `_data/news/sources.yaml` | no |
+
+4. **Deploy Hook and GitHub secrets:** in Vercel -> Project Settings -> Git -> **Deploy Hooks**, create a hook for the branch `main` and copy its URL. In GitHub -> Settings -> Secrets and variables -> Actions, add two repository secrets: `LH_MIGRATE_DATABASE_URL` (the Session pooler string, port 5432) and `VERCEL_DEPLOY_HOOK_URL` (the hook URL). On every push to `main`, CI runs the checks, then `alembic upgrade head` against `LH_MIGRATE_DATABASE_URL`, then calls the hook, which deploys. Without the two secrets the deploy job does nothing.
+5. **Point the public address at Vercel** once the project is live: `deploy/worker/set-origin.ps1 https://<project>.vercel.app`. The public address, `LH_PUBLIC_URL` and the GitHub and Google callback addresses stay the same.
+6. **First use:** open the public address and sign up; on an empty database the first account becomes the admin. On Local, use Settings -> Data & sync -> Send from Local to copy your data.
+
+Note: Vercel Services is in beta. The Python entrypoint form, the deep-link fallback and the build step that copies `roadmaps/` and `news/` into `backend/_data/` are confirmed on the first preview deploy (task 1.2 of the `vercel-deploy` change), not before.
+
+Limits on Vercel:
+- Uploads are limited to 4 MB per file (10 MB elsewhere).
+- A restore must fit in the function's 500 MB temporary space and 300 seconds.
+- The email outbox and the automatic restore backups are in `/tmp` and temporary, so keep the backups you download and use the invitation links on the Users page or SMTP.
+- The login and agent rate limits count per instance.
+- The Claude Code provider type is not available; use an API-key provider.
+- The Hobby plan is for personal, non-commercial use.
+- The first request after an idle period takes a few seconds.
+
+Going back: the Docker image still runs anywhere (sections above), and the Worker's origin can be pointed at a Quick Tunnel again with `deploy/cloudflared/start-public.ps1`.
 
 ## Public access (Cloudflare Tunnel)
 

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "web": {
+      "root": "frontend/",
+      "framework": "vite",
+      "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+    },
+    "api": {
+      "root": "backend/",
+      "entrypoint": "app.main:app",
+      "buildCommand": "mkdir -p _data && cp -r ../roadmaps ../news _data/"
+    }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": { "service": "api" } },
+    { "source": "/(.*)", "destination": { "service": "web" } }
+  ],
+  "regions": ["icn1"],
+  "git": { "deploymentEnabled": { "main": false } }
+}

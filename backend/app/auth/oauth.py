@@ -1,8 +1,9 @@
 """GitHub and Google sign-in: authorization code flow with state and PKCE, server side.
 
-The state, the PKCE verifier and the route to return to are kept in memory under a random
-key; the browser holds only that key, in a short-lived HttpOnly cookie. Provider answers are
-never logged or shown, only an error code.
+The state, the PKCE verifier and the route to return to are kept in the database under the
+hash of a random key, so the callback can land on any instance; the browser holds only that
+key, in a short-lived HttpOnly cookie. Provider answers are never logged or shown, only an
+error code.
 """
 
 import base64
@@ -10,20 +11,20 @@ import hashlib
 import json
 import logging
 import secrets
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
-from threading import Lock
+from datetime import datetime, timedelta
 from typing import Any, Literal
 
-from sqlalchemy.orm import Session
+from sqlalchemy import delete, func, select
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.agent.secrets import SecretBox, SecretUnreadable
 from app.config import Settings
-from app.db import AppSetting
+from app.db import AppSetting, OAuthPending
 
 log = logging.getLogger(__name__)
 
@@ -121,44 +122,83 @@ class Pending:
     state: str
     verifier: str
     next: str
-    created: float
+
+
+def hash_key(key: str) -> str:
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
 
 class PendingStore:
-    """Started sign-ins, each usable once and for 10 minutes."""
+    """Started sign-ins, each usable once and for 10 minutes, kept in the database.
 
-    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
+    Only the SHA-256 hash of the browser's key is stored, and the verifier is encrypted.
+    """
+
+    def __init__(
+        self, sessions: sessionmaker[Session], box: SecretBox, clock: Callable[[], datetime]
+    ) -> None:
+        self._sessions = sessions
+        self._box = box
         self._clock = clock
-        self._items: dict[str, Pending] = {}
-        self._lock = Lock()
 
     def start(self, provider: ProviderName, next_route: str) -> tuple[str, Pending]:
-        with self._lock:
-            now = self._clock()
-            for key in [k for k, p in self._items.items() if now - p.created >= PENDING_SECONDS]:
-                del self._items[key]
-            while len(self._items) >= MAX_PENDING:
-                del self._items[next(iter(self._items))]
-            key = secrets.token_urlsafe(32)
-            pending = Pending(
-                provider=provider,
-                state=secrets.token_urlsafe(32),
-                verifier=secrets.token_urlsafe(48),
-                next=next_route,
-                created=now,
+        now = self._clock()
+        key = secrets.token_urlsafe(32)
+        pending = Pending(
+            provider=provider,
+            state=secrets.token_urlsafe(32),
+            verifier=secrets.token_urlsafe(48),
+            next=next_route,
+        )
+        with self._sessions() as db:
+            db.execute(delete(OAuthPending).where(OAuthPending.expires_at <= now))
+            extra = (db.scalar(select(func.count()).select_from(OAuthPending)) or 0) - (
+                MAX_PENDING - 1
             )
-            self._items[key] = pending
-            return key, pending
+            if extra > 0:
+                oldest = (
+                    select(OAuthPending.key_hash).order_by(OAuthPending.created_at).limit(extra)
+                )
+                db.execute(delete(OAuthPending).where(OAuthPending.key_hash.in_(oldest)))
+            db.add(
+                OAuthPending(
+                    key_hash=hash_key(key),
+                    provider=provider,
+                    state=pending.state,
+                    verifier_enc=self._box.encrypt(pending.verifier),
+                    next=next_route,
+                    created_at=now,
+                    expires_at=now + timedelta(seconds=PENDING_SECONDS),
+                )
+            )
+            db.commit()
+        return key, pending
 
     def take(self, key: str | None) -> Pending | None:
         """Remove and return the started sign-in, if it exists and is not too old."""
         if not key:
             return None
-        with self._lock:
-            pending = self._items.pop(key, None)
-            if pending is None or self._clock() - pending.created >= PENDING_SECONDS:
-                return None
-            return pending
+        with self._sessions() as db:
+            # One statement, so two callbacks on two instances cannot both get the row.
+            row = db.execute(
+                delete(OAuthPending)
+                .where(OAuthPending.key_hash == hash_key(key))
+                .returning(
+                    OAuthPending.provider,
+                    OAuthPending.state,
+                    OAuthPending.verifier_enc,
+                    OAuthPending.next,
+                    OAuthPending.expires_at,
+                )
+            ).first()
+            db.commit()
+        if row is None or row.expires_at <= self._clock():
+            return None
+        try:
+            verifier = self._box.decrypt(row.verifier_enc)
+        except SecretUnreadable:
+            return None
+        return Pending(provider=row.provider, state=row.state, verifier=verifier, next=row.next)
 
 
 def authorize_url(settings: Settings, provider: Provider, pending: Pending) -> str:

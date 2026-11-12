@@ -3,21 +3,23 @@
 import hashlib
 import secrets
 import tempfile
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
-from starlette.background import BackgroundTask
 
 from app.auth.current import CurrentUser
 from app.auth.sessions import clock_of
-from app.data_sync.backup import MAX_TOTAL_BYTES, build_backup
+from app.data_sync import uploads
+from app.data_sync.backup import build_backup
 from app.data_sync.restore import RestoreRefused, restore_archive
 from app.data_sync.sender import SyncFailed, TargetAddressInvalid, parse_target, send_backup
 from app.db import SyncKey, get_session
@@ -27,7 +29,6 @@ from app.storage import FileStore
 router = APIRouter(prefix="/api/data", tags=["data"])
 DbDep = Annotated[Session, Depends(get_session)]
 CONFIRM = "REPLACE"
-CHUNK = 1024 * 1024
 
 
 class RestoreOut(BaseModel):
@@ -35,8 +36,18 @@ class RestoreOut(BaseModel):
     providers_needing_key: list[str]
 
 
+def file_chunks(path: Path) -> Iterator[bytes]:
+    """The file in 1 MB chunks; it is removed when the answer ends or is abandoned."""
+    try:
+        with path.open("rb") as handle:
+            while chunk := handle.read(1024 * 1024):
+                yield chunk
+    finally:
+        path.unlink(missing_ok=True)
+
+
 @router.get("/backup")
-def download_backup(request: Request, db: DbDep, user: CurrentUser) -> FileResponse:
+def download_backup(request: Request, db: DbDep, user: CurrentUser) -> StreamingResponse:
     now = datetime.now(UTC)
     store: FileStore = request.app.state.store
     handle = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)  # noqa: SIM115
@@ -47,30 +58,13 @@ def download_backup(request: Request, db: DbDep, user: CurrentUser) -> FileRespo
     except BaseException:
         path.unlink(missing_ok=True)
         raise
-    return FileResponse(
-        path,
+    # Streamed: a platform's limit on buffered answers (4.5 MB on Vercel) does not apply.
+    filename = f"learninghub-backup-{now:%Y%m%d-%H%M%S}.zip"
+    return StreamingResponse(
+        file_chunks(path),
         media_type="application/zip",
-        filename=f"learninghub-backup-{now:%Y%m%d-%H%M%S}.zip",
-        background=BackgroundTask(path.unlink, missing_ok=True),
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
-
-
-def spool(upload: UploadFile) -> Path:
-    """Copy an upload to a temp file, refusing more than the archive size limit."""
-    handle = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)  # noqa: SIM115
-    path = Path(handle.name)
-    try:
-        with handle:
-            size = 0
-            while chunk := upload.file.read(CHUNK):
-                size += len(chunk)
-                if size > MAX_TOTAL_BYTES:
-                    raise HTTPException(status_code=413, detail="the file is too large")
-                handle.write(chunk)
-    except BaseException:
-        path.unlink(missing_ok=True)
-        raise
-    return path
 
 
 def run_restore(request: Request, path: Path, user_id: UUID) -> dict[str, Any]:
@@ -89,20 +83,56 @@ def run_restore(request: Request, path: Path, user_id: UUID) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail=refused.detail) from None
 
 
-@router.post("/restore", response_model=RestoreOut, dependencies=[Depends(require_app_header)])
-def restore(
-    request: Request,
-    file: Annotated[UploadFile, File()],
-    user: CurrentUser,
-    confirm: Annotated[str, Form()] = "",
+# --- restore from the browser, uploaded in parts (behind the session; never the sync key)
+
+guarded = [Depends(require_app_header)]
+SHA = r"^[0-9a-f]{64}$"
+
+
+class UploadStarted(BaseModel):
+    upload_id: str
+
+
+class RestoreFinishIn(BaseModel):
+    parts: int = Field(ge=1, le=uploads.MAX_PARTS)
+    sha256: str = Field(pattern=SHA)
+    confirm: str = ""
+
+
+@router.post("/restore/upload", response_model=UploadStarted, dependencies=guarded)
+def start_restore_upload(request: Request, db: DbDep, user: CurrentUser) -> UploadStarted:
+    upload_id = uploads.start_upload(request.app.state.store, db, user.id, "restore")
+    return UploadStarted(upload_id=str(upload_id))
+
+
+@router.put("/restore/upload/{upload_id}/{index}", dependencies=guarded)
+async def put_restore_part(
+    upload_id: str, index: int, request: Request, db: DbDep, user: CurrentUser
+) -> dict[str, int]:
+    await run_in_threadpool(uploads.find_upload, db, upload_id, user.id, "restore")
+    data = await uploads.read_part(request, uploads.MAX_PART)
+    size = await run_in_threadpool(
+        uploads.store_part, request.app.state.store, db, upload_id, user.id, "restore", index, data
+    )
+    return {"size": size}
+
+
+@router.post("/restore/upload/{upload_id}/finish", response_model=RestoreOut, dependencies=guarded)
+def finish_restore_upload(
+    upload_id: str, body: RestoreFinishIn, request: Request, db: DbDep, user: CurrentUser
 ) -> dict[str, Any]:
-    if confirm != CONFIRM:
-        raise HTTPException(status_code=422, detail=f"type {CONFIRM} to confirm the restore")
-    path = spool(file)
+    store: FileStore = request.app.state.store
+    row = uploads.find_upload(db, upload_id, user.id, "restore")
     try:
-        return run_restore(request, path, user.id)
+        if body.confirm != CONFIRM:
+            raise HTTPException(status_code=422, detail=f"type {CONFIRM} to confirm the restore")
+        path = uploads.assemble(store, row, body.parts, body.sha256)
+        try:
+            return run_restore(request, path, user.id)
+        finally:
+            path.unlink(missing_ok=True)
     finally:
-        path.unlink(missing_ok=True)
+        uploads.drop_upload(store, db, row)
 
 
 # --- sync key (the target side)

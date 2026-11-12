@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="LH_", env_file=".env", extra="ignore")
 
     database_url: str = "postgresql+psycopg://learninghub:learninghub@localhost:5434/learninghub"
+    # Each request may reach another short-lived instance (Vercel): nothing is kept in memory
+    # or on local disk between requests, and the database sits behind a transaction pooler.
+    serverless: bool = False
     roadmaps_dir: Path = REPO_ROOT / "roadmaps"
     storage_dir: Path = REPO_ROOT / "storage"
     max_upload_bytes: int = 10 * 1024 * 1024

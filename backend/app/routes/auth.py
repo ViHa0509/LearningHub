@@ -223,6 +223,7 @@ def status(request: Request, db: DbDep) -> AuthStatus:
             for name in ("github", "google")
         },
         mail=MailStatus(mode=mailer.mode),
+        max_upload_bytes=settings.max_upload_bytes,
     )
 
 

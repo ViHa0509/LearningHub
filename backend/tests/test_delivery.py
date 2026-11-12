@@ -76,3 +76,29 @@ def test_login_limit_is_ten_by_default_and_follows_the_setting() -> None:
     assert Settings().auth_rate_per_minute == 10
     app = create_app(Settings(auth_rate_per_minute=3))
     assert app.state.auth_limiter.per_minute == 3
+
+
+# Scenario: Default mode unchanged / Behind a transaction pooler
+def test_engine_keeps_a_pool_only_outside_serverless_mode() -> None:
+    from sqlalchemy.pool import NullPool, QueuePool
+
+    from app.db import make_engine
+    from tests.conftest import TEST_DATABASE_URL
+
+    usual = make_engine(TEST_DATABASE_URL)
+    assert isinstance(usual.pool, QueuePool)
+    usual.dispose()
+    serverless = make_engine(TEST_DATABASE_URL, serverless=True)
+    assert isinstance(serverless.pool, NullPool)
+    with serverless.connect() as connection:
+        # psycopg never prepares a statement on this connection (transaction-mode pooler).
+        assert connection.connection.driver_connection.prepare_threshold is None
+    serverless.dispose()
+
+
+def test_serverless_mode_refuses_the_local_file_store(
+    settings_factory: Callable[..., Settings],
+) -> None:
+    settings: Any = settings_factory(serverless=True)
+    with pytest.raises(RuntimeError, match="LH_STORAGE_BACKEND=supabase"):
+        create_app(settings)

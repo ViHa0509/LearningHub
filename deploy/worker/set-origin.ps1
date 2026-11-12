@@ -1,5 +1,5 @@
 # Points the public address (the Cloudflare Worker in this folder) at an origin, for example the
-# Render service: .\set-origin.ps1 https://learninghub.onrender.com
+# Vercel project: .\set-origin.ps1 https://<project>.vercel.app
 # (The Quick Tunnel on this PC is set by ..\cloudflared\start-public.ps1 instead.)
 param([Parameter(Mandatory = $true)][string]$Origin)
 

@@ -10,4 +10,4 @@
 ## 3. Ops
 
 - [x] 3.1 Entrypoint `$PORT`; `render.yaml`; `deploy/worker/set-origin.ps1`; README "Run on Render (free)" with the owner's steps
-- [ ] 3.2 Full e2e passes; owner creates Render and Supabase bucket, deploy goes live, Worker points at Render, admin signs up, Sync from Local works
+- Task 3.2 (go live on Render) was dropped on 2026-11-12: the hosted copy moves to Vercel in the `vercel-deploy` change, which also removes `render.yaml` and the Render README section.

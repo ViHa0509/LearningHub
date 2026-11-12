@@ -50,7 +50,7 @@ describe('import from the UI', () => {
     const { user } = renderApp()
     await user.click(await screen.findByRole('button', { name: 'Import HTML or PDF files' }))
     const dialog = screen.getByRole('dialog')
-    await user.upload(within(dialog).getByLabelText('HTML or PDF files'), [html('jwt.html')])
+    await user.upload(within(dialog).getByLabelText('HTML or PDF files'), [html('jwt.html'), html('notes.docx')])
 
     expect(await within(dialog).findByText('Rejected: not an HTML or PDF file')).toBeInTheDocument()
     expect(within(dialog).getByText('Imported')).toBeInTheDocument()
@@ -60,5 +60,66 @@ describe('import from the UI', () => {
     expect(state.calls.filter((c) => c.method === 'PATCH')).toEqual([])
     const unsorted = await screen.findByRole('region', { name: 'Unsorted' })
     expect(within(unsorted).getByRole('button', { name: 'JWT vs sessions' })).toBeInTheDocument()
+  })
+
+  /** Spec: knowledge-import - Too large file is not sent. */
+  it('does not send a file over the server limit and says "larger than 4 MB"', async () => {
+    const created = makeNote('Small page')
+    const state = installFakeApi(
+      [],
+      [{ filename: 'small.html', outcome: 'created', reason: null, note: created }],
+    )
+    state.auth.maxUploadBytes = 4 * 1024 * 1024
+    const big = new File([new Uint8Array(4 * 1024 * 1024 + 1)], 'big.html', { type: 'text/html' })
+    const { user } = renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Import HTML or PDF files' }))
+    const dialog = screen.getByRole('dialog')
+    await user.upload(within(dialog).getByLabelText('HTML or PDF files'), [big, html('small.html')])
+
+    expect(await within(dialog).findByText('Rejected: larger than 4 MB')).toBeInTheDocument()
+    expect(within(dialog).getByText('big.html')).toBeInTheDocument()
+    expect(within(dialog).getByText('Imported')).toBeInTheDocument()
+    expect(state.importRequests).toEqual([['small.html']])
+  })
+
+  it('falls back to 10 MB when the server reports no limit', async () => {
+    const state = installFakeApi([], [])
+    const big = new File([new Uint8Array(10 * 1024 * 1024 + 1)], 'big.html', { type: 'text/html' })
+    const { user } = renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Import HTML or PDF files' }))
+    const dialog = screen.getByRole('dialog')
+    await user.upload(within(dialog).getByLabelText('HTML or PDF files'), [big])
+
+    expect(await within(dialog).findByText('Rejected: larger than 10 MB')).toBeInTheDocument()
+    expect(state.importRequests).toEqual([])
+  })
+
+  /** Spec: knowledge-import - Several files, one request each. */
+  it('sends one request per file and merges the outcomes in the chosen order', async () => {
+    const first = makeNote('First page')
+    const third = makeNote('Third page')
+    const state = installFakeApi(
+      [],
+      [
+        { filename: 'a.html', outcome: 'created', reason: null, note: first },
+        { filename: 'b.docx', outcome: 'rejected', reason: 'not an HTML or PDF file', note: null },
+        { filename: 'c.html', outcome: 'created', reason: null, note: third },
+      ],
+    )
+    const { user } = renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Import HTML or PDF files' }))
+    const dialog = screen.getByRole('dialog')
+    await user.upload(within(dialog).getByLabelText('HTML or PDF files'), [
+      html('a.html'),
+      html('b.docx'),
+      html('c.html'),
+    ])
+
+    expect(await within(dialog).findByText('Rejected: not an HTML or PDF file')).toBeInTheDocument()
+    expect(state.importRequests).toEqual([['a.html'], ['b.docx'], ['c.html']])
+    const names = within(dialog)
+      .getAllByRole('listitem')
+      .map((li) => li.querySelector('.filename')?.textContent)
+    expect(names).toEqual(['a.html', 'b.docx', 'c.html'])
   })
 })

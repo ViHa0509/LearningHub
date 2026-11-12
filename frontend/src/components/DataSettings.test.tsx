@@ -12,6 +12,10 @@ const open = async () => {
   return rendered
 }
 const card = (name: string) => screen.findByRole('article', { name })
+const hex = async (text: string) =>
+  Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))), (b) =>
+    b.toString(16).padStart(2, '0'),
+  ).join('')
 const zip = () => new File(['PK'], 'learninghub-backup.zip', { type: 'application/zip' })
 
 describe('backup', () => {
@@ -44,7 +48,7 @@ describe('restore', () => {
     await user.clear(within(restore).getByLabelText('Type REPLACE to confirm'))
     await user.type(within(restore).getByLabelText('Type REPLACE to confirm'), 'replace')
     expect(button).toBeDisabled()
-    expect(state.calls.some((c) => c.url === '/api/data/restore')).toBe(false)
+    expect(state.calls.some((c) => c.url.startsWith('/api/data/restore'))).toBe(false)
   })
 
   // Scenario: Provider keys entered again
@@ -63,9 +67,11 @@ describe('restore', () => {
     expect(await within(restore).findByText(/Restored: 2 notes, 2 files, 1 lessons, 2 providers/)).toBeInTheDocument()
     expect(within(restore).getByText(/Enter the key again for: Claude main, Gemini/)).toBeInTheDocument()
     expect(within(restore).getByRole('link', { name: 'Open AI providers' })).toHaveAttribute('href', '#/settings')
-    expect(state.data.restored).toEqual([{ name: 'learninghub-backup.zip', confirm: 'REPLACE' }])
-    const index = state.calls.findIndex((c) => c.url === '/api/data/restore')
-    expect(state.headers[index]['X-LearningHub']).toBe('1')
+    expect(state.data.restoreUploads).toEqual([{ id: 'upload-1', parts: [2] }])
+    expect(state.data.restoreFinishes).toHaveLength(1)
+    for (const [i, call] of state.calls.entries()) {
+      if (call.url.startsWith('/api/data/restore')) expect(state.headers[i]['X-LearningHub']).toBe('1')
+    }
   })
 
   it('shows the refusal inline and leaves the page usable', async () => {
@@ -86,7 +92,7 @@ describe('restore', () => {
     const gate = new Promise<void>((resolve) => (release = resolve))
     const base = globalThis.fetch
     vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) =>
-      String(input) === '/api/data/restore' ? gate.then(() => base(input, init)) : base(input, init),
+      String(input) === '/api/data/restore/upload' ? gate.then(() => base(input, init)) : base(input, init),
     )
     const { user } = await open()
     const restore = await card('Restore')
@@ -97,7 +103,83 @@ describe('restore', () => {
     expect(within(restore).getByRole('button', { name: 'Restore' })).toBeDisabled()
     release()
     expect(await within(restore).findByText(/Restored:/)).toBeInTheDocument()
-    expect(state.data.restored).toHaveLength(1)
+    expect(state.data.restoreFinishes).toHaveLength(1)
+  })
+
+  // Scenario: Restore from the browser in parts
+  it('sends a large file in parts of at most 4 MB, shows the progress, then the counts', async () => {
+    const state = installFakeApi()
+    const base = globalThis.fetch
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) =>
+      String(input).endsWith('/upload-1/1') ? gate.then(() => base(input, init)) : base(input, init),
+    )
+    const { user } = await open()
+    const restore = await card('Restore')
+    const big = new File([new Uint8Array(9 * 1024 * 1024)], 'big.zip', { type: 'application/zip' })
+    await user.upload(within(restore).getByLabelText('Backup file'), big)
+    await user.type(within(restore).getByLabelText('Type REPLACE to confirm'), 'REPLACE')
+    await user.click(within(restore).getByRole('button', { name: 'Restore' }))
+
+    expect(await within(restore).findByText('Uploading part 2 of 3')).toBeInTheDocument()
+    expect(within(restore).getByRole('status')).toHaveTextContent('Uploading part 2 of 3')
+    expect(within(restore).getByRole('button', { name: 'Restore' })).toBeDisabled()
+    release()
+    expect(await within(restore).findByText(/Restored: 2 notes/)).toBeInTheDocument()
+
+    const four = 4 * 1024 * 1024
+    expect(state.data.restoreUploads[0].parts).toEqual([four, four, 1024 * 1024])
+    const puts = state.calls.filter((c) => c.method === 'PUT')
+    expect(puts.map((c) => c.url)).toEqual([0, 1, 2].map((i) => `/api/data/restore/upload/upload-1/${i}`))
+    expect(state.calls.filter((c) => c.url.endsWith('/finish'))).toHaveLength(1)
+  })
+
+  it('sends an empty file as one empty part', async () => {
+    const state = installFakeApi()
+    const { user } = await open()
+    const restore = await card('Restore')
+    await user.upload(within(restore).getByLabelText('Backup file'), new File([], 'empty.zip'))
+    await user.type(within(restore).getByLabelText('Type REPLACE to confirm'), 'REPLACE')
+    await user.click(within(restore).getByRole('button', { name: 'Restore' }))
+    expect(await within(restore).findByText(/Restored:/)).toBeInTheDocument()
+    expect(state.data.restoreUploads[0].parts).toEqual([0])
+    expect(state.data.restoreFinishes[0].parts).toBe(1)
+  })
+
+  it('finishes with the part count, the SHA-256 of the whole file and REPLACE', async () => {
+    const state = installFakeApi()
+    const { user } = await open()
+    const restore = await card('Restore')
+    await user.upload(within(restore).getByLabelText('Backup file'), zip())
+    await user.type(within(restore).getByLabelText('Type REPLACE to confirm'), 'REPLACE')
+    await user.click(within(restore).getByRole('button', { name: 'Restore' }))
+    expect(await within(restore).findByText(/Restored:/)).toBeInTheDocument()
+    expect(state.data.restoreFinishes).toEqual([
+      { parts: 1, sha256: await hex('PK'), confirm: 'REPLACE' },
+    ])
+  })
+
+  it('reports a failed part, finishes nothing, and a retry works', async () => {
+    const state = installFakeApi()
+    state.data.restoreFailPart = { index: 1, status: 413, detail: 'the part is too large' }
+    const { user } = await open()
+    const restore = await card('Restore')
+    const big = new File([new Uint8Array(5 * 1024 * 1024)], 'big.zip', { type: 'application/zip' })
+    await user.upload(within(restore).getByLabelText('Backup file'), big)
+    await user.type(within(restore).getByLabelText('Type REPLACE to confirm'), 'REPLACE')
+    await user.click(within(restore).getByRole('button', { name: 'Restore' }))
+
+    expect(await within(restore).findByRole('alert')).toHaveTextContent('Upload failed: the part is too large')
+    expect(state.calls.some((c) => c.url.endsWith('/finish'))).toBe(false)
+    expect(within(restore).queryByText(/Restored/)).not.toBeInTheDocument()
+    expect(within(restore).getByRole('button', { name: 'Restore' })).toBeEnabled()
+
+    await user.click(within(restore).getByRole('button', { name: 'Restore' }))
+    expect(await within(restore).findByText(/Restored: 2 notes/)).toBeInTheDocument()
+    expect(within(restore).queryByRole('alert')).not.toBeInTheDocument()
+    expect(state.data.restoreFinishes).toHaveLength(1)
+    expect(state.data.restoreUploads[1].parts).toEqual([4 * 1024 * 1024, 1024 * 1024])
   })
 })
 

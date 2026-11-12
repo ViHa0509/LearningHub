@@ -3,6 +3,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -44,6 +45,16 @@ PRINT_SCRIPT = (
 )
 
 SessionDep = Annotated[Session, Depends(get_session)]
+
+
+STREAM_CHUNK = 1024 * 1024
+
+
+def streamed(data: bytes, headers: dict[str, str]) -> StreamingResponse:
+    """A note page as a stream: a platform's limit on buffered answers (4.5 MB on Vercel)
+    does not apply to it."""
+    chunks = (data[i : i + STREAM_CHUNK] for i in range(0, len(data), STREAM_CHUNK))
+    return StreamingResponse(chunks, media_type="text/html", headers=headers)
 
 
 def get_store(request: Request) -> FileStore:
@@ -300,7 +311,7 @@ def print_note(note_id: UUID, request: Request, session: SessionDep, user: Curre
     """The note's page in its own tab, isolated like the original, that opens the print dialog."""
     note = require_note(session, user, note_id)
     data = get_store(request).get(note.storage_key) + PRINT_SCRIPT
-    return Response(content=data, media_type="text/html", headers=PRINT_HEADERS)
+    return streamed(data, PRINT_HEADERS)
 
 
 @router.get("/{note_id}/original")
@@ -309,4 +320,4 @@ def read_original(
 ) -> Response:
     note = require_note(session, user, note_id)
     data = get_store(request).get(note.storage_key)
-    return Response(content=data, media_type="text/html", headers=ORIGINAL_HEADERS)
+    return streamed(data, ORIGINAL_HEADERS)

@@ -13,8 +13,8 @@ With `LH_STORAGE_BACKEND=supabase`, the backend SHALL store, read and delete not
 - **WHEN** the backend starts
 - **THEN** it refuses to start and names the missing setting
 
-### Requirement: Run on Render
-The repository SHALL define a Render Blueprint for one Docker web service using the release Dockerfile, health check `/api/health`, and environment values for the database, storage, public URL and secret key, with secrets entered in Render and not in the repository. The container MUST listen on `$PORT` when it is set, else 8080.
+### Requirement: Port from the platform
+The container MUST listen on `$PORT` when the platform sets it, else on 8080.
 
 #### Scenario: Port from the platform
 - **GIVEN** `PORT=10000`

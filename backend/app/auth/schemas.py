@@ -24,6 +24,8 @@ class AuthStatus(BaseModel):
     has_owner: bool
     providers: dict[str, ProviderStatus]
     mail: MailStatus
+    # The largest file the server takes; the app checks it before sending.
+    max_upload_bytes: int
 
 
 class MeOut(BaseModel):

@@ -27,7 +27,7 @@ from app.db import NewsItem
 from app.main import create_app
 from app.news.sources import NewsSourcesError, load_sources
 from app.resources.fetch import FetchPolicy, fetch_feed
-from tests.conftest import TEST_DATABASE_URL, signed_in_client
+from tests.conftest import SERVERLESS, TEST_DATABASE_URL, signed_in_client
 
 FAKE_IP = "127.0.0.2"
 FEED_HOST = "feeds.example.test"
@@ -499,3 +499,31 @@ def test_the_repository_sources_are_valid() -> None:
         "aws-ml",
     ]
     assert all(s.feed.startswith("https://") for s in sources)
+
+
+# Spec: delivery - Jobs finish inside the request in serverless mode
+# Scenario: News refresh on Vercel
+def test_serverless_refresh_answers_the_final_status_and_saves_it(
+    news_settings: Settings, port: int
+) -> None:
+    settings = news_settings.model_copy(update=SERVERLESS)
+    first = open_client(settings, port, {"X-LearningHub": "1"})
+    second = open_client(settings, port, {"X-LearningHub": "1"})
+    api, other = next(first), next(second)
+    response = api.post("/api/news/refresh")
+    assert response.status_code == 202
+    status = response.json()
+    # Finished inside the request: nothing is left running, one failing source is named.
+    assert status["state"] == "done" and status["finished_at"]
+    results = {s["id"]: s for s in status["sources"]}
+    assert results["mit-news"]["ok"] is True and results["broken"]["ok"] is False
+    assert results["broken"]["error"]
+    # Another instance (its own memory) answers the same status and the same list details.
+    assert other.get("/api/news/refresh").json() == status
+    listed = other.get("/api/news").json()
+    assert listed["stale"] is False and listed["last_refresh_at"]
+    by_id = {s["id"]: s for s in listed["sources"]}
+    assert by_id["broken"]["last_ok"] is False and by_id["mit-news"]["last_ok"] is True
+    assert {url for _, url, _ in stored()} == EXPECTED_URLS
+    for client in (first, second):
+        client.close()

@@ -39,6 +39,7 @@ def test_status_before_the_owner_exists(kit: AuthKit) -> None:
         "has_owner": False,
         "providers": {"github": {"configured": False}, "google": {"configured": False}},
         "mail": {"mode": "outbox"},
+        "max_upload_bytes": 10 * 1024 * 1024,
     }
     assert kit.client.get("/api/auth/me").status_code == 401
 

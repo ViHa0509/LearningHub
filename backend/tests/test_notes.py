@@ -6,6 +6,8 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.config import Settings
+from app.main import create_app
+from tests.conftest import signed_in_client
 
 HTML = "text/html"
 
@@ -171,3 +173,37 @@ def test_delete_removes_note_and_original(client: TestClient, settings: Settings
     assert client.get("/api/notes").json() == []
     assert client.get(f"/api/notes/{note['id']}").status_code == 404
     assert not blobs[0].exists()
+
+
+# Spec: knowledge-import - Scenario: Lower limit on the hosted copy
+def test_the_too_large_reason_names_the_configured_limit(
+    settings_factory: Callable[..., Settings],
+) -> None:
+    app = create_app(settings_factory(max_upload_bytes=4 * 1024 * 1024))
+    with signed_in_client(app, headers={"X-LearningHub": "1"}) as small:
+        big = b"<html><body>" + b"x" * (6 * 1024 * 1024) + b"</body></html>"
+        response = small.post(
+            "/api/notes/import", files=[("files", ("big.html", big, "text/html"))]
+        )
+        assert response.status_code == 200, response.text
+        [outcome] = response.json()["results"]
+        assert (outcome["outcome"], outcome["reason"]) == ("rejected", "larger than 4 MB")
+    app.state.engine.dispose()
+
+
+# Spec: delivery - Large answers are streamed (Scenario: Open a 9 MB note)
+def test_a_large_note_page_is_streamed_whole_with_the_sandbox_headers(client: TestClient) -> None:
+    body = b"<html><body><p>" + b"y" * (5 * 1024 * 1024 + 123) + b"</p></body></html>"
+    imported = client.post(
+        "/api/notes/import", files=[("files", ("large.html", body, "text/html"))]
+    )
+    note_id = imported.json()["results"][0]["note"]["id"]
+    with client.stream("GET", f"/api/notes/{note_id}/original") as response:
+        chunks = list(response.iter_bytes())
+        assert response.status_code == 200
+        assert response.headers["content-security-policy"] == "sandbox allow-scripts"
+        assert response.headers["x-content-type-options"] == "nosniff"
+        assert response.headers["content-type"].startswith("text/html")
+        # Streamed, not buffered: no fixed length is announced.
+        assert "content-length" not in response.headers
+    assert b"".join(chunks) == body

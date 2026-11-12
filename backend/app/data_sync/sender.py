@@ -19,8 +19,11 @@ from sqlalchemy.orm import Session
 from app.data_sync.backup import build_backup
 from app.storage import FileStore
 
-PART_SIZE = 50 * 1024 * 1024
+# Under the 4.5 MB request limit of a target on Vercel.
+PART_SIZE = 4 * 1024 * 1024
 CALL_TIMEOUT = 60.0
+# The target restores the backup inside the finish call.
+FINISH_TIMEOUT = 300.0
 LOCAL_HOSTS = ("localhost", "127.0.0.1")
 HEADERS = {"X-LearningHub": "1"}
 
@@ -138,6 +141,7 @@ def send_backup(
                         f"{base}/api/data/upload/{upload_id}/finish",
                         json={"parts": parts, "sha256": sha},
                         headers=headers,
+                        timeout=FINISH_TIMEOUT,
                     )
                 )
         except httpx2.TransportError:

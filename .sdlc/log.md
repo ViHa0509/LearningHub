@@ -29,3 +29,10 @@ One entry per cycle, appended by `/ai-sdlc-kit:orchestrate` (or by the main sess
 - Agents: brainstormer (sonnet) -> ideas/BACKLOG.md
 - Verdicts: not applicable
 - Needs human: pick ideas to promote with /opsx:propose
+
+## 2026-11-12 23:55 vercel-deploy
+- Result: partial (18/24; the rest needs a real Vercel deployment)
+- Tasks: 1.1, 2.1-2.3, 3.1-3.2, 4.1-4.4, 5.1-5.3, 6.1-6.2, 7.1-7.2, 8.1
+- Agents: specs, design, migration, sign-in store, sync uploads, jobs -> main session; 2.3, 4.4, 5.1, 7.1 -> implementer (sonnet); e2e -> qc-e2e (sonnet)
+- Verdicts: backend pytest 750 pass, ruff, mypy pass; frontend 326 tests, lint, build pass; qc-e2e pass (160 tests, no product bug; one auth test flaked once)
+- Needs human: Vercel import and preview deploy (1.2), production values and GitHub secrets (8.2), go-live check (8.3); decision on the visitor address behind the Worker (7.3)

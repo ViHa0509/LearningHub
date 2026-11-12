@@ -19,6 +19,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
+from sqlalchemy.pool import NullPool
 
 
 class Base(DeclarativeBase):
@@ -151,6 +152,24 @@ class SyncKey(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class SyncUpload(Base):
+    """A backup being uploaded in parts (a sync from another copy, or a browser restore).
+
+    The parts live in the file store under ``uploads/<id>/<index>``; ``part_sizes`` maps each
+    stored index to its size in bytes.
+    """
+
+    __tablename__ = "sync_uploads"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = user_fk()
+    kind: Mapped[str] = mapped_column(Text)  # "sync" or "restore"
+    part_sizes: Mapped[dict[str, int]] = mapped_column(
+        JSONB, default=dict, server_default="{}", nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class NodeResource(Base):
     """A reference link of one roadmap node, synced from a source at a pinned commit."""
 
@@ -224,6 +243,21 @@ class OAuthAccount(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class OAuthPending(Base):
+    """A started GitHub or Google sign-in. Only the SHA-256 hash of the browser's key is stored,
+    and the PKCE verifier is SecretBox-encrypted."""
+
+    __tablename__ = "oauth_pending"
+
+    key_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    provider: Mapped[str] = mapped_column(Text)
+    state: Mapped[str] = mapped_column(Text)
+    verifier_enc: Mapped[str] = mapped_column(Text)
+    next: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class UserSession(Base):
     """A signed-in browser. Only the SHA-256 hash of the cookie token is stored."""
 
@@ -273,7 +307,12 @@ class Invitation(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
-def make_engine(database_url: str) -> Engine:
+def make_engine(database_url: str, *, serverless: bool = False) -> Engine:
+    if serverless:
+        # Behind a transaction-mode pooler: no pool of our own, no prepared statements.
+        return create_engine(
+            database_url, poolclass=NullPool, connect_args={"prepare_threshold": None}
+        )
     return create_engine(database_url, pool_pre_ping=True)
 
 

@@ -9,6 +9,7 @@ from alembic import command
 from alembic.config import Config
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 from sqlalchemy import create_engine, select, text
 
 from app.auth.sessions import COOKIE, LIFETIME, hash_token, new_token
@@ -44,7 +45,7 @@ def clean_tables() -> None:
             text(
                 "TRUNCATE notes, lessons, agent_providers, ai_providers, node_resources, "
                 "news_items, agent_settings, users, oauth_accounts, sessions, auth_tokens, "
-                "app_settings, sync_keys, invitations"
+                "app_settings, sync_keys, invitations, oauth_pending, sync_uploads"
             )
         )
     engine.dispose()
@@ -181,3 +182,13 @@ def second_client(client: TestClient) -> Iterator[TestClient]:
         app, headers={"X-LearningHub": "1"}, cookies={COOKIE: member_session_token(app)}
     ) as other:
         yield other
+
+
+# Serverless mode needs a file store every instance shares; these values name one (the tests
+# that use them never store a file, so the fake address is never called).
+SERVERLESS: dict[str, Any] = {
+    "serverless": True,
+    "storage_backend": "supabase",
+    "supabase_url": "https://example.supabase.test",
+    "supabase_service_key": SecretStr("test-service-key"),
+}

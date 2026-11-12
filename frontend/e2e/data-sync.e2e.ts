@@ -9,6 +9,7 @@
  * the backup, and afterAll deletes it. The sync is sent to the e2e backend itself.
  */
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { crc32, inflateRawSync } from 'node:zlib'
 import { OWNER } from '../playwright.config.ts'
@@ -144,10 +145,23 @@ function dataCard(page: Page, name: 'Backup' | 'Restore' | 'Receive' | 'Send') {
   return page.getByRole('article', { name })
 }
 
+/** Restores through the part routes (start, one 1 MB part at a time, finish) and answers the finish call. */
 async function restoreThroughApi(request: APIRequestContext, file: Buffer, confirm = 'REPLACE') {
-  return request.post(`${API}/api/data/restore`, {
+  const started = await request.post(`${API}/api/data/restore/upload`, { headers: H })
+  expect(started.ok(), await started.text()).toBeTruthy()
+  const { upload_id } = (await started.json()) as { upload_id: string }
+  const size = 1024 * 1024
+  const parts = Math.max(1, Math.ceil(file.length / size))
+  for (let i = 0; i < parts; i++) {
+    const put = await request.put(`${API}/api/data/restore/upload/${upload_id}/${i}`, {
+      headers: { ...H, 'Content-Type': 'application/octet-stream' },
+      data: file.subarray(i * size, (i + 1) * size),
+    })
+    expect(put.ok(), await put.text()).toBeTruthy()
+  }
+  return request.post(`${API}/api/data/restore/upload/${upload_id}/finish`, {
     headers: H,
-    multipart: { file: { name: 'backup.zip', mimeType: 'application/zip', buffer: file }, confirm },
+    data: { parts, sha256: createHash('sha256').update(file).digest('hex'), confirm },
   })
 }
 
@@ -446,10 +460,7 @@ test.describe('Data & sync', () => {
       expect((await anon.get(`${API}/api/data/backup`)).status()).toBe(401)
       expect((await anon.get(`${API}/api/data/sync-key`)).status()).toBe(401)
       expect((await anon.post(`${API}/api/data/sync-key`, { headers: H })).status()).toBe(401)
-      const restore = await anon.post(`${API}/api/data/restore`, {
-        headers: H,
-        multipart: { file: { name: 'b.zip', mimeType: 'application/zip', buffer: Buffer.from('x') }, confirm: 'REPLACE' },
-      })
+      const restore = await anon.post(`${API}/api/data/restore/upload`, { headers: H })
       expect(restore.status()).toBe(401)
       // An upload without a sync key is refused too.
       expect((await anon.post(`${API}/api/data/upload`, { headers: H })).status()).toBe(401)

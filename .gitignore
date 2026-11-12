@@ -34,3 +34,7 @@ deploy/cloudflared/config.yml
 
 # Wrangler local state (account cache)
 .wrangler/
+
+# Vercel: roadmaps/ and news/ copied next to the API at build time, and the CLI's local state
+backend/_data/
+.vercel/

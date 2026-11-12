@@ -1,5 +1,6 @@
 import { useRef, useState, type DragEvent } from 'react'
 import { api, type ImportOutcome, type Roadmap } from '../api'
+import { tooLargeReason, useMaxUploadBytes } from '../lib/uploadLimit'
 import { NodePicker } from './NodePicker'
 
 interface Props {
@@ -17,14 +18,30 @@ export function ImportDialog({ roadmaps, onClose, onChanged }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const input = useRef<HTMLInputElement>(null)
+  const maxBytes = useMaxUploadBytes()
 
   const upload = async (files: File[]) => {
     if (files.length === 0) return
     setStage('uploading')
     setError(null)
     try {
-      const response = await api.importFiles(files)
-      setResults(response.results)
+      // One request per file, in the order chosen; a file over the limit is never sent, and a failed
+      // one does not stop the others.
+      const merged: ImportOutcome[] = []
+      for (const file of files) {
+        const reason = tooLargeReason(file, maxBytes)
+        if (reason) {
+          merged.push({ filename: file.name, outcome: 'rejected', reason, note: null })
+          continue
+        }
+        try {
+          merged.push(...(await api.importFiles([file])).results)
+        } catch (e) {
+          const detail = e instanceof Error ? e.message : 'the request failed'
+          merged.push({ filename: file.name, outcome: 'rejected', reason: detail, note: null })
+        }
+      }
+      setResults(merged)
       setStage('link')
       await onChanged()
     } catch (e) {

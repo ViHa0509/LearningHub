@@ -360,6 +360,8 @@ export interface AuthStatus {
   has_owner: boolean
   providers: Record<OAuthProvider, { configured: boolean }>
   mail: { mode: 'smtp' | 'outbox' }
+  /** The server's upload limit in bytes; absent on an older server. */
+  max_upload_bytes?: number
 }
 
 export type Role = 'admin' | 'member'
@@ -482,6 +484,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T
 }
 
+/** The biggest part of a restore upload; one request must stay under the host's body limit. */
+export const RESTORE_PART_SIZE = 4 * 1024 * 1024
+
+/** The SHA-256 of a whole file as lower-case hex, computed in the browser. */
+async function sha256Hex(file: Blob): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer())
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('')
+}
+
 const json = (method: string, body: unknown): RequestInit => ({
   method,
   headers: { 'Content-Type': 'application/json' },
@@ -495,6 +506,7 @@ export const api = {
   counts: (domain: string) => request<NodeCounts>(`/api/domains/${domain}/counts`),
   notes: () => request<Note[]>('/api/notes'),
   archivedNotes: () => request<Note[]>('/api/notes?archived=true'),
+  /** Imports files in one request. */
   importFiles: (files: File[]) => {
     const form = new FormData()
     for (const file of files) form.append('files', file)
@@ -610,11 +622,41 @@ export const api = {
   removeSignIn: (provider: OAuthProvider) =>
     request<void>(`/api/settings/sign-in/${provider}`, { method: 'DELETE' }),
   backupUrl: '/api/data/backup',
-  restoreBackup: (file: File) => {
-    const form = new FormData()
-    form.append('file', file)
-    form.append('confirm', 'REPLACE')
-    return request<RestoreResult>('/api/data/restore', { method: 'POST', body: form })
+  /**
+   * Restores a backup by uploading it in parts (one after another), then finishing with the
+   * whole file's SHA-256. Any failed step throws and the server restores nothing.
+   */
+  restoreBackup: async (
+    file: File,
+    onProgress?: (progress: { part: number; parts: number }) => void,
+    partSize: number = RESTORE_PART_SIZE,
+  ): Promise<RestoreResult> => {
+    const parts = Math.max(1, Math.ceil(file.size / partSize))
+    const sha256 = await sha256Hex(file)
+    const failed = (error: unknown) =>
+      new Error(`Upload failed: ${error instanceof Error ? error.message : 'the request failed'}`)
+    let upload_id: string
+    try {
+      ;({ upload_id } = await request<{ upload_id: string }>('/api/data/restore/upload', { method: 'POST' }))
+    } catch (error) {
+      throw failed(error)
+    }
+    for (let index = 0; index < parts; index++) {
+      onProgress?.({ part: index + 1, parts })
+      try {
+        await request<{ size: number }>(`/api/data/restore/upload/${upload_id}/${index}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/octet-stream' },
+          body: file.slice(index * partSize, (index + 1) * partSize),
+        })
+      } catch (error) {
+        throw failed(error)
+      }
+    }
+    return request<RestoreResult>(
+      `/api/data/restore/upload/${upload_id}/finish`,
+      json('POST', { parts, sha256, confirm: 'REPLACE' }),
+    )
   },
   syncKeyStatus: () => request<SyncKeyStatus>('/api/data/sync-key'),
   createSyncKey: () => request<NewSyncKey>('/api/data/sync-key', { method: 'POST' }),

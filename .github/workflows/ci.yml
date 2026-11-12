@@ -127,3 +127,55 @@ jobs:
             frontend/playwright-report/
           retention-days: 14
           if-no-files-found: ignore
+
+  # Production: migrate the database, then ask Vercel to build and publish main.
+  # Vercel's own Git deploy for main is off, so the app never runs ahead of its schema.
+  deploy:
+    needs: [backend, frontend, e2e]
+    # A release run calls this file on a tag push (ref refs/tags/...), so the ref check keeps it out.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # One deploy at a time, and never cancel a migration that is already running.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      # Secrets cannot be used in a job-level "if"; this step turns them into an output.
+      - name: Check the deploy secrets
+        id: secrets
+        env:
+          MIGRATE_URL: ${{ secrets.LH_MIGRATE_DATABASE_URL }}
+          DEPLOY_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -n "$MIGRATE_URL" ] && [ -n "$DEPLOY_HOOK" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Deploy secrets are not set; skipping the production deploy."
+          fi
+      - uses: actions/checkout@v5
+        if: steps.secrets.outputs.enabled == 'true'
+      - uses: actions/setup-python@v6
+        if: steps.secrets.outputs.enabled == 'true'
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - name: Install backend runtime requirements
+        if: steps.secrets.outputs.enabled == 'true'
+        run: python -m venv .venv && .venv/bin/pip install -r requirements.txt
+      - name: Migrate the production database
+        if: steps.secrets.outputs.enabled == 'true'
+        env:
+          LH_DATABASE_URL: ${{ secrets.LH_MIGRATE_DATABASE_URL }}
+        run: .venv/bin/alembic upgrade head
+      # No "always()" or "failure()" here: a failed migration fails the job and this step never runs.
+      - name: Trigger the Vercel deploy
+        if: steps.secrets.outputs.enabled == 'true'
+        env:
+          VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+        run: curl --fail -sS -X POST "$VERCEL_DEPLOY_HOOK_URL" > /dev/null

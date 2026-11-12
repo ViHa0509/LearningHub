@@ -51,6 +51,11 @@ FIELD_ERROR_PREFIXES = ("/api/ai-providers", "/api/agents")
 def build_store(settings: Settings) -> FileStore:
     """The note file store; a supabase backend with a missing setting refuses to start."""
     if settings.storage_backend == "local":
+        if settings.serverless:
+            raise RuntimeError(
+                "LH_SERVERLESS=true needs LH_STORAGE_BACKEND=supabase: "
+                "a local folder is not shared between instances"
+            )
         return LocalFileStore(settings.storage_dir)
     key = settings.supabase_service_key
     missing = [
@@ -130,7 +135,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.news_sources = load_sources(settings.news_sources_file)
     app.state.news_jobs = NewsJobs()
     app.state.news_fetcher = default_fetcher
-    app.state.engine = make_engine(settings.database_url)
+    app.state.engine = make_engine(settings.database_url, serverless=settings.serverless)
     app.state.session_factory = make_session_factory(app.state.engine)
     app.state.store = build_store(settings)
     app.state.box = SecretBox.from_settings(settings)
@@ -142,7 +147,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.clock = utc_now
     app.state.sync_transport = None  # tests inject an httpx2 transport for the sync sender
     app.state.auth_limiter = AuthLimiter(settings.auth_rate_per_minute)
-    app.state.oauth_pending = PendingStore()
+    # The clock is read through app.state so tests can set it after the app is built.
+    app.state.oauth_pending = PendingStore(
+        app.state.session_factory, app.state.box, lambda: app.state.clock()
+    )
     app.state.mailer = mailer_from_settings(settings)
 
     @app.exception_handler(RequestValidationError)

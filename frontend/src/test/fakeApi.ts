@@ -199,6 +199,8 @@ export interface FakeState {
   /** Note id -> HTML source; a note without an entry has a page made from its title. */
   sources: Record<string, string>
   importResults?: ImportOutcome[]
+  /** The file names of each POST /api/notes/import, in order. */
+  importRequests: string[][]
   lessons: Record<string, Lesson>
   /**
    * Answers POST /api/lessons/extract-pdf for the uploaded file: the extracted text, or a status and
@@ -297,8 +299,12 @@ export interface FakeData {
   /** What a restore or a sync answers: the result, or a status and detail for a refusal. */
   restore: RestoreResult | { status: number; detail: string }
   sync: RestoreResult | { status: number; detail: string }
-  /** Files received by POST /api/data/restore: name and the confirm field. */
-  restored: { name: string; confirm: string }[]
+  /** Restore uploads started by POST /api/data/restore/upload, and the sizes of the parts each received. */
+  restoreUploads: { id: string; parts: number[] }[]
+  /** Bodies of the finish calls (parts, sha256, confirm). */
+  restoreFinishes: { parts: number; sha256: string; confirm: string }[]
+  /** A part index that answers this refusal once (the next try of it goes through). */
+  restoreFailPart: { index: number; status: number; detail: string } | null
 }
 
 export interface FakeOwner {
@@ -325,6 +331,8 @@ export interface FakeAuth {
   signedIn: boolean
   providers: { github: boolean; google: boolean }
   mail: 'smtp' | 'outbox'
+  /** GET /api/auth/status `max_upload_bytes`; undefined leaves the field out (an older server). */
+  maxUploadBytes?: number
   /** Tokens "emailed" so far (and ones a test seeds); each works once. */
   tokens: FakeAuthToken[]
   /** When set, every auth POST answers 429 with this detail. */
@@ -419,6 +427,7 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
     notes: [...notes],
     sources: {},
     importResults,
+    importRequests: [],
     lessons: {},
     extractPdf: (file) =>
       file.name.toLowerCase().endsWith('.pdf')
@@ -467,7 +476,9 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
       syncKey: null,
       restore: { counts: { notes: 2, files: 2, lessons: 1, providers: 1 }, providers_needing_key: [] },
       sync: { counts: { notes: 2, files: 2, lessons: 1, providers: 1 }, providers_needing_key: [] },
-      restored: [],
+      restoreUploads: [],
+      restoreFinishes: [],
+      restoreFailPart: null,
     },
   }
   const signInOut = () => {
@@ -515,6 +526,7 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
         has_owner: auth.owner !== null,
         providers: { github: { configured: auth.providers.github }, google: { configured: auth.providers.google } },
         mail: { mode: auth.mail },
+        ...(auth.maxUploadBytes === undefined ? {} : { max_upload_bytes: auth.maxUploadBytes }),
       })
     }
     if (url === '/api/auth/me') {
@@ -824,13 +836,32 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
         return respond(signInOut())
       }
 
-      if (url === '/api/data/restore' && method === 'POST') {
-        const form = init?.body instanceof FormData ? init.body : null
-        const file = form?.get('file')
-        if (!(file instanceof File) || form?.get('confirm') !== 'REPLACE') {
-          return respond({ detail: 'Type REPLACE to confirm' }, 422)
+      if (url === '/api/data/restore/upload' && method === 'POST') {
+        const id = `upload-${state.data.restoreUploads.length + 1}`
+        state.data.restoreUploads.push({ id, parts: [] })
+        return respond({ upload_id: id })
+      }
+      const restorePart = url.match(/^\/api\/data\/restore\/upload\/([^/]+)\/(\d+)$/)
+      if (restorePart && method === 'PUT') {
+        const upload = state.data.restoreUploads.find((u) => u.id === restorePart[1])
+        if (!upload) return respond({ detail: 'Not found' }, 404)
+        const index = Number(restorePart[2])
+        const fail = state.data.restoreFailPart
+        if (fail && fail.index === index) {
+          state.data.restoreFailPart = null
+          return respond({ detail: fail.detail }, fail.status)
         }
-        state.data.restored.push({ name: file.name, confirm: String(form.get('confirm')) })
+        const size = init?.body instanceof Blob ? init.body.size : 0
+        upload.parts[index] = size
+        return respond({ size })
+      }
+      const restoreFinish = url.match(/^\/api\/data\/restore\/upload\/([^/]+)\/finish$/)
+      if (restoreFinish && method === 'POST') {
+        if (!state.data.restoreUploads.some((u) => u.id === restoreFinish[1])) {
+          return respond({ detail: 'Not found' }, 404)
+        }
+        if (body?.confirm !== 'REPLACE') return respond({ detail: 'Type REPLACE to confirm' }, 422)
+        state.data.restoreFinishes.push(body as { parts: number; sha256: string; confirm: string })
         const answer = state.data.restore
         return 'status' in answer ? respond({ detail: answer.detail }, answer.status) : respond(answer)
       }
@@ -1108,7 +1139,9 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
         )
       }
       if (url === '/api/notes/import') {
-        const results = state.importResults ?? []
+        const sent = init?.body instanceof FormData ? init.body.getAll('files').flatMap((f) => (f instanceof File ? [f.name] : [])) : []
+        state.importRequests.push(sent)
+        const results = (state.importResults ?? []).filter((r) => sent.includes(r.filename))
         for (const r of results) if (r.outcome === 'created' && r.note) state.notes.unshift(r.note)
         return respond({ results })
       }

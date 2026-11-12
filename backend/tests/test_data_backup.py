@@ -1,5 +1,6 @@
 """Spec: data-sync - Download a backup; Restore a backup."""
 
+import hashlib
 import io
 import json
 import zipfile
@@ -82,11 +83,24 @@ def download(client: TestClient) -> bytes:
     return response.content
 
 
+RESTORE_UPLOAD = "/api/data/restore/upload"
+PART = 700  # small parts, so every restore in these tests takes several calls
+
+
 def restore(client: TestClient, data: bytes, confirm: str | None = "REPLACE") -> Any:
-    form = {} if confirm is None else {"confirm": confirm}
-    return client.post(
-        "/api/data/restore", files={"file": ("b.zip", data, "application/zip")}, data=form
-    )
+    """Restore as the Data & sync page does: start, send the parts, finish."""
+    started = client.post(RESTORE_UPLOAD)
+    if started.status_code != 200:
+        return started
+    upload_id = started.json()["upload_id"]
+    parts = [data[i : i + PART] for i in range(0, len(data), PART)] or [b""]
+    for index, part in enumerate(parts):
+        sent = client.put(f"{RESTORE_UPLOAD}/{upload_id}/{index}", content=part)
+        assert sent.status_code == 200, sent.text
+    body: dict[str, Any] = {"parts": len(parts), "sha256": hashlib.sha256(data).hexdigest()}
+    if confirm is not None:
+        body["confirm"] = confirm
+    return client.post(f"{RESTORE_UPLOAD}/{upload_id}/finish", json=body)
 
 
 # Ids are new after a restore, so rows are compared without them (assignments by provider name).
@@ -393,13 +407,17 @@ def test_backup_and_restore_need_a_session(client: TestClient, settings_factory:
 
 
 def test_restore_needs_the_app_header(client: TestClient) -> None:
-    response = client.post(
-        "/api/data/restore",
-        files={"file": ("b.zip", b"x", "application/zip")},
-        data={"confirm": "REPLACE"},
-        headers={"X-LearningHub": "0"},
+    off = {"X-LearningHub": "0"}
+    assert client.post(RESTORE_UPLOAD, headers=off).status_code == 403
+    upload_id = client.post(RESTORE_UPLOAD).json()["upload_id"]
+    part = client.put(f"{RESTORE_UPLOAD}/{upload_id}/0", content=b"x", headers=off)
+    assert part.status_code == 403
+    finish = client.post(
+        f"{RESTORE_UPLOAD}/{upload_id}/finish",
+        json={"parts": 1, "sha256": "0" * 64, "confirm": "REPLACE"},
+        headers=off,
     )
-    assert response.status_code == 403
+    assert finish.status_code == 403
 
 
 def test_backup_without_a_note_file_leaves_the_note_out_and_restores(
