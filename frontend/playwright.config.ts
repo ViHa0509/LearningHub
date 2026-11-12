@@ -51,6 +51,9 @@ export const E2E_ENV = {
 export const OWNER = { email: 'owner@example.test', password: 'e2e-owner-password-1', name: 'E2E Owner' }
 export const OWNER_STATE = join(import.meta.dirname, 'e2e-results', '.auth', 'owner.json')
 
+/** The responsive-layout checks: run by the phone and tablet projects only. */
+const RESPONSIVE_SPEC = 'responsive.e2e.ts'
+
 export default defineConfig({
   testDir: './e2e',
   testMatch: '*.e2e.ts',
@@ -64,7 +67,25 @@ export default defineConfig({
   projects: [
     // Creates the Owner and saves its session before any other test runs.
     { name: 'setup', testMatch: 'owner.setup.ts' },
-    { name: 'app', dependencies: ['setup'], use: { storageState: OWNER_STATE } },
+    {
+      name: 'app',
+      dependencies: ['setup'],
+      testIgnore: RESPONSIVE_SPEC,
+      use: { storageState: OWNER_STATE },
+    },
+    // The same app at a phone and a tablet size, with touch: only the responsive-layout checks.
+    {
+      name: 'phone',
+      dependencies: ['setup'],
+      testMatch: RESPONSIVE_SPEC,
+      use: { storageState: OWNER_STATE, viewport: { width: 390, height: 844 }, hasTouch: true },
+    },
+    {
+      name: 'tablet',
+      dependencies: ['setup'],
+      testMatch: RESPONSIVE_SPEC,
+      use: { storageState: OWNER_STATE, viewport: { width: 820, height: 1180 }, hasTouch: true },
+    },
   ],
   use: {
     baseURL: 'http://127.0.0.1:5174',

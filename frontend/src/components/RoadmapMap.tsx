@@ -9,9 +9,11 @@ import {
   type NodeProps,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { api, queryKeys, type DomainSummary } from '../api'
-import { layoutRoadmap, type RoadmapNodeData } from '../lib/layout'
+import { NODE_WIDTH, layoutRoadmap, type RoadmapNodeData } from '../lib/layout'
+import { DESKTOP_VIEWPORT, startViewport } from '../lib/startViewport'
+import { useScreenClass } from '../lib/useScreenClass'
 
 function RoadmapNodeView({ data }: NodeProps<Node<RoadmapNodeData>>) {
   const classes = ['roadmap-node']
@@ -54,9 +56,29 @@ export function RoadmapMap({ domains, domainId, selectedNodeId, onSelectDomain, 
     [roadmap.data, counts.data, selectedNodeId],
   )
 
+  const screenClass = useScreenClass()
+  const paneRef = useRef<HTMLDivElement>(null)
+  const tabsRef = useRef<HTMLDivElement>(null)
+  // The domain tabs scroll inside their row on a narrow screen: bring the active one into view.
+  useEffect(() => {
+    tabsRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView?.({ inline: 'nearest', block: 'nearest' })
+  }, [domainId, domains])
+  const hasLayout = flow !== null
+  // Only the initial view: React Flow reads defaultViewport once per mount (the key is the domain).
+  const viewport = useMemo(() => {
+    if (!hasLayout) return DESKTOP_VIEWPORT
+    const first = flow.nodes.reduce((top, n) =>
+      n.position.y < top.position.y || (n.position.y === top.position.y && n.position.x < top.position.x) ? n : top,
+    )
+    const measured = paneRef.current?.clientWidth
+    const paneWidth = measured ? measured : window.innerWidth
+    return startViewport(first.position, NODE_WIDTH, paneWidth, screenClass)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasLayout, domainId, screenClass])
+
   return (
     <div className="roadmap-map">
-      <div className="domain-tabs" role="tablist" aria-label="Domains">
+      <div ref={tabsRef} className="domain-tabs" role="tablist" aria-label="Domains">
         {domains.map((d) => (
           <button
             key={d.id}
@@ -69,7 +91,7 @@ export function RoadmapMap({ domains, domainId, selectedNodeId, onSelectDomain, 
           </button>
         ))}
       </div>
-      <div className="flow" aria-label={`${roadmap.data?.title ?? domainId} roadmap`}>
+      <div className="flow" ref={paneRef} aria-label={`${roadmap.data?.title ?? domainId} roadmap`}>
         {roadmap.isError && <p className="error">Could not load the roadmap.</p>}
         {flow && (
           <ReactFlow
@@ -79,8 +101,9 @@ export function RoadmapMap({ domains, domainId, selectedNodeId, onSelectDomain, 
             nodeTypes={nodeTypes}
             nodesDraggable={false}
             nodesConnectable={false}
-            // Start readable at the top-left like a page; wheel scrolls, ctrl+wheel zooms.
-            defaultViewport={{ x: 32, y: 24, zoom: 0.9 }}
+            // Start readable (top-left on desktop, first node centered on small screens); wheel scrolls,
+            // ctrl+wheel and pinch zoom, drag pans.
+            defaultViewport={viewport}
             panOnScroll
             minZoom={0.2}
             proOptions={{ hideAttribution: true }}

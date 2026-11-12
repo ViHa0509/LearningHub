@@ -135,7 +135,7 @@ The public copy can run on Vercel's free Hobby plan, with no PC of yours involve
 1. **Supabase** (keep the project you already have):
    - Storage -> **New bucket** `learninghub`, **private**.
    - From **Connect**, copy two connection strings and turn each into `postgresql+psycopg://...?sslmode=require` (URL-encode special characters in the password): the **Transaction pooler** (port 6543) is for the app, the **Session pooler** (port 5432) is for migrations. The direct host is IPv6 only and is not used.
-2. **Vercel:** sign in with GitHub, then Add New -> **Project** -> import this repository, with the framework preset **Services**. `vercel.json` defines the services `web` (from `frontend/`) and `api` (from `backend/`) and the region `icn1`. Automatic production deploys from `main` are turned off in `vercel.json`, because CI deploys after the migration (step 4).
+2. **Vercel:** sign in with GitHub, then Add New -> **Project** -> import this repository, with the framework preset **Services** and the root directory left empty (do not pick "Import single project" on `backend`: `vercel.json` would be ignored and only the API would be deployed). `vercel.json` defines the services `web` (from `frontend/`) and `api` (from `backend/`) and the region `icn1`. Automatic production deploys from `main` are turned off in `vercel.json`, because CI deploys after the migration (step 4).
 3. **Environment values** (Project Settings -> Environment Variables, **Production** only). Secrets are entered in Vercel only, never in the repository.
 
    | Name | Value | Secret |
@@ -157,7 +157,7 @@ The public copy can run on Vercel's free Hobby plan, with no PC of yours involve
 5. **Point the public address at Vercel** once the project is live: `deploy/worker/set-origin.ps1 https://<project>.vercel.app`. The public address, `LH_PUBLIC_URL` and the GitHub and Google callback addresses stay the same.
 6. **First use:** open the public address and sign up; on an empty database the first account becomes the admin. On Local, use Settings -> Data & sync -> Send from Local to copy your data.
 
-Note: Vercel Services is in beta. The Python entrypoint form, the deep-link fallback and the build step that copies `roadmaps/` and `news/` into `backend/_data/` are confirmed on the first preview deploy (task 1.2 of the `vercel-deploy` change), not before.
+Note: Vercel Services is in beta. Vercel's Python build installs the packages listed in `backend/pyproject.toml` (not `requirements.txt`); a test keeps the two lists equal.
 
 Limits on Vercel:
 - Uploads are limited to 4 MB per file (10 MB elsewhere).

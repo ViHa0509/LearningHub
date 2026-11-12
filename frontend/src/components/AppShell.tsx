@@ -14,6 +14,7 @@ import { useAuth } from '../lib/auth'
 import { forgetReturn, parseAuthRoute, rememberReturn, returnRoute, useHash } from '../lib/authRoute'
 import { domainOf } from '../lib/grouping'
 import { navigate, useRoute } from '../lib/route'
+import { useScreenClass, type ScreenClass } from '../lib/useScreenClass'
 import { useTheme, type Theme } from '../lib/theme'
 import { AgentPanel, type AgentRequest } from './AgentPanel'
 import { AuthPages } from './AuthPages'
@@ -27,6 +28,7 @@ import { LearnedList } from './LearnedList'
 import { LessonPage } from './LessonPage'
 import { NewsPage } from './NewsPage'
 import { NoteView } from './NoteView'
+import { AGENT_PANEL_ID, LEARNED_OPENER_ID, LEARNED_PANEL_ID, PanelFrame } from './PanelFrame'
 import { RoadmapMap } from './RoadmapMap'
 import { ProviderPage } from './ProviderPage'
 import { ServiceUnavailable } from './ServiceUnavailable'
@@ -100,6 +102,11 @@ interface MainProps {
   user: Me | null
 }
 
+/** Which panels are open on entering a screen class (and when it changes). */
+function panelDefaults(screenClass: ScreenClass) {
+  return { left: screenClass !== 'phone', right: screenClass === 'desktop' }
+}
+
 function MainApp({ theme, onThemeChange, health, user }: MainProps) {
   const route = useRoute()
   const domains = useDomains()
@@ -108,8 +115,28 @@ function MainApp({ theme, onThemeChange, health, user }: MainProps) {
   const { roadmaps, ready: roadmapsReady } = useAllRoadmaps()
   const refresh = useRefreshNotes()
 
-  const [leftOpen, setLeftOpen] = useState(true)
-  const [rightOpen, setRightOpen] = useState(true)
+  const screenClass = useScreenClass()
+  const [leftOpen, setLeftOpen] = useState(() => panelDefaults(screenClass).left)
+  const [rightOpen, setRightOpen] = useState(() => panelDefaults(screenClass).right)
+  // A change of screen class resets the panels to that class's defaults; within a class the user's
+  // choice stands. Done while rendering, so no frame shows the old state in the new layout.
+  const [shownClass, setShownClass] = useState(screenClass)
+  if (shownClass !== screenClass) {
+    const defaults = panelDefaults(screenClass)
+    setShownClass(screenClass)
+    setLeftOpen(defaults.left)
+    setRightOpen(defaults.right)
+  }
+  const phone = screenClass === 'phone'
+  // On a tablet and a phone at most one side panel is open: opening one closes the other.
+  const setLeft = (open: boolean) => {
+    setLeftOpen(open)
+    if (open && screenClass !== 'desktop') setRightOpen(false)
+  }
+  const setRight = (open: boolean) => {
+    setRightOpen(open)
+    if (open && screenClass !== 'desktop') setLeftOpen(false)
+  }
   // The node last opened from the list or the map; the map highlights it when shown again.
   const [lastNodeId, setLastNodeId] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
@@ -127,7 +154,7 @@ function MainApp({ theme, onThemeChange, health, user }: MainProps) {
           : { kind: 'home' }
 
   const askAgent = (text: string, agentId?: string, prefill = false) => {
-    setRightOpen(true)
+    setRight(true)
     setAgentRequest((previous) => ({ id: (previous?.id ?? 0) + 1, text, agentId, prefill }))
   }
 
@@ -144,6 +171,7 @@ function MainApp({ theme, onThemeChange, health, user }: MainProps) {
   const openNoteFromList = (note: Note) => {
     setLastNodeId(note.node_id && !note.node_missing ? note.node_id : null)
     navigate({ page: 'note', id: note.id })
+    if (phone) setLeftOpen(false)
   }
 
   const openLesson = (fullId: string) => {
@@ -157,7 +185,7 @@ function MainApp({ theme, onThemeChange, health, user }: MainProps) {
     else navigate({ page: 'home' })
   }
 
-  const columns = [leftOpen ? 'minmax(240px, 22%)' : '44px', '1fr', rightOpen ? 'minmax(300px, 30%)' : '44px']
+  const columns = phone ? ['1fr'] : [leftOpen ? 'minmax(240px, 22%)' : '44px', '1fr', rightOpen ? 'minmax(300px, 30%)' : '44px']
 
   let center: React.ReactNode = null
   if (route.page === 'home') {
@@ -232,22 +260,63 @@ function MainApp({ theme, onThemeChange, health, user }: MainProps) {
 
   return (
     <div className="app-frame">
-      <TopBar theme={theme} onThemeChange={onThemeChange} user={user} />
+      <TopBar
+        theme={theme}
+        onThemeChange={onThemeChange}
+        user={user}
+        screenClass={screenClass}
+        leftOpen={leftOpen}
+        rightOpen={rightOpen}
+        onToggleLeft={() => setLeft(!leftOpen)}
+        onToggleRight={() => setRight(!rightOpen)}
+        leftPanelId={LEARNED_PANEL_ID}
+        rightPanelId={AGENT_PANEL_ID}
+      />
       {health.state === 'down' && <ServiceUnavailable health={health} />}
       {/* Hidden, not unmounted, during an outage: open drafts and the chat survive until it is back. */}
-      <div className="app-shell" style={{ gridTemplateColumns: columns.join(' ') }} hidden={health.state === 'down'}>
-        <aside className="pane left" aria-label="Learned items" data-collapsed={!leftOpen}>
+      <div
+        className="app-shell"
+        style={{ gridTemplateColumns: columns.join(' ') }}
+        data-drawer-open={phone && (leftOpen || rightOpen)}
+        hidden={health.state === 'down'}
+      >
+        {phone && (leftOpen || rightOpen) && (
+          <div
+            className="drawer-scrim"
+            aria-hidden="true"
+            onClick={() => {
+              setLeftOpen(false)
+              setRightOpen(false)
+            }}
+          />
+        )}
+        <PanelFrame
+          id={LEARNED_PANEL_ID}
+          className="pane left"
+          asideLabel="Learned items"
+          drawerLabel="Learned"
+          drawer={phone}
+          open={leftOpen}
+          onClose={() => setLeftOpen(false)}
+          openerId={LEARNED_OPENER_ID}
+        >
           <div className="pane-header">
             {leftOpen && <h2>Learned</h2>}
-            <button
-              type="button"
-              className="icon"
-              aria-expanded={leftOpen}
-              aria-label={leftOpen ? 'Collapse learned list' : 'Expand learned list'}
-              onClick={() => setLeftOpen(!leftOpen)}
-            >
-              {leftOpen ? '«' : '»'}
-            </button>
+            {phone ? (
+              <button type="button" className="icon" data-drawer-close="" aria-label="Close learned list" onClick={() => setLeftOpen(false)}>
+                ×
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="icon"
+                aria-expanded={leftOpen}
+                aria-label={leftOpen ? 'Collapse learned list' : 'Expand learned list'}
+                onClick={() => setLeft(!leftOpen)}
+              >
+                {leftOpen ? '«' : '»'}
+              </button>
+            )}
           </div>
           {/* Wait for roadmaps too, so notes do not flash under "Unsorted" before grouping. */}
           {leftOpen && notes.data && roadmapsReady && (
@@ -266,14 +335,20 @@ function MainApp({ theme, onThemeChange, health, user }: MainProps) {
             <p className="list-loading muted">Loading your notes…</p>
           )}
           {leftOpen && notes.isError && <p className="error">Could not load notes.</p>}
-        </aside>
+        </PanelFrame>
 
         <main className="pane center" aria-label="Content">
           {center}
           {domains.isError && <p className="error">Could not load roadmaps.</p>}
         </main>
 
-        <AgentPanel open={rightOpen} onToggle={() => setRightOpen(!rightOpen)} page={page} request={agentRequest} />
+        <AgentPanel
+          open={rightOpen}
+          onToggle={() => setRight(!rightOpen)}
+          page={page}
+          request={agentRequest}
+          drawer={phone}
+        />
       </div>
 
       {importing && <ImportDialog roadmaps={roadmaps} onClose={() => setImporting(false)} onChanged={refresh} />}

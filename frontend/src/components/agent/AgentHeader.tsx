@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import { Icon } from '../Icon'
+import { DRAWER_CLOSE_ATTR } from '../PanelFrame'
 
 interface AgentChoice {
   id: string
@@ -10,6 +11,8 @@ interface AgentChoice {
 interface Props {
   open: boolean
   onToggle: () => void
+  /** A phone drawer: the toggle closes it (and takes the focus when it opens). */
+  drawer?: boolean
   /** The chat controls (agent menu, Clear chat) exist only when a provider is active. */
   chat: {
     agents: AgentChoice[]
@@ -21,17 +24,17 @@ interface Props {
   } | null
 }
 
-export function AgentHeader({ open, onToggle, chat }: Props) {
+export function AgentHeader({ open, onToggle, drawer = false, chat }: Props) {
   return (
     <div className="pane-header agent-header">
       <button
         type="button"
         className="ghost icon-btn"
-        aria-expanded={open}
-        aria-label={open ? 'Collapse agent panel' : 'Expand agent panel'}
+        {...(drawer ? { [DRAWER_CLOSE_ATTR]: '' } : { 'aria-expanded': open })}
+        aria-label={drawer ? 'Close agent' : open ? 'Collapse agent panel' : 'Expand agent panel'}
         onClick={onToggle}
       >
-        <Icon name="sidebar" size={18} className={open ? undefined : 'flip'} />
+        <Icon name={drawer ? 'close' : 'sidebar'} size={18} className={open || drawer ? undefined : 'flip'} />
       </button>
       {open && (
         <>
@@ -45,7 +48,7 @@ export function AgentHeader({ open, onToggle, chat }: Props) {
           <span className="agent-header-gap" />
           {chat && (
             <button type="button" className="ghost" onClick={chat.onClear} disabled={!chat.canClear}>
-              <Icon name="trash" /> Clear chat
+              <Icon name="trash" /> <span className="clear-label">Clear chat</span>
             </button>
           )}
           <a className="ghost icon-btn" href="#/settings" aria-label="Agent settings" title="Agent settings">

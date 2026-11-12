@@ -52,11 +52,13 @@ See proposal.md for the motivation. What shapes the approach:
 - **Why not the API serving the built app** (`LH_STATIC_DIR`): static files would then cost function time and cold starts; the `web` service serves them from the CDN.
 - **Roadmaps and news files:** `config.py` reads `../roadmaps` and `../news` relative to `backend/`, which is outside the service root. The build copies them into `backend/_data/` (git-ignored) and the environment sets `LH_ROADMAPS_DIR` and `LH_NEWS_SOURCES_FILE`.
 - **`LH_STATIC_DIR` stays unset** on Vercel, so the API never answers app pages; an unknown `/api/...` path is FastAPI's JSON 404.
-- **To confirm on the first preview deploy** (each has a fallback):
-  - the entrypoint form with `root: "backend/"` (fallback: `[tool.vercel] entrypoint` in `pyproject.toml`);
-  - the SPA fallback inside the `web` service (fallback: a `routes` entry);
-  - `buildCommand` reaching `../` (fallback: `root: "."` with `backend` added to the path in a small entry module);
-  - whether the project's framework preset must be "Services".
+- **Confirmed on the first production deploy (2026-11-13, project `learning-hub`, team `lhhub`):**
+  - the project must use the framework preset **Services** with an empty root directory; created as a single FastAPI project with root `backend`, `vercel.json` is ignored and no frontend is built;
+  - the entrypoint `app.main:app` with `root: "backend/"` works as written;
+  - the SPA fallback inside the `web` service works (`/settings/data` answers the app page), and an unknown `/api/...` path is the API's JSON 404;
+  - the `buildCommand` reaches `../roadmaps` and `../news`, and the relative `LH_ROADMAPS_DIR=_data/roadmaps` resolves at run time;
+  - Vercel's Python build installs from `pyproject.toml` and ignores `requirements.txt` when a `pyproject.toml` exists, so the dependencies are listed in `[project].dependencies` (a test keeps them equal to `requirements.txt`);
+  - builds run in `iad1`; the function runs in `icn1`.
 
 ### `LH_SERVERLESS`
 - A boolean in `Settings`, default false. It is read in three places only: the engine, the two job routes, and a startup check.

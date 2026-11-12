@@ -3,7 +3,7 @@
 ## 1. Vercel project skeleton (settles the unconfirmed platform details first)
 
 - [x] 1.1 Add `vercel.json` (services `web` and `api`, top-level rewrites, region `icn1`, Git deploy for `main` off), `backend/_data/` in `.gitignore`, and `LH_SERVERLESS` in `config.py` with the startup check (serverless + local storage refuses to start); verify with backend tests for the check and `openspec validate vercel-deploy --strict`
-- [ ] 1.2 Owner + main session: first preview deploy from a branch with throwaway preview values; confirm the entrypoint form, the SPA fallback, the `buildCommand` copy of `roadmaps/` and `news/`, and the framework preset; record each result in `design.md` (replace "To confirm" with what worked) and apply the fallback where needed; verify `/`, a deep link and `/api/health` answer on the preview address
+- [x] 1.2 Owner + main session: first preview deploy from a branch with throwaway preview values; confirm the entrypoint form, the SPA fallback, the `buildCommand` copy of `roadmaps/` and `news/`, and the framework preset; record each result in `design.md` (replace "To confirm" with what worked) and apply the fallback where needed; verify `/`, a deep link and `/api/health` answer on the preview address
 
 ## 2. Database and migrations
 
@@ -39,7 +39,7 @@
 - [x] 7.1 README "Run on Vercel": owner steps, the environment table, the two GitHub secrets, pooler ports (6543 for the app, 5432 for migrations), limits (4 MB uploads, restore size, per-instance rate limits, no Claude Code provider, Hobby terms), switching the Worker origin; remove `render.yaml` and the Render section; verify every command in the section runs as written
 - [x] 7.2 `render-deploy` change: remove the "Run on Render" requirement and task 3.2; verify `openspec validate render-deploy --strict`
 - [ ] 7.3 Confirm which forwarded-address header reaches the app behind the Worker and Vercel and that the auth rate limit and session list use it; verify with a test on the header handling and a check on the preview deploy
-- [ ] 7.4 Save the Vercel deploy how-to and the confirmed platform details to KH (project `learning-hub`); verify the row reads back
+- [x] 7.4 Save the Vercel deploy how-to and the confirmed platform details to KH (project `learning-hub`); verify the row reads back
 
 ## 8. Integration
 

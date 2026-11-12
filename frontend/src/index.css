@@ -153,7 +153,7 @@ button.icon-only { display: inline-flex; align-items: center; justify-content: c
 .tag { font-size: 11px; border-radius: 4px; padding: 0 5px; margin-left: 6px; }
 .tag.warn { color: var(--warn); border: 1px solid currentColor; }
 
-.app-frame { display: flex; flex-direction: column; height: 100vh; }
+.app-frame { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
 .app-shell { display: grid; flex: 1; min-height: 0; transition: grid-template-columns 0.15s ease; }
 .pane { min-width: 0; overflow: hidden; display: flex; flex-direction: column; }
 .pane.left, .pane.right { background: var(--surface); }
@@ -162,7 +162,8 @@ button.icon-only { display: inline-flex; align-items: center; justify-content: c
 .pane-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
 .pane[data-collapsed='true'] .pane-header { justify-content: center; padding: 10px 4px; }
 
-.learned-list { overflow: auto; padding: 8px 12px 24px; }
+
+.learned-list { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px 12px 24px; }
 /* Stays on top while the list scrolls: above the (positioned) note rows, below their menus (z-index 5).
    The negative margin covers the list's top padding so no row shows above the bar. */
 .list-toolbar {
@@ -208,7 +209,8 @@ button.disclosure .icon { width: 16px; height: 16px; flex: none; margin-right: 0
 
 .center { position: relative; }
 .roadmap-map { display: flex; flex-direction: column; height: 100%; }
-.domain-tabs { display: flex; gap: 6px; padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.domain-tabs { display: flex; gap: 6px; padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--surface); overflow-x: auto; }
+.domain-tabs button { flex: none; white-space: nowrap; }
 .domain-tabs [aria-selected='true'] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .flow { flex: 1; min-height: 0; }
 .roadmap-node {
@@ -232,7 +234,7 @@ input[type='range'], input[type='checkbox'] { accent-color: var(--accent); }
 .original { flex: 1; width: 100%; border: 0; background: #fff; }
 .title-actions { display: inline-flex; gap: 6px; }
 .note-editor { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.note-editor-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.note-editor-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--surface); }
 .note-editing { box-shadow: inset 0 0 0 2px var(--accent); }
 
 .agent-placeholder { padding: 16px; }
@@ -268,7 +270,7 @@ a { color: var(--accent); }
 
 .home-page { padding: 32px clamp(16px, 4vw, 48px) 48px; width: 100%; max-width: 1100px; margin: 0 auto; }
 .home-intro h1 { font-size: 26px; margin: 0 0 6px; }
-.domain-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; margin-top: 24px; }
+.domain-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr)); gap: 14px; margin-top: 24px; }
 .domain-card { display: flex; flex-direction: column; gap: 8px; height: 100%; padding: 18px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; color: var(--text); text-decoration: none; transition: border-color 0.15s, transform 0.15s; }
 .domain-card:hover { border-color: var(--accent); transform: translateY(-2px); }
 .domain-card h2 { font-size: 18px; }
@@ -396,7 +398,7 @@ a { color: var(--accent); }
 .button-link.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .settings-page { padding: 24px clamp(16px, 4vw, 48px) 48px; width: 100%; max-width: 1000px; margin: 0 auto; }
 .settings-page h1 { font-size: 24px; margin: 0 0 6px; }
-.provider-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; margin-top: 20px; }
+.provider-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: 14px; margin-top: 20px; }
 .provider-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
 .provider-header { display: flex; align-items: center; justify-content: space-between; }
 .provider-header h2 { font-size: 16px; }
@@ -436,7 +438,7 @@ a { color: var(--accent); }
 .provider-card select { width: 100%; }
 
 .provider-page { display: flex; flex-direction: column; gap: 16px; }
-.provider-page-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.provider-page-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
 .provider-page-header h1 { margin: 0; }
 .provider-section { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
 .provider-section h2 { font-size: 14px; }
@@ -463,7 +465,7 @@ details.provider-section[open] > summary { margin-bottom: 10px; }
 .inline-row button { white-space: nowrap; }
 .field-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
 .test-result { padding: 8px 10px; border-radius: 8px; border: 1px solid currentColor; }
-.info-grid { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; }
+.info-grid { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 16px; margin: 0; }
 .info-grid dt { color: var(--muted); }
 .info-grid dd { margin: 0; overflow-wrap: anywhere; }
 .provider-footer { padding-bottom: 8px; }
@@ -510,12 +512,13 @@ details.provider-section[open] > summary { margin-bottom: 10px; }
 .agent-pane[data-collapsed='true'] .agent-header { justify-content: center; padding: 0 4px; }
 .agent-header .icon.flip { transform: scaleX(-1); }
 .agent-header-gap { flex: 1; }
+.agent-header .ghost { flex: none; white-space: nowrap; }
 .agent-title { font-size: 14px; }
 .agent-menu { min-width: 0; }
 .agent-pane .agent-menu-button { height: 36px; padding: 0 10px 0 6px; gap: 8px; color: var(--text); max-width: 100%; }
-.agent-menu-label { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; line-height: 1.15; }
-.agent-menu-name { font-weight: 600; font-size: 13px; letter-spacing: 0.02em; white-space: nowrap; }
-.agent-menu-hint { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 170px; }
+.agent-menu-label { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; overflow: hidden; line-height: 1.15; }
+.agent-menu-name { font-weight: 600; font-size: 13px; letter-spacing: 0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.agent-menu-hint { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: min(170px, 100%); }
 .agent-menu-chevron { color: var(--muted); flex: none; }
 .agent-avatar {
   width: 28px; height: 28px; flex: none; display: grid; place-items: center; border-radius: 9px;
@@ -691,7 +694,7 @@ details.provider-section[open] > summary { margin-bottom: 10px; }
 .outage { flex: 1; min-height: 0; overflow: auto; display: grid; place-items: center; padding: 48px 16px; }
 .outage-card {
   width: 100%; max-width: 480px; display: flex; flex-direction: column; align-items: center; gap: 12px;
-  padding: 40px 32px 32px; text-align: center; background: var(--surface); border: 1px solid var(--border);
+  padding: 40px clamp(16px, 5vw, 32px) 32px; text-align: center; background: var(--surface); border: 1px solid var(--border);
   border-radius: 12px; box-shadow: var(--shadow-pop);
 }
 .outage-mark { width: 72px; height: 72px; margin-bottom: 8px; }
@@ -723,7 +726,8 @@ details.provider-section[open] > summary { margin-bottom: 10px; }
 .news-chips .chip-count { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; margin-left: 2px; }
 .news-chips .chip[aria-pressed='true'] .chip-count { color: inherit; }
 .news-search { display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); color: var(--muted); }
-.news-search input { border: none; padding: 5px 0; min-width: 200px; background: transparent; color: var(--text); outline: none; }
+.news-search { max-width: 100%; }
+.news-search input { border: none; padding: 5px 0; min-width: 0; flex: 1 1 200px; background: transparent; color: var(--text); outline: none; }
 .news-search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .news-empty { margin-top: 32px; padding: 24px; border: 1px dashed var(--border); border-radius: 12px; text-align: center; }
 .news-empty p { margin: 0 0 4px; }
@@ -745,7 +749,7 @@ details.provider-section[open] > summary { margin-bottom: 10px; }
 .auth-page { position: relative; isolation: isolate; flex: 1; min-height: 0; overflow: auto; display: grid; place-items: center; padding: 48px 16px; }
 .auth-card {
   width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 12px;
-  padding: 32px; background: var(--surface); border: 1px solid var(--border);
+  padding: clamp(16px, 5vw, 32px); background: var(--surface); border: 1px solid var(--border);
   border-radius: 12px; box-shadow: var(--shadow-pop); position: relative; z-index: 1;
 }
 .auth-mark { width: 56px; height: 56px; align-self: center; }
@@ -802,6 +806,101 @@ button.auth-provider:disabled { color: var(--muted); border-color: var(--border)
 /* Settings > Users */
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .plain-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.users-table-scroll { overflow-x: auto; }
 .users-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
 .users-table th, .users-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
 .account-role { margin: 0 0 6px; }
+
+/* ===== Responsive layout (change responsive-layout) =====
+   Kept at the end of the file: these rules must come after the base rules they adjust.
+   The media queries use the same limits as the screen classes in src/lib/useScreenClass.ts
+   (phone below 640 px, tablet below 1100 px); change them together. More responsive rules go here. */
+@media (max-width: 1099.98px) {
+  /* Tablet and phone: a fixed background repaints badly while scrolling. */
+  body { background-attachment: scroll; }
+}
+
+/* Phone: the side panels are drawers over the page, below the top bar (the shell starts under it). */
+.app-shell { position: relative; }
+.pane[hidden] { display: none; }
+.drawer-scrim { position: absolute; inset: 0; z-index: 10; background: rgb(0 0 0 / 0.45); }
+.pane.drawer {
+  position: absolute; top: 0; bottom: 0; z-index: 20; width: min(88vw, 360px);
+  box-shadow: 0 0 24px rgb(0 0 0 / 0.35);
+}
+.pane.drawer.left { left: 0; animation: drawer-in-left 0.15s ease-out; }
+.pane.drawer.right { right: 0; animation: drawer-in-right 0.15s ease-out; }
+@keyframes drawer-in-left { from { transform: translateX(-100%); } to { transform: none; } }
+@keyframes drawer-in-right { from { transform: translateX(100%); } to { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .pane.drawer.left, .pane.drawer.right { animation: none; } }
+/* The page behind an open drawer does not scroll. */
+.app-shell[data-drawer-open='true'] .pane.center { overflow: hidden; }
+/* top bar */
+@media (max-width: 1099.98px) {
+  /* Tablet and phone: the theme switch shows icons only; the labels stay for assistive tech. */
+  .top-bar .theme-switch .theme-label {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+  .top-bar .theme-switch button .icon { margin-right: 0; }
+}
+@media (max-width: 639.98px) {
+  /* Phone: one row of 40 px controls (about 280 px of the 360 px budget). */
+  header.top-bar { gap: 4px; padding: 8px; }
+  .top-bar .brand { justify-content: center; min-width: 40px; min-height: 40px; }
+  .top-bar .brand-title,
+  .top-bar .top-label,
+  .top-bar .account-name {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+  .top-bar .top-actions { gap: 4px; }
+  .top-bar .top-actions a { justify-content: center; min-width: 40px; min-height: 40px; padding: 0; }
+  .top-bar .top-icon-button {
+    display: inline-flex; align-items: center; justify-content: center; flex: none;
+    min-width: 40px; min-height: 40px; padding: 0;
+  }
+  .top-bar .account-button { justify-content: center; min-width: 40px; min-height: 40px; padding: 0; gap: 0; }
+}
+/* pages */
+@media (max-width: 1099.98px) {
+  /* Settings tabs scroll inside their own row; the underline now sits above the row's border (overflow clips the overlap). */
+  .settings-nav { overflow-x: auto; scrollbar-width: thin; }
+  .settings-nav a { flex: none; white-space: nowrap; margin-bottom: 0; }
+  /* Wide content scrolls inside its block instead of widening the page. */
+  .markdown img { max-width: 100%; height: auto; }
+  .markdown table { display: block; max-width: 100%; overflow-x: auto; }
+}
+@media (max-width: 639.98px) {
+  /* The Users table keeps a readable width and scrolls inside .users-table-scroll. */
+  .users-table { min-width: 640px; }
+  /* The agent menu spans the drawer instead of a fixed 280 px at left: 48px. */
+  .agent-menu-list { left: 8px; right: 8px; width: auto; }
+}
+@media (max-width: 1099.98px) {
+  /* The chat panel is narrow here: Clear chat shows its icon only (the label stays for assistive tech). */
+  .agent-header .clear-label {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+  .agent-header .ghost .icon { margin-right: 0; }
+  .agent-header .agent-menu { flex: 1 1 0; min-width: 0; }
+  .agent-header .agent-header-gap { display: none; }
+  .agent-header .agent-menu-button { min-width: 0; }
+}
+/* touch */
+@media (hover: none) {
+  /* No hover: the note "More actions" button is always visible. */
+  .note-item .note-more { opacity: 1; }
+}
+@media (pointer: coarse) and (max-width: 1099.98px) {
+  /* Touch targets of at least 40 px (the phone top bar is sized under "top bar"). */
+  .top-bar .brand, .top-bar .top-actions a, .top-bar .account-button { min-height: 40px; }
+  .top-bar .theme-switch button { min-height: 40px; min-width: 40px; justify-content: center; }
+  button.icon { min-height: 40px; min-width: 40px; }
+  .note-select { min-height: 40px; }
+  .agent-pane .ghost, .agent-pane .agent-menu-button { min-height: 40px; }
+  .agent-pane .icon-btn { min-width: 40px; }
+  .agent-pane .segmented button { min-height: 40px; }
+  .agent-pane .send-button { min-width: 40px; min-height: 40px; }
+  .agent-pane .code-copy { min-height: 40px; min-width: 40px; }
+  .agent-pane .attachment-remove { min-width: 40px; min-height: 40px; }
+}
+/* ===== end responsive layout ===== */

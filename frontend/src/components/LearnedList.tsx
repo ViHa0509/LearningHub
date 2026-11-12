@@ -216,7 +216,11 @@ export function LearnedList({
               value={renaming.draft}
               onChange={(e) => setRenaming({ id: note.id, draft: e.target.value })}
               onKeyDown={(e) => {
-                if (e.key === 'Escape') cancelRename(note)
+                if (e.key === 'Escape') {
+                  // Cancels the rename only, not the phone drawer around the list.
+                  e.stopPropagation()
+                  cancelRename(note)
+                }
               }}
             />
             <button

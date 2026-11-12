@@ -92,6 +92,29 @@ describe('users page', () => {
     expect(within(ana).getByRole('button', { name: 'Delete ana@example.test' })).toBeInTheDocument()
   })
 
+  it('keeps the table in its own scroll area so a narrow page does not scroll sideways', async () => {
+    adminState()
+    const { page } = await openUsers()
+    const table = await within(page).findByRole('table')
+    expect(table.parentElement).toHaveClass('users-table-scroll')
+  })
+
+  it('scrolls the current settings tab into view when the browser can', async () => {
+    adminState()
+    const scrollIntoView = vi.fn()
+    Element.prototype.scrollIntoView = scrollIntoView
+    try {
+      await openUsers()
+      expect(scrollIntoView).toHaveBeenCalledWith({ inline: 'nearest', block: 'nearest' })
+      const nav = screen.getByRole('navigation', { name: 'Settings sections' })
+      const current = within(nav).getByRole('link', { name: 'Users' })
+      expect(scrollIntoView.mock.contexts).toContain(current)
+    } finally {
+      // @ts-expect-error jsdom has no scrollIntoView; restore that state
+      delete Element.prototype.scrollIntoView
+    }
+  })
+
   it('keeps Send invitation disabled until the email is valid, then sends and names the outbox', async () => {
     const state = adminState()
     state.auth.mail = 'outbox'

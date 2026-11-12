@@ -215,48 +215,50 @@ function UsersTable({ users, failed, selfId }: { users: AdminUser[] | undefined;
       <h2>All users</h2>
       {failed && <p className="error">Could not load the users.</p>}
       {users && (
-        <table className="users-table">
-          <thead>
-            <tr>
-              <th scope="col">Email</th>
-              <th scope="col">Name</th>
-              <th scope="col">Role</th>
-              <th scope="col">Last seen</th>
-              <th scope="col">Status</th>
-              <th scope="col">
-                <span className="visually-hidden">Actions</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((user) => {
-              const own = user.id === selfId
-              return (
-                <tr key={user.id}>
-                  <td>{user.email}</td>
-                  <td>{user.display_name ?? ''}</td>
-                  <td>{user.role === 'admin' ? 'Admin' : 'Member'}</td>
-                  <td>{user.last_seen_at ? day(user.last_seen_at) : 'Never'}</td>
-                  <td>{user.disabled ? 'Disabled' : 'Active'}</td>
-                  <td>
-                    {own ? (
-                      <span className="tag on">You</span>
-                    ) : user.role === 'member' ? (
-                      <>
-                        <button type="button" onClick={() => void toggle(user)} aria-label={`${user.disabled ? 'Enable' : 'Disable'} ${user.email}`}>
-                          {user.disabled ? 'Enable' : 'Disable'}
-                        </button>{' '}
-                        <button type="button" onClick={() => setDeleting(user)} aria-label={`Delete ${user.email}`}>
-                          Delete
-                        </button>
-                      </>
-                    ) : null}
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
+        <div className="users-table-scroll">
+          <table className="users-table">
+            <thead>
+              <tr>
+                <th scope="col">Email</th>
+                <th scope="col">Name</th>
+                <th scope="col">Role</th>
+                <th scope="col">Last seen</th>
+                <th scope="col">Status</th>
+                <th scope="col">
+                  <span className="visually-hidden">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((user) => {
+                const own = user.id === selfId
+                return (
+                  <tr key={user.id}>
+                    <td>{user.email}</td>
+                    <td>{user.display_name ?? ''}</td>
+                    <td>{user.role === 'admin' ? 'Admin' : 'Member'}</td>
+                    <td>{user.last_seen_at ? day(user.last_seen_at) : 'Never'}</td>
+                    <td>{user.disabled ? 'Disabled' : 'Active'}</td>
+                    <td>
+                      {own ? (
+                        <span className="tag on">You</span>
+                      ) : user.role === 'member' ? (
+                        <>
+                          <button type="button" onClick={() => void toggle(user)} aria-label={`${user.disabled ? 'Enable' : 'Disable'} ${user.email}`}>
+                            {user.disabled ? 'Enable' : 'Disable'}
+                          </button>{' '}
+                          <button type="button" onClick={() => setDeleting(user)} aria-label={`Delete ${user.email}`}>
+                            Delete
+                          </button>
+                        </>
+                      ) : null}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
       {error && (
         <p className="error" role="alert">

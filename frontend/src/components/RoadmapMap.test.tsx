@@ -1,9 +1,11 @@
 /** Spec: learning-views - Roadmap map with note markers. */
-import { screen, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
-import { layoutRoadmap } from '../lib/layout'
+import { act, screen, within } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { NODE_WIDTH, layoutRoadmap } from '../lib/layout'
+import { startViewport } from '../lib/startViewport'
 import { backend, installFakeApi, makeNote } from '../test/fakeApi'
 import { renderApp } from '../test/render'
+import { resetScreenClass, setScreenClass } from '../test/screenClass'
 
 describe('RoadmapMap', () => {
   it('marks nodes with notes with their count, matching the counts API', async () => {
@@ -23,6 +25,21 @@ describe('RoadmapMap', () => {
     expect(state.calls.some((c) => c.url === '/api/domains/backend/counts')).toBe(true)
   })
 
+  it('scrolls the active domain tab into view inside its row', async () => {
+    installFakeApi([])
+    const scrollIntoView = vi.fn()
+    Element.prototype.scrollIntoView = scrollIntoView
+    try {
+      renderApp('#/roadmap/devops')
+      await screen.findByTestId('node-devops/ci-cd')
+      expect(scrollIntoView).toHaveBeenCalledWith({ inline: 'nearest', block: 'nearest' })
+      expect(scrollIntoView.mock.contexts).toContain(screen.getByRole('tab', { name: 'DevOps' }))
+    } finally {
+      // @ts-expect-error jsdom has no scrollIntoView; restore that state
+      delete Element.prototype.scrollIntoView
+    }
+  })
+
   it('switches domain', async () => {
     installFakeApi([])
     const { user } = renderApp('#/roadmap/backend')
@@ -30,6 +47,36 @@ describe('RoadmapMap', () => {
     await user.click(screen.getByRole('tab', { name: 'DevOps' }))
     expect(await screen.findByTestId('node-devops/ci-cd')).toBeInTheDocument()
     expect(screen.queryByTestId('node-backend/caching')).not.toBeInTheDocument()
+  })
+})
+
+/** Spec: responsive-layout - Roadmap map on small screens. */
+describe('startViewport', () => {
+  const first = { x: 0, y: 0 }
+
+  it('keeps the fixed viewport on desktop', () => {
+    expect(startViewport(first, NODE_WIDTH, 1200, 'desktop')).toEqual({ x: 32, y: 24, zoom: 0.9 })
+  })
+
+  it.each([
+    ['phone', 390],
+    ['tablet', 820],
+  ] as const)('centers the first node at zoom 0.85 on %s', (screenClass, pane) => {
+    const v = startViewport({ x: 40, y: 10 }, NODE_WIDTH, pane, screenClass)
+    expect(v.zoom).toBe(0.85)
+    expect((40 + NODE_WIDTH / 2) * v.zoom + v.x).toBeCloseTo(pane / 2)
+    expect(v.y + 10 * v.zoom).toBeCloseTo(24)
+  })
+})
+
+describe('RoadmapMap start view', () => {
+  afterEach(() => resetScreenClass())
+
+  it('renders on phone without fitView and with the map still pannable', async () => {
+    installFakeApi([])
+    act(() => setScreenClass('phone'))
+    renderApp('#/roadmap/backend')
+    expect(await screen.findByTestId('node-backend/caching')).toBeInTheDocument()
   })
 })
 

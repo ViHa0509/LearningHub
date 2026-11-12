@@ -33,7 +33,7 @@ Shell: Git Bash on Windows. Postgres must be up (`docker compose up -d`) before 
 - App URL: http://localhost:5173 (dev servers from Commands)
 - E2E command: `cd frontend && npm run e2e`
 - Screenshot folder: `frontend/e2e-results/screens/` (light and dark pages)
-- Viewport: 1440x900
+- Viewport: 1440x900 (desktop, the whole suite); phone 390x844 and tablet 820x1180 run `responsive.e2e.ts` and write `responsive-*` screenshots
 
 ## Layout
 

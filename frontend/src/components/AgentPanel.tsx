@@ -5,6 +5,7 @@ import { readEffort, saveEffort } from '../lib/agentPrefs'
 import { readAttachments, type Attachment, type ReadyAttachment } from '../lib/attachments'
 import { expandSkill } from '../lib/skills'
 import { AgentHeader } from './agent/AgentHeader'
+import { AGENT_OPENER_ID, AGENT_PANEL_ID, PanelFrame } from './PanelFrame'
 import { Composer } from './agent/Composer'
 import { MessageList } from './agent/MessageList'
 import { useAgentChat } from './agent/useAgentChat'
@@ -23,6 +24,8 @@ interface Props {
   onToggle: () => void
   page: ChatPage
   request: AgentRequest | null
+  /** On a phone the panel is a drawer over the page. */
+  drawer?: boolean
 }
 
 const ASSISTANT = 'assistant'
@@ -32,7 +35,7 @@ const FILES_ONLY = 'Read the attached files.'
 
 const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes('Files')
 
-export function AgentPanel({ open, onToggle, page, request }: Props) {
+export function AgentPanel({ open, onToggle, page, request, drawer = false }: Props) {
   const providers = useProviders()
   const agents = useAgents()
   const available = (providers.data ?? []).filter((p) => p.is_active)
@@ -99,10 +102,20 @@ export function AgentPanel({ open, onToggle, page, request }: Props) {
   }, [request, ready])
 
   return (
-    <aside className="pane right agent-pane" aria-label="Agent" data-collapsed={!open}>
+    <PanelFrame
+      id={AGENT_PANEL_ID}
+      className="pane right agent-pane"
+      asideLabel="Agent"
+      drawerLabel="Agent"
+      drawer={drawer}
+      open={open}
+      onClose={onToggle}
+      openerId={AGENT_OPENER_ID}
+    >
       <AgentHeader
         open={open}
         onToggle={onToggle}
+        drawer={drawer}
         chat={
           ready
             ? {
@@ -173,7 +186,7 @@ export function AgentPanel({ open, onToggle, page, request }: Props) {
           />
         </div>
       )}
-    </aside>
+    </PanelFrame>
   )
 }
 
