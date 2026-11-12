@@ -2,6 +2,26 @@
 name = "learninghub-backend"
 version = "0.1.0"
 requires-python = ">=3.12"
+# Vercel installs from here (it ignores requirements.txt when a pyproject.toml exists);
+# tests/test_delivery.py keeps this list equal to requirements.txt.
+dependencies = [
+    "alembic==1.20.1",
+    "anthropic==2.6.0",
+    "beautifulsoup4==4.15.0",
+    "cryptography==50.0.2",
+    "fastapi==0.162.0",
+    "httpx2==2.16.0",
+    "lxml==6.1.3",
+    "openai==3.46.0",
+    "psycopg[binary]==3.3.8",
+    "pydantic-settings==2.16.2",
+    "pydantic==2.14.3",
+    "python-multipart==0.0.33",
+    "PyYAML==6.0.3",
+    "pypdf==6.21.4",
+    "SQLAlchemy==2.1.8",
+    "uvicorn[standard]==0.54.0",
+]
 
 [tool.ruff]
 line-length = 100

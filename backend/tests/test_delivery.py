@@ -102,3 +102,14 @@ def test_serverless_mode_refuses_the_local_file_store(
     settings: Any = settings_factory(serverless=True)
     with pytest.raises(RuntimeError, match="LH_STORAGE_BACKEND=supabase"):
         create_app(settings)
+
+
+# Spec: delivery - Run on Vercel (its Python build reads pyproject.toml, not requirements.txt)
+def test_pyproject_dependencies_equal_requirements() -> None:
+    import tomllib
+
+    backend = Path(__file__).resolve().parents[1]
+    project = tomllib.loads((backend / "pyproject.toml").read_text("utf-8"))["project"]
+    lines = (backend / "requirements.txt").read_text("utf-8").splitlines()
+    wanted = [line.strip() for line in lines if line.strip() and not line.startswith("#")]
+    assert project["dependencies"] == wanted
