@@ -10,7 +10,7 @@ import uuid
 import zipfile
 from datetime import datetime
 from pathlib import Path
-from typing import IO, Any
+from typing import IO, Annotated, Any, Literal
 
 from alembic.config import Config
 from alembic.script import ScriptDirectory
@@ -18,7 +18,15 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db import AgentProvider, AgentSetting, AIProvider, Lesson, Note
+from app.db import (
+    AgentProvider,
+    AgentSetting,
+    AIProvider,
+    ChatMessage,
+    ChatSession,
+    Lesson,
+    Note,
+)
 from app.storage import FileStore
 
 FORMAT = 1
@@ -32,6 +40,10 @@ DATA_FILES = {
     "agent_providers": "data/agent_providers.json",
     "agent_settings": "data/agent_settings.json",
 }
+# Entries a restore accepts but does not require (older backups do not have them).
+OPTIONAL_FILES = {"chat_sessions": "data/chat_sessions.json"}
+# An answer has no request limit; this bounds what a restore accepts for one message.
+MAX_MESSAGE_CHARS = 1_000_000
 SHA = re.compile(r"^[0-9a-f]{64}$")
 BLOB_KEY = re.compile(r"^blobs/([0-9a-f]{2})/([0-9a-f]{64})(\.html|\.htm|\.pdf)$")
 
@@ -87,6 +99,40 @@ class AgentSettingRow(Row):
     agent_id: str
     web_search: bool
     updated_at: datetime
+
+
+class ChatStepRow(Row):
+    tool: str = Field(max_length=200)
+    input: dict[str, Any] = Field(default_factory=dict)
+    summary: str = Field(max_length=20_000)
+
+
+class ChatMessageRow(Row):
+    """A stored chat message: text and file names only, never the text of attached files."""
+
+    role: Literal["user", "assistant"]
+    content: str = Field(max_length=MAX_MESSAGE_CHARS)
+    display: str | None = Field(default=None, max_length=20_000)
+    agent_id: str | None = Field(default=None, max_length=100)
+    attachments: list[Annotated[str, Field(max_length=255)]] = Field(
+        default_factory=list, max_length=5
+    )
+    steps: list[ChatStepRow] = Field(default_factory=list, max_length=50)
+    stopped: bool = False
+    provider_name: str | None = Field(default=None, max_length=200)
+    model_name: str | None = Field(default=None, max_length=200)
+    fallback_used: bool = False
+    effort: str | None = Field(default=None, max_length=20)
+    created_at: datetime
+
+
+class ChatSessionRow(Row):
+    """A chat session with its messages nested, in order."""
+
+    title: str = Field(min_length=1, max_length=120)
+    created_at: datetime
+    last_message_at: datetime
+    messages: list[ChatMessageRow] = Field(default_factory=list)
 
 
 class Manifest(BaseModel):
@@ -153,6 +199,30 @@ def build_backup(
             .order_by(AgentSetting.agent_id)
         )
     )
+    chats = list(
+        session.scalars(
+            select(ChatSession)
+            .where(ChatSession.user_id == user_id)
+            .order_by(ChatSession.created_at, ChatSession.id)
+        )
+    )
+    chat_messages: dict[uuid.UUID, list[ChatMessage]] = {chat.id: [] for chat in chats}
+    for message in session.scalars(
+        select(ChatMessage)
+        .join(ChatSession, ChatSession.id == ChatMessage.session_id)
+        .where(ChatSession.user_id == user_id)
+        .order_by(ChatMessage.session_id, ChatMessage.position)
+    ):
+        chat_messages[message.session_id].append(message)
+    chat_rows = [
+        ChatSessionRow(
+            title=chat.title,
+            created_at=chat.created_at,
+            last_message_at=chat.last_message_at,
+            messages=[ChatMessageRow.model_validate(m) for m in chat_messages[chat.id]],
+        )
+        for chat in chats
+    ]
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as archive:
         written: set[str] = set()
         kept: list[Note] = []
@@ -175,6 +245,8 @@ def build_backup(
             "providers": len(providers),
             "agent_providers": len(assignments),
             "agent_settings": len(switches),
+            "chat_sessions": len(chat_rows),
+            "chat_messages": sum(len(c.messages) for c in chat_rows),
         }
         manifest = {
             "format": FORMAT,
@@ -194,4 +266,10 @@ def build_backup(
         }
         for name, payload in dumps.items():
             archive.writestr(DATA_FILES[name], payload)
+        archive.writestr(
+            OPTIONAL_FILES["chat_sessions"],
+            json.dumps(
+                [c.model_dump(mode="json") for c in chat_rows], ensure_ascii=False, indent=1
+            ).encode("utf-8"),
+        )
     return counts

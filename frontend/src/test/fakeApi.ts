@@ -1,5 +1,7 @@
 import { vi } from 'vitest'
 import type {
+  AgentStep,
+  ChatSessionDetail,
   AdminUser,
   AgentOut,
   Invitation,
@@ -144,6 +146,7 @@ export const AGENT_DEFS = [
 ]
 
 let providerSeq = 0
+let chatSeq = 0
 const keyKind = (key: string) => (key.startsWith('sk-ant-oat') ? 'setup_token' : 'api_key')
 
 export function makeProvider(name: string, type: ProviderType, model: string, extra: Partial<ProviderOut> = {}): ProviderOut {
@@ -196,6 +199,8 @@ export function makeNote(title: string, nodeId: string | null = null, extra: Par
 
 export interface FakeState {
   notes: Note[]
+  /** Stored chats, newest activity first; every answered chat request is saved here. */
+  chatSessions: ChatSessionDetail[]
   /** Note id -> HTML source; a note without an entry has a page made from its title. */
   sources: Record<string, string>
   importResults?: ImportOutcome[]
@@ -425,6 +430,7 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
   providerSeq = 0
   const state: FakeState = {
     notes: [...notes],
+    chatSessions: [],
     sources: {},
     importResults,
     importRequests: [],
@@ -1118,9 +1124,65 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
         if (chatBody.provider_id && !override) return respond({ detail: 'unknown provider' }, 404)
         const resolved = override ?? effective(chatBody.agent_id).provider ?? null
         if (!resolved) return respond({ detail: 'No AI provider is active. Configure one in Settings.' }, 409)
+        // Stored chats follow the backend contract (design.md of chat-session-history).
+        const stored = state.chatSessions.find((s) => s.id === chatBody.session_id)
+        if (chatBody.retry_from && !chatBody.session_id) return respond({ detail: 'retry_from needs a session_id' }, 400)
+        if (chatBody.session_id && chatBody.messages.length !== 1) {
+          return respond({ detail: 'a request with a session_id carries only the new user message' }, 400)
+        }
+        if (chatBody.session_id && !stored) return respond({ detail: 'chat session not found' }, 404)
+        const cut = chatBody.retry_from
+          ? (stored?.messages.findIndex((m) => m.id === chatBody.retry_from && m.role === 'user') ?? -1)
+          : -1
+        if (chatBody.retry_from && cut < 0) return respond({ detail: 'chat message not found' }, 404)
         const answer = state.chat(chatBody, resolved)
         if ('status' in answer) return respond({ detail: answer.detail }, answer.status)
+        const now = new Date().toISOString()
+        const first = chatBody.messages.find((m) => m.role === 'user') ?? chatBody.messages[0]
+        const session: ChatSessionDetail = stored ?? {
+          id: `chat-${++chatSeq}`,
+          title: (first.display ?? first.content).split(/\s+/).filter(Boolean).join(' ').slice(0, 60).trim() || 'New chat',
+          created_at: now,
+          last_message_at: now,
+          message_count: 0,
+          messages: [],
+        }
+        if (cut >= 0) session.messages.splice(cut)
+        const blank = {
+          display: null, agent_id: null, attachments: [] as string[], steps: [] as AgentStep[], stopped: false,
+          provider: null, fallback_used: false, effort: null, created_at: now,
+        }
+        chatBody.messages.forEach((m, i) => {
+          const last = i === chatBody.messages.length - 1
+          session.messages.push({
+            ...blank,
+            id: `msg-${++chatSeq}`,
+            role: m.role,
+            content: m.content,
+            display: m.role === 'user' ? (m.display ?? null) : null,
+            agent_id: m.role === 'user' ? chatBody.agent_id : null,
+            attachments: last ? (chatBody.attachments ?? []).map((a) => a.name) : [],
+          })
+        })
+        const provider = answer.provider ?? { id: resolved.id, name: resolved.name, model: resolved.model_name }
+        session.messages.push({
+          ...blank,
+          id: `msg-${++chatSeq}`,
+          role: 'assistant',
+          content: answer.reply,
+          steps: answer.steps ?? [],
+          stopped: answer.stopped ?? false,
+          provider: { name: provider.name, model: provider.model },
+          fallback_used: answer.fallback_used ?? false,
+          effort: answer.effort ?? chatBody.effort ?? 'medium',
+        })
+        session.last_message_at = now
+        session.message_count = session.messages.length
+        state.chatSessions = [session, ...state.chatSessions.filter((s) => s !== session)]
         return respond({
+          session: { id: session.id, title: session.title },
+          user_message_id: session.messages.at(-2)!.id,
+          assistant_message_id: session.messages.at(-1)!.id,
           steps: [],
           changed_lessons: [],
           stopped: false,
@@ -1129,6 +1191,29 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
           effort: chatBody.effort ?? 'medium',
           ...answer,
         })
+      }
+      if (url === '/api/agent/sessions' && method === 'GET') {
+        const sessions = state.chatSessions.map(({ messages: _messages, ...summary }) => summary)
+        return respond({ sessions, total: sessions.length })
+      }
+      match = url.match(/^\/api\/agent\/sessions\/([^/]+)$/)
+      if (match) {
+        const session = state.chatSessions.find((s) => s.id === match![1])
+        if (!session) return respond({ detail: 'chat session not found' }, 404)
+        if (method === 'GET') return respond(session)
+        if (method === 'DELETE') {
+          state.chatSessions = state.chatSessions.filter((s) => s !== session)
+          return respond(null, 204)
+        }
+        if (method === 'PATCH') {
+          const title = String((body as { title?: unknown }).title ?? '').trim()
+          if (!title || title.length > 120) {
+            return respond({ detail: [{ msg: 'Value error, the title must have 1 to 120 characters' }] }, 422)
+          }
+          session.title = title
+          const { messages: _messages, ...summary } = session
+          return respond(summary)
+        }
       }
       if (url === '/api/notes' && method === 'GET') return respond(state.notes.filter((n) => !n.archived_at))
       if (url === '/api/notes?archived=true' && method === 'GET') {

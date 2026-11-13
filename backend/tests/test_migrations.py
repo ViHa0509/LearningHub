@@ -442,3 +442,34 @@ def test_0012_downgrade_is_refused_with_more_than_one_user() -> None:
             connection.execute(text("TRUNCATE users CASCADE"))
         command.upgrade(config, "head")
         engine.dispose()
+
+
+def test_0014_creates_the_chat_tables_and_its_downgrade_removes_them() -> None:
+    config = alembic_config()
+    engine = create_engine(TEST_DATABASE_URL)
+    chat_tables = {"chat_sessions", "chat_messages"}
+    try:
+        command.upgrade(config, "head")
+        assert chat_tables <= set(inspect(engine).get_table_names())
+        with engine.connect() as connection:
+            locked = connection.scalars(
+                text(
+                    "SELECT relname FROM pg_class WHERE relname IN ('chat_sessions', "
+                    "'chat_messages') AND relrowsecurity"
+                )
+            ).all()
+        assert set(locked) == chat_tables
+        uniques = inspect(engine).get_unique_constraints("chat_messages")
+        assert ["session_id", "position"] in [u["column_names"] for u in uniques]
+        foreign = {
+            f["referred_table"]: f for f in inspect(engine).get_foreign_keys("chat_messages")
+        }
+        assert foreign["chat_sessions"]["options"].get("ondelete") == "CASCADE"
+        owner = inspect(engine).get_foreign_keys("chat_sessions")[0]
+        assert owner["referred_table"] == "users"
+        assert owner["options"].get("ondelete") == "CASCADE"
+        command.downgrade(config, "0013")
+        assert not chat_tables & set(inspect(engine).get_table_names())
+    finally:
+        command.upgrade(config, "head")
+        engine.dispose()

@@ -58,7 +58,7 @@ describe('agent panel', () => {
 
     expect(chats(state)[0].body).toEqual({
       agent_id: 'assistant',
-      messages: [{ role: 'user', content: 'what about redis?' }],
+      messages: [{ role: 'user', content: 'what about redis?', display: 'what about redis?' }],
       page: { kind: 'roadmap', domain: 'backend' },
       effort: 'medium',
     })
@@ -96,7 +96,7 @@ describe('agent panel', () => {
     expect(within(panel()).getByText('Local qwen · qwen3 (fallback)')).toBeInTheDocument()
   })
 
-  it('keeps Shift+Enter as a new line and sends the history with the next question', async () => {
+  it('keeps Shift+Enter as a new line and continues the stored chat with the next question', async () => {
     const state = withProviders()
     let n = 0
     state.chat = () => ({ reply: `answer ${++n}` })
@@ -109,10 +109,18 @@ describe('agent panel', () => {
     await user.type(box, 'follow up{Enter}')
     await within(panel()).findByText('answer 2')
 
-    expect((chats(state)[1].body as { messages: unknown[] }).messages).toEqual([
-      { role: 'user', content: 'line one\nline two' },
-      { role: 'assistant', content: 'answer 1' },
-      { role: 'user', content: 'follow up' },
+    // The server holds the history of a stored chat: the request names it and carries one message.
+    const first = chats(state)[0].body as ChatRequest
+    expect(first.session_id).toBeUndefined()
+    const second = chats(state)[1].body as ChatRequest
+    expect(second.messages).toEqual([{ role: 'user', content: 'follow up', display: 'follow up' }])
+    expect(second.session_id).toBe(state.chatSessions[0].id)
+    expect(state.chatSessions).toHaveLength(1)
+    expect(state.chatSessions[0].messages.map((m) => m.content)).toEqual([
+      'line one\nline two',
+      'answer 1',
+      'follow up',
+      'answer 2',
     ])
   })
 
@@ -128,18 +136,31 @@ describe('agent panel', () => {
     await user.type(box, 'hello again{Enter}')
     expect(await within(panel()).findByText('Hi again.')).toBeInTheDocument()
     // The failed question is not sent again as history.
-    expect((chats(state).at(-1)!.body as { messages: unknown[] }).messages).toEqual([
-      { role: 'user', content: 'hello again' },
-    ])
+    const again = chats(state).at(-1)!.body as ChatRequest
+    expect(again.messages).toEqual([{ role: 'user', content: 'hello again', display: 'hello again' }])
+    // A failed request stores nothing, so the next one starts the chat.
+    expect(again.session_id).toBeUndefined()
   })
 
-  it('clears the chat', async () => {
-    withProviders()
+  it('starts a new chat: the conversation is emptied and the next message is not sent to the old chat', async () => {
+    const state = withProviders()
     const { user } = await renderAppReady()
-    await user.type(await within(panel()).findByRole('textbox', { name: 'Message the agent' }), 'hi{Enter}')
+    const input = await within(panel()).findByRole('textbox', { name: 'Message the agent' })
+    const newChat = within(panel()).getByRole('button', { name: 'New chat' })
+    expect(newChat).toBeDisabled()
+    expect(within(panel()).queryByRole('button', { name: 'Clear chat' })).not.toBeInTheDocument()
+    await user.type(input, 'hi{Enter}')
     await within(panel()).findByText('ok')
-    await user.click(within(panel()).getByRole('button', { name: 'Clear chat' }))
+    await user.click(newChat)
     expect(within(panel()).queryByText('ok')).not.toBeInTheDocument()
+    expect(newChat).toBeDisabled()
+    await waitFor(() => expect(input).toHaveFocus())
+
+    await user.type(input, 'another{Enter}')
+    await within(panel()).findByText('ok')
+    expect((chats(state).at(-1)!.body as ChatRequest).session_id).toBeUndefined()
+    // The earlier chat is kept in the history.
+    expect(state.chatSessions.map((s) => s.title)).toEqual(['another', 'hi'])
   })
 })
 
@@ -167,7 +188,9 @@ describe('chat panel layout', () => {
     expect(within(panel()).queryByRole('alert')).not.toBeInTheDocument()
     expect(within(panel()).getAllByText('hello')).toHaveLength(1)
     expect(chats(state)).toHaveLength(2)
-    expect(lastBody(state).messages).toEqual([{ role: 'user', content: 'hello' }])
+    expect(lastBody(state).messages).toEqual([{ role: 'user', content: 'hello', display: 'hello' }])
+    // The failed question was never stored: its Retry is a plain send.
+    expect(lastBody(state).retry_from).toBeUndefined()
   })
 
   it('retries an answer: the question is sent again and the old answer replaced', async () => {
@@ -177,10 +200,15 @@ describe('chat panel layout', () => {
     const { user } = await renderAppReady()
     await user.type(await within(panel()).findByRole('textbox', { name: 'Message the agent' }), 'explain{Enter}')
     await within(panel()).findByText('take 1')
+    const question = state.chatSessions[0].messages[0].id
     await user.click(within(panel()).getByRole('button', { name: 'Retry' }))
     expect(await within(panel()).findByText('take 2')).toBeInTheDocument()
     expect(within(panel()).queryByText('take 1')).not.toBeInTheDocument()
-    expect(lastBody(state).messages).toEqual([{ role: 'user', content: 'explain' }])
+    expect(lastBody(state).messages).toEqual([{ role: 'user', content: 'explain', display: 'explain' }])
+    // The stored turn is replaced too.
+    expect(lastBody(state).session_id).toBe(state.chatSessions[0].id)
+    expect(lastBody(state).retry_from).toBe(question)
+    expect(state.chatSessions[0].messages.map((m) => m.content)).toEqual(['explain', 'take 2'])
   })
 
   it('lets the user pick the agent that answers; the header shows it', async () => {
@@ -405,7 +433,7 @@ describe('text attachments', () => {
     const log = within(panel()).getByRole('log', { name: 'Conversation' })
     await within(log).findByText('ok')
     expect(lastBody(state)).toMatchObject({
-      messages: [{ role: 'user', content: 'summarize this' }],
+      messages: [{ role: 'user', content: 'summarize this', display: 'summarize this' }],
       attachments: [{ name: 'jwt.md', text: '# JWT\n\nTokens expire.' }],
     })
     expect(within(panel()).queryByRole('list', { name: 'Attachments' })).not.toBeInTheDocument()

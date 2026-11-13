@@ -7,6 +7,7 @@ import { expandSkill } from '../lib/skills'
 import { AgentHeader } from './agent/AgentHeader'
 import { AGENT_OPENER_ID, AGENT_PANEL_ID, PanelFrame } from './PanelFrame'
 import { Composer } from './agent/Composer'
+import { HistoryList } from './agent/HistoryList'
 import { MessageList } from './agent/MessageList'
 import { useAgentChat } from './agent/useAgentChat'
 
@@ -44,6 +45,10 @@ export function AgentPanel({ open, onToggle, page, request, drawer = false }: Pr
   const [agentId, setAgentId] = useState(ASSISTANT)
   const chat = useAgentChat({ effort, page })
 
+  // History replaces the conversation and the input while it is open.
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const working = chat.busy || chat.loading
+
   const [draft, setDraft] = useState('')
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [dropping, setDropping] = useState(false)
@@ -72,7 +77,7 @@ export function AgentPanel({ open, onToggle, page, request, drawer = false }: Pr
 
   const submit = () => {
     const text = draft.trim()
-    if (chat.busy || (!text && files.length === 0)) return
+    if (working || (!text && files.length === 0)) return
     // The conversation shows what the user typed; the request carries the expanded skill message.
     void chat.send({ display: text, content: text ? expandSkill(text) : FILES_ONLY, attachments: files, agentId })
     setDraft('')
@@ -85,6 +90,13 @@ export function AgentPanel({ open, onToggle, page, request, drawer = false }: Pr
     setPrefilled(request.id)
     if (request.agentId) setAgentId(request.agentId)
     setDraft(request.text)
+  }
+
+  // A request that is sent shows the conversation, not History.
+  const [shownRequest, setShownRequest] = useState<number | null>(null)
+  if (request && !request.prefill && ready && shownRequest !== request.id) {
+    setShownRequest(request.id)
+    setHistoryOpen(false)
   }
 
   // A request from elsewhere in the app (e.g. "Draft with agent"), sent once per id.
@@ -123,8 +135,15 @@ export function AgentPanel({ open, onToggle, page, request, drawer = false }: Pr
                 agentId,
                 onAgent: setAgentId,
                 hint,
-                canClear: !chat.busy && chat.entries.length > 0,
-                onClear: chat.clear,
+                canNew: !working && (chat.entries.length > 0 || chat.sessionId !== null),
+                onNew: () => {
+                  chat.newChat()
+                  setHistoryOpen(false)
+                  // The input is hidden behind History until the next render.
+                  setTimeout(() => inputRef.current?.focus(), 0)
+                },
+                historyOpen,
+                onHistory: () => setHistoryOpen(!historyOpen),
               }
             : null
         }
@@ -161,6 +180,19 @@ export function AgentPanel({ open, onToggle, page, request, drawer = false }: Pr
             void addFiles(dropped)
           }}
         >
+          {historyOpen && open && (
+            <HistoryList
+              currentId={chat.sessionId}
+              busy={working}
+              onOpen={(id) => {
+                setHistoryOpen(false)
+                if (id !== chat.sessionId) void chat.open(id)
+              }}
+              onDeleted={chat.forget}
+            />
+          )}
+          {/* Kept mounted behind History, so the draft and attachments survive. */}
+          <div className="agent-chat-body" hidden={historyOpen}>
           <MessageList
             entries={chat.entries}
             busy={chat.busy}
@@ -179,11 +211,12 @@ export function AgentPanel({ open, onToggle, page, request, drawer = false }: Pr
             onRemoveAttachment={(id) => setAttachments((current) => current.filter((a) => a.id !== id))}
             effort={effort}
             onEffort={chooseEffort}
-            busy={chat.busy}
+            busy={working}
             canSend={draft.trim() !== '' || files.length > 0}
             dropping={dropping}
             onSubmit={submit}
           />
+          </div>
         </div>
       )}
     </PanelFrame>

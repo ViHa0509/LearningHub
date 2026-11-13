@@ -10,6 +10,7 @@ from sqlalchemy import (
     DateTime,
     Engine,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -167,6 +168,54 @@ class SyncUpload(Base):
     part_sizes: Mapped[dict[str, int]] = mapped_column(
         JSONB, default=dict, server_default="{}", nullable=False
     )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ChatSession(Base):
+    """One conversation with the agent. ``last_message_at`` orders the history list; a rename
+    does not touch it."""
+
+    __tablename__ = "chat_sessions"
+    __table_args__ = (Index("ix_chat_sessions_user_last", "user_id", "last_message_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = user_fk()
+    title: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_message_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ChatMessage(Base):
+    """A stored message of a chat session. It has no ``user_id``: it is always reached through
+    its session, which is loaded for the current user first.
+
+    ``content`` is the text sent to the model as history; ``display`` is what the user typed
+    (null for answers). ``attachments`` holds file names only, never their text.
+    """
+
+    __tablename__ = "chat_messages"
+    __table_args__ = (UniqueConstraint("session_id", "position"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("chat_sessions.id", ondelete="CASCADE"), nullable=False
+    )
+    position: Mapped[int] = mapped_column(Integer)
+    role: Mapped[str] = mapped_column(Text)  # "user" or "assistant"
+    content: Mapped[str] = mapped_column(Text)
+    display: Mapped[str | None] = mapped_column(Text, nullable=True)
+    agent_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    attachments: Mapped[list[str]] = mapped_column(
+        JSONB, default=list, server_default="[]", nullable=False
+    )
+    steps: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, default=list, server_default="[]", nullable=False
+    )
+    stopped: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    provider_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    fallback_used: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    effort: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

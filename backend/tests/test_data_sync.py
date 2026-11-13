@@ -426,6 +426,8 @@ def test_send_to_the_target(
                 "providers": 2,
                 "agent_providers": 2,
                 "agent_settings": 1,
+                "chat_sessions": 0,
+                "chat_messages": 0,
             },
             "providers_needing_key": ["Claude main"],
         }

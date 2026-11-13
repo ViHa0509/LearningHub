@@ -255,7 +255,9 @@ test.describe('Data & sync', () => {
       }
       expect(text.includes(OWNER.email), `the account's email in ${name}`).toBe(false)
     }
-    const allNames = [...entries.keys()].join('\n')
+    // No accounts and no login sessions; the chat history is the only entry with "sessions" in its name.
+    expect(entries.has('data/chat_sessions.json')).toBe(true)
+    const allNames = [...entries.keys()].filter((n) => n !== 'data/chat_sessions.json').join('\n')
     expect(allNames).not.toMatch(/session|token|user|account|app_settings|sync_key/i)
 
     // The API answers the same archive kind, and only with a session.

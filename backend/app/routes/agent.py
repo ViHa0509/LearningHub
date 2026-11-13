@@ -8,6 +8,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.agent.agents import AGENTS
+from app.agent.history import (
+    NewMessage,
+    find_session,
+    find_user_message,
+    load_history,
+    store_turn,
+)
 from app.agent.loop import Attachment, Effort, Page, run_agent
 from app.agent.messages import Message, ProviderError
 from app.agent.ratelimit import RateLimiter
@@ -26,6 +33,8 @@ ID = r"^[A-Za-z0-9_-]{1,100}$"
 class ChatMessageIn(BaseModel):
     role: Literal["user", "assistant"]
     content: str = Field(max_length=20_000)
+    # What the user typed (a skill message is sent expanded); stored, never sent to the model.
+    display: str | None = Field(default=None, max_length=20_000)
 
 
 class PageIn(BaseModel):
@@ -48,6 +57,10 @@ class ChatIn(BaseModel):
     effort: Effort = "medium"
     # Text files attached to the last user message; they are data, like note content.
     attachments: list[AttachmentIn] = Field(default_factory=list, max_length=5)
+    # Continue a stored chat: the request then carries only the new user message.
+    session_id: uuid.UUID | None = None
+    # Retry from a stored user message of that chat: it and what follows are replaced.
+    retry_from: uuid.UUID | None = None
 
 
 class StepOut(BaseModel):
@@ -62,6 +75,11 @@ class AnsweredBy(BaseModel):
     model: str
 
 
+class SessionRef(BaseModel):
+    id: uuid.UUID
+    title: str
+
+
 class ChatOut(BaseModel):
     reply: str
     steps: list[StepOut]
@@ -70,6 +88,9 @@ class ChatOut(BaseModel):
     provider: AnsweredBy
     fallback_used: bool
     effort: Effort
+    session: SessionRef
+    user_message_id: uuid.UUID
+    assistant_message_id: uuid.UUID
 
 
 @router.post("/chat", response_model=ChatOut, dependencies=[Depends(require_app_header)])
@@ -84,6 +105,30 @@ def chat(
         raise HTTPException(status_code=404, detail=f"unknown agent '{payload.agent_id}'")
     if payload.messages[-1].role != "user":
         raise HTTPException(status_code=400, detail="the last message must be the user's")
+    # A stored chat is checked before a provider is resolved or a rate-limit slot is used.
+    stored: list[Message] = []
+    replace_from: int | None = None
+    if payload.session_id is None:
+        if payload.retry_from is not None:
+            raise HTTPException(status_code=400, detail="retry_from needs a session_id")
+    else:
+        if len(payload.messages) != 1:
+            raise HTTPException(
+                status_code=400,
+                detail="a request with a session_id carries only the new user message",
+            )
+        chat_session = find_session(session, user.id, payload.session_id)
+        if chat_session is None:
+            raise HTTPException(status_code=404, detail="chat session not found")
+        if payload.retry_from is not None:
+            retried = find_user_message(session, chat_session, payload.retry_from)
+            if retried is None:
+                raise HTTPException(status_code=404, detail="chat message not found")
+            replace_from = retried.position
+        stored = [
+            Message(role="user" if m.role == "user" else "assistant", text=m.content)
+            for m in load_history(session, chat_session, before=replace_from)
+        ]
     try:
         chat_model = resolve_chain(
             session, user.id, box_of(request), factory_of(request), agent.id, payload.provider_id
@@ -101,7 +146,7 @@ def chat(
         )
 
     catalog: RoadmapCatalog = request.app.state.catalog
-    conversation = [Message(role=m.role, text=m.content) for m in payload.messages]
+    conversation = stored + [Message(role=m.role, text=m.content) for m in payload.messages]
     page = Page(**payload.page.model_dump())
     try:
         result = run_agent(
@@ -119,12 +164,40 @@ def chat(
     except ProviderError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     answered = chat_model.provider
+    steps = [StepOut(tool=s.tool, input=s.input, summary=s.summary) for s in result.steps]
+    # Stored once, after the answer: a failed request leaves no trace in the session.
+    new_messages = [
+        NewMessage(role=m.role, content=m.content, display=m.display, agent_id=agent.id)
+        if m.role == "user"
+        else NewMessage(role=m.role, content=m.content)
+        for m in payload.messages
+    ]
+    new_messages[-1].attachments = [a.name for a in payload.attachments]
+    new_messages.append(
+        NewMessage(
+            role="assistant",
+            content=result.reply,
+            steps=[s.model_dump() for s in steps],
+            stopped=result.stopped,
+            provider_name=answered.name,
+            model_name=answered.model_name,
+            fallback_used=chat_model.fallback_used,
+            effort=payload.effort,
+        )
+    )
+    try:
+        saved, rows = store_turn(session, user.id, payload.session_id, new_messages, replace_from)
+    except LookupError as exc:  # the chat was deleted while the agent was working
+        raise HTTPException(status_code=404, detail="chat session not found") from exc
     return ChatOut(
         reply=result.reply,
-        steps=[StepOut(tool=s.tool, input=s.input, summary=s.summary) for s in result.steps],
+        steps=steps,
         changed_lessons=result.changed_lessons,
         stopped=result.stopped,
         provider=AnsweredBy(id=answered.id, name=answered.name, model=answered.model_name),
         fallback_used=chat_model.fallback_used,
         effort=payload.effort,
+        session=SessionRef(id=saved.id, title=saved.title),
+        user_message_id=rows[-2].id,
+        assistant_message_id=rows[-1].id,
     )

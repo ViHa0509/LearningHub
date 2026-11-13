@@ -102,7 +102,7 @@ test.describe('Chat panel', () => {
     const body = await sendAndCapture(page, box)
     expect(body.agent_id).toBe('assistant')
     expect(body.effort).toBe('medium')
-    expect(body.messages.at(-1)).toEqual({ role: 'user', content: 'What is caching?' })
+    expect(body.messages.at(-1)).toEqual({ role: 'user', content: 'What is caching?', display: 'What is caching?' })
 
     const log = agent.getByRole('log', { name: 'Conversation' })
     await expect(log).toContainText('What is caching?')
@@ -115,11 +115,13 @@ test.describe('Chat panel', () => {
     const again = page.waitForRequest(isChat)
     await log.getByRole('button', { name: 'Retry' }).click()
     const retried = (await again).postDataJSON() as ChatBody
-    expect(retried.messages).toEqual([{ role: 'user', content: 'What is caching?' }])
+    expect(retried.messages).toEqual([{ role: 'user', content: 'What is caching?', display: 'What is caching?' }])
     await expect(log.getByText('OK from fake')).toHaveCount(1, { timeout: ANSWER_TIMEOUT })
     await expect(log.getByText('What is caching?')).toHaveCount(1)
 
-    await agent.getByRole('button', { name: 'Clear chat' }).click()
+    // New chat empties the conversation (the chat itself stays in History).
+    await expect(agent.getByRole('button', { name: 'Clear chat' })).toHaveCount(0)
+    await agent.getByRole('button', { name: 'New chat' }).click()
     await expect(log).not.toContainText('What is caching?')
   })
 
@@ -152,7 +154,7 @@ test.describe('Chat panel', () => {
     await errorRow.getByRole('button', { name: 'Retry' }).click()
     const body = (await req).postDataJSON() as ChatBody
     expect(body).not.toHaveProperty('provider_id')
-    expect(body.messages).toEqual([{ role: 'user', content: 'first try' }])
+    expect(body.messages).toEqual([{ role: 'user', content: 'first try', display: 'first try' }])
     await expect(log.getByText('OK from fake')).toBeVisible({ timeout: ANSWER_TIMEOUT })
     await expect(log.locator('.agent-caption')).toContainText(`${good.name} · fake-ok`)
     await expect(log.getByRole('alert')).toHaveCount(0)

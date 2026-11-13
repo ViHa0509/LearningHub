@@ -4,7 +4,8 @@ The requested model name selects the behavior: fake-ok answers, fake-401/404/429
 with an OpenAI-style error body, fake-slow answers after 5 seconds.
 
 fake-ok answers "OK from fake", except when the last user message contains a trigger:
-[[markdown]] answers with a Markdown table, a code block and an HTML tag; [[echo]] answers
+[[markdown]] answers with a Markdown table, a code block and an HTML tag; [[history]] answers
+with the number of user messages received and the first one; [[echo]] answers
 with one line per fact about what the model received (system prompt and last user message),
 so the UI tests can observe effort lines and attachment wrapping without a real provider.
 
@@ -165,6 +166,9 @@ def _answer(payload: dict) -> str:
     last = users[-1] if users else ""
     if "[[markdown]]" in last:
         return MARKDOWN_ANSWER
+    if "[[history]]" in last:
+        # How much of the conversation the model received (chat-history: continue a session).
+        return f"HISTORY user-messages={len(users)} first={users[0][:60]}"
     if "[[echo]]" in last:
         facts = {
             "effort-low": "Answer briefly" in system,

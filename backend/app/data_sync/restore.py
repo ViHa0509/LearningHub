@@ -27,8 +27,10 @@ from app.data_sync.backup import (
     FORMAT,
     MAX_ENTRIES,
     MAX_TOTAL_BYTES,
+    OPTIONAL_FILES,
     AgentProviderRow,
     AgentSettingRow,
+    ChatSessionRow,
     LessonRow,
     Manifest,
     NoteRow,
@@ -36,7 +38,15 @@ from app.data_sync.backup import (
     build_backup,
     known_migrations,
 )
-from app.db import AgentProvider, AgentSetting, AIProvider, Lesson, Note
+from app.db import (
+    AgentProvider,
+    AgentSetting,
+    AIProvider,
+    ChatMessage,
+    ChatSession,
+    Lesson,
+    Note,
+)
 from app.storage import FileStore, release_blob
 
 KEEP_AUTO_BACKUPS = 3
@@ -61,6 +71,8 @@ class Parsed:
     assignments: list[AgentProviderRow]
     switches: list[AgentSettingRow]
     blob_names: list[str]  # archive member names of the files
+    # None when the archive has no chat entry: the chat history is then left as it is.
+    chats: list[ChatSessionRow] | None = None
 
 
 def _check_name(name: str) -> None:
@@ -71,7 +83,7 @@ def _check_name(name: str) -> None:
         or (len(name) > 1 and name[1] == ":")
     ):
         raise RestoreRefused(f"unsafe entry name in the archive: {name[:80]!r}")
-    if name == "manifest.json" or name in DATA_FILES.values():
+    if name == "manifest.json" or name in DATA_FILES.values() or name in OPTIONAL_FILES.values():
         return
     if name.startswith("files/") and BLOB_KEY.match(name.removeprefix("files/")):
         return
@@ -151,6 +163,11 @@ def validate(path: Path) -> Parsed:
         providers = _rows(archive, DATA_FILES["ai_providers"], ProviderRow, budget)
         assignments = _rows(archive, DATA_FILES["agent_providers"], AgentProviderRow, budget)
         switches = _rows(archive, DATA_FILES["agent_settings"], AgentSettingRow, budget)
+        chats = (
+            _rows(archive, OPTIONAL_FILES["chat_sessions"], ChatSessionRow, budget)
+            if OPTIONAL_FILES["chat_sessions"] in names
+            else None
+        )
         blobs = [n for n in names if n.startswith("files/")]
         for name in blobs:
             match = BLOB_KEY.match(name.removeprefix("files/"))
@@ -170,7 +187,7 @@ def validate(path: Path) -> Parsed:
         raise RestoreRefused("an agent uses a provider that is not in the archive")
     if any(p.provider_type not in PROVIDER_TYPES for p in providers):
         raise RestoreRefused("the archive has an unknown provider type")
-    return Parsed(manifest, notes, lessons, providers, assignments, switches, blobs)
+    return Parsed(manifest, notes, lessons, providers, assignments, switches, blobs, chats)
 
 
 def write_auto_backup(
@@ -248,6 +265,31 @@ def restore_archive(
                 )
                 for a in parsed.assignments
             )
+            if parsed.chats is not None:
+                # New ids: the archive may come from another user or server. The messages of
+                # the removed sessions go with them (ON DELETE CASCADE).
+                session.execute(delete(ChatSession).where(ChatSession.user_id == user_id))
+                for chat in parsed.chats:
+                    chat_id = uuid4()
+                    session.add(
+                        ChatSession(
+                            id=chat_id,
+                            user_id=user_id,
+                            title=chat.title,
+                            created_at=chat.created_at,
+                            last_message_at=chat.last_message_at,
+                        )
+                    )
+                    session.flush()
+                    session.add_all(
+                        ChatMessage(
+                            **message.model_dump(),
+                            id=uuid4(),
+                            session_id=chat_id,
+                            position=position,
+                        )
+                        for position, message in enumerate(chat.messages)
+                    )
             session.commit()
         except SQLAlchemyError:
             session.rollback()
@@ -256,6 +298,14 @@ def restore_archive(
             ) from None
         for key in old_keys:
             release_blob(session, store, key)
+    chat_counts = (
+        {}
+        if parsed.chats is None
+        else {
+            "chat_sessions": len(parsed.chats),
+            "chat_messages": sum(len(c.messages) for c in parsed.chats),
+        }
+    )
     return {
         "counts": {
             "notes": len(parsed.notes),
@@ -264,6 +314,7 @@ def restore_archive(
             "providers": len(parsed.providers),
             "agent_providers": len(parsed.assignments),
             "agent_settings": len(parsed.switches),
+            **chat_counts,
         },
         "providers_needing_key": [
             p.name for p in parsed.providers if PROVIDER_TYPES[p.provider_type].needs_key

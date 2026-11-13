@@ -13,14 +13,17 @@ interface Props {
   onToggle: () => void
   /** A phone drawer: the toggle closes it (and takes the focus when it opens). */
   drawer?: boolean
-  /** The chat controls (agent menu, Clear chat) exist only when a provider is active. */
+  /** The chat controls (agent menu, New chat, History) exist only when a provider is active. */
   chat: {
     agents: AgentChoice[]
     agentId: string
     onAgent: (id: string) => void
     hint: string
-    canClear: boolean
-    onClear: () => void
+    /** New chat is offered once the conversation has something in it. */
+    canNew: boolean
+    onNew: () => void
+    historyOpen: boolean
+    onHistory: () => void
   } | null
 }
 
@@ -47,9 +50,28 @@ export function AgentHeader({ open, onToggle, drawer = false, chat }: Props) {
           )}
           <span className="agent-header-gap" />
           {chat && (
-            <button type="button" className="ghost" onClick={chat.onClear} disabled={!chat.canClear}>
-              <Icon name="trash" /> <span className="clear-label">Clear chat</span>
-            </button>
+            <>
+              <button
+                type="button"
+                className="ghost icon-btn"
+                aria-label="New chat"
+                title="New chat"
+                onClick={chat.onNew}
+                disabled={!chat.canNew}
+              >
+                <Icon name="plus" size={17} />
+              </button>
+              <button
+                type="button"
+                className="ghost icon-btn"
+                aria-label="History"
+                title="History"
+                aria-pressed={chat.historyOpen}
+                onClick={chat.onHistory}
+              >
+                <Icon name="history" size={17} />
+              </button>
+            </>
           )}
           <a className="ghost icon-btn" href="#/settings" aria-label="Agent settings" title="Agent settings">
             <Icon name="settings" size={17} />

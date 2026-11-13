@@ -124,6 +124,7 @@ describe('draft lesson from references', () => {
     expect(body.messages.at(-1)).toEqual({
       role: 'user',
       content: 'Draft this lesson from its references (frontend/basics).',
+      display: 'Draft this lesson from its references (frontend/basics).',
     })
     const panel = screen.getByRole('complementary', { name: 'Agent' })
     expect(await within(panel).findByText('Drafted from the references.')).toBeInTheDocument()

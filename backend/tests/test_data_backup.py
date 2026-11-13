@@ -173,6 +173,8 @@ def test_backup_content(client: TestClient) -> None:
         "providers": 2,
         "agent_providers": 2,
         "agent_settings": 1,
+        "chat_sessions": 0,
+        "chat_messages": 0,
     }
     assert {n["title"] for n in json.loads(archive.read("data/notes.json"))} == {"Alpha", "Beta"}
     assert json.loads(archive.read("data/lessons.json"))[0]["node_id"] == "devops/docker"
@@ -204,7 +206,9 @@ def test_backup_holds_no_key_token_or_password(client: TestClient) -> None:
         content = archive.read(name)
         for secret in secrets_:
             assert secret.encode() not in content, name
-    assert not any("users" in n or "session" in n for n in archive.namelist())
+    # No accounts and no login sessions; the chat history is the only "sessions" entry.
+    others = [n for n in archive.namelist() if n != "data/chat_sessions.json"]
+    assert not any("users" in n or "session" in n for n in others)
 
 
 # Scenario: Restore replaces the data
@@ -255,6 +259,8 @@ def test_round_trip_gives_identical_rows(client: TestClient) -> None:
             "providers": 2,
             "agent_providers": 2,
             "agent_settings": 1,
+            "chat_sessions": 0,
+            "chat_messages": 0,
         },
         "providers_needing_key": ["Claude main"],
     }
@@ -437,3 +443,126 @@ def test_backup_without_a_note_file_leaves_the_note_out_and_restores(
     response = restore(client, backup)
     assert response.status_code == 200, response.text
     assert [n["title"] for n in client.get("/api/notes").json()] == ["Kept"]
+
+
+# --- chat history (change chat-session-history) ---------------------------------
+
+CHATS = "data/chat_sessions.json"
+FILE_TEXT = "ATTACHED-FILE-TEXT-NEVER-STORED"
+
+
+def chat_once(client: TestClient, text: str, **extra: Any) -> dict[str, Any]:
+    response = client.post(
+        "/api/agent/chat", json={"messages": [{"role": "user", "content": text}], **extra}
+    )
+    assert response.status_code == 200, response.text
+    return dict(response.json())
+
+
+def seed_chats(client: TestClient) -> None:
+    """Two chats on a scripted model: "what is JWT?" with two turns and a file, and "redis"."""
+    from app.agent.messages import ToolCall, Turn
+    from tests.agent_fakes import FakeFactory
+
+    client.app.state.llm_factory = FakeFactory(  # type: ignore[attr-defined]
+        Turn("", (ToolCall(id="1", name="search_notes", input={"query": "jwt"}),)),
+        Turn("A signed token."),
+        Turn("Through the exp claim."),
+        Turn("An in-memory store."),
+    )
+    first = chat_once(
+        client,
+        "what is JWT?",
+        effort="high",
+        attachments=[{"name": "jwt.md", "text": FILE_TEXT}],
+    )
+    chat_once(client, "and how does it expire?", session_id=first["session"]["id"])
+    chat_once(client, "redis")
+
+
+def chat_snapshot(client: TestClient) -> list[Any]:
+    """Every chat with its messages, without ids and timestamps of the rows."""
+    sessions = client.get("/api/agent/sessions").json()["sessions"]
+    out = []
+    for item in sessions:
+        detail = client.get(f"/api/agent/sessions/{item['id']}").json()
+        messages = [
+            {k: v for k, v in m.items() if k not in ("id", "created_at")}
+            for m in detail["messages"]
+        ]
+        out.append((detail["title"], detail["last_message_at"], messages))
+    return out
+
+
+# Scenario: Chat history in the backup
+def test_backup_holds_the_chat_history_without_file_text_or_keys(client: TestClient) -> None:
+    seed(client)
+    seed_chats(client)
+    archive = zipfile.ZipFile(io.BytesIO(download(client)))
+    manifest = json.loads(archive.read("manifest.json"))
+    assert manifest["counts"]["chat_sessions"] == 2
+    assert manifest["counts"]["chat_messages"] == 6
+    chats = json.loads(archive.read(CHATS))
+    assert [c["title"] for c in chats] == ["what is JWT?", "redis"]
+    jwt = chats[0]["messages"]
+    assert [m["role"] for m in jwt] == ["user", "assistant", "user", "assistant"]
+    assert jwt[0]["attachments"] == ["jwt.md"]
+    assert jwt[1]["steps"][0]["tool"] == "search_notes"
+    assert jwt[1]["provider_name"] == "Claude main"
+    assert jwt[1]["effort"] == "high"
+    assert "id" not in chats[0] and "user_id" not in chats[0] and "id" not in jwt[0]
+    for name in archive.namelist():
+        content = archive.read(name)
+        assert FILE_TEXT.encode() not in content, name
+        assert KEY.encode() not in content, name
+
+
+# Scenario: Restore replaces the chat history
+def test_restore_replaces_the_chat_history_with_new_ids(client: TestClient) -> None:
+    seed(client)
+    seed_chats(client)
+    before = chat_snapshot(client)
+    old_ids = {s["id"] for s in client.get("/api/agent/sessions").json()["sessions"]}
+    backup = download(client)
+    for session_id in old_ids:
+        assert client.delete(f"/api/agent/sessions/{session_id}").status_code == 204
+    chat_once(client, "a chat made after the backup")
+    response = restore(client, backup)
+    assert response.status_code == 200, response.text
+    assert response.json()["counts"]["chat_sessions"] == 2
+    assert response.json()["counts"]["chat_messages"] == 6
+    assert chat_snapshot(client) == before
+    new_ids = {s["id"] for s in client.get("/api/agent/sessions").json()["sessions"]}
+    assert len(new_ids) == 2 and not new_ids & old_ids
+
+
+# Scenario: Backup without chat history
+def test_backup_without_a_chat_entry_leaves_the_chat_history(client: TestClient) -> None:
+    seed(client)
+    seed_chats(client)
+    before = chat_snapshot(client)
+    old = rewrite(download(client), lambda entries: entries.pop(CHATS))
+    response = restore(client, old)
+    assert response.status_code == 200, response.text
+    assert "chat_sessions" not in response.json()["counts"]
+    assert chat_snapshot(client) == before
+
+
+def test_invalid_chat_entry_is_refused_and_changes_nothing(client: TestClient) -> None:
+    seed(client)
+    seed_chats(client)
+    before = (snapshot(client), chat_snapshot(client))
+
+    def unknown_role(entries: dict[str, bytes]) -> None:
+        chats = json.loads(entries[CHATS])
+        chats[0]["messages"][0]["role"] = "system"
+        entries[CHATS] = json.dumps(chats).encode()
+
+    def not_a_list(entries: dict[str, bytes]) -> None:
+        entries[CHATS] = b'{"sessions": []}'
+
+    for change in (unknown_role, not_a_list):
+        response = restore(client, rewrite(download(client), change))
+        assert response.status_code == 422, response.text
+        assert "chat_sessions.json" in response.json()["detail"]
+        assert (snapshot(client), chat_snapshot(client)) == before

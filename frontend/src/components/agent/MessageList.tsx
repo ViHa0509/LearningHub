@@ -91,6 +91,8 @@ function EmptyChat({ onStarter }: { onStarter: (text: string) => void }) {
 function UserMessage({ entry, busy, onRetry }: { entry: Entry; busy: boolean; onRetry: (id: number) => void }) {
   const display = entry.turn?.display ?? entry.content
   const files = entry.turn?.attachments ?? []
+  // A message of a reopened chat has only the names of its files.
+  const names = files.length === 0 ? (entry.turn?.fileNames ?? []) : []
   return (
     <div className="agent-turn user">
       {display && <p className="agent-bubble user">{display}</p>}
@@ -101,6 +103,16 @@ function UserMessage({ entry, busy, onRetry }: { entry: Entry; busy: boolean; on
               <Icon name="note" size={14} />
               <span>{f.name}</span>
               <span className="muted">{formatSize(f.size)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {names.length > 0 && (
+        <ul className="agent-sent-files" aria-label="Attached files">
+          {names.map((name, i) => (
+            <li key={`${i}-${name}`}>
+              <Icon name="note" size={14} />
+              <span>{name}</span>
             </li>
           ))}
         </ul>

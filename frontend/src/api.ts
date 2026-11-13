@@ -285,6 +285,8 @@ export interface ChatPage {
 export interface ChatTurn {
   role: 'user' | 'assistant'
   content: string
+  /** What the user typed (a skill message is sent expanded); stored with the chat, not sent to the model. */
+  display?: string
 }
 
 export interface AgentStep {
@@ -309,6 +311,10 @@ export interface ChatReply {
   provider: { id: string; name: string; model: string }
   fallback_used: boolean
   effort: Effort
+  /** The stored chat this turn was saved in, and the ids of its two stored messages. */
+  session: { id: string; title: string }
+  user_message_id: string
+  assistant_message_id: string
 }
 
 export interface ChatRequest {
@@ -319,6 +325,38 @@ export interface ChatRequest {
   effort?: Effort
   /** Text files for the last user message only. */
   attachments?: ChatAttachment[]
+  /** Continue this stored chat: `messages` then holds only the new user message. */
+  session_id?: string
+  /** Retry from this stored user message of the chat: it and what follows are replaced. */
+  retry_from?: string
+}
+
+export interface ChatSessionSummary {
+  id: string
+  title: string
+  created_at: string
+  last_message_at: string
+  message_count: number
+}
+
+/** A stored chat message; `attachments` are file names (their text is not stored). */
+export interface StoredChatMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  display: string | null
+  agent_id: string | null
+  attachments: string[]
+  steps: AgentStep[]
+  stopped: boolean
+  provider: { name: string; model: string } | null
+  fallback_used: boolean
+  effort: Effort | null
+  created_at: string
+}
+
+export interface ChatSessionDetail extends ChatSessionSummary {
+  messages: StoredChatMessage[]
 }
 
 export type OAuthProvider = 'github' | 'google'
@@ -554,6 +592,11 @@ export const api = {
   saveAgentSettings: (id: string, body: { web_search: boolean }) =>
     request<AgentOut>(`/api/agents/${id}/settings`, json('PUT', body)),
   chat: (body: ChatRequest) => request<ChatReply>('/api/agent/chat', json('POST', body)),
+  chatSessions: () => request<{ sessions: ChatSessionSummary[]; total: number }>('/api/agent/sessions'),
+  chatSession: (id: string) => request<ChatSessionDetail>(`/api/agent/sessions/${id}`),
+  renameChatSession: (id: string, title: string) =>
+    request<ChatSessionSummary>(`/api/agent/sessions/${id}`, json('PATCH', { title })),
+  deleteChatSession: (id: string) => request<void>(`/api/agent/sessions/${id}`, { method: 'DELETE' }),
   lesson: (domain: string, node: string) => request<Lesson>(`/api/lessons/${domain}/${node}`),
   saveLesson: (domain: string, node: string, body: string, source: LessonSource = 'user') =>
     request<Lesson>(`/api/lessons/${domain}/${node}`, json('PUT', { body, source })),
@@ -680,6 +723,9 @@ export const queryKeys = {
   provider: (id: string) => ['ai-providers', id] as const,
   providerTypes: ['ai-provider-types'] as const,
   agents: ['agents'] as const,
+  /** The list of stored chats (prefix of `chatSession`). */
+  chatSessions: ['chat-sessions'] as const,
+  chatSession: (id: string) => ['chat-sessions', id] as const,
   resources: (domain: string, node: string) => ['resources', domain, node] as const,
   /** Every node's references of a domain (prefix of `resources`). */
   domainResources: (domain: string) => ['resources', domain] as const,

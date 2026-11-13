@@ -152,6 +152,13 @@ const PATHS = {
       <path d="M5 15V6a2 2 0 0 1 2-2h9" />
     </>
   ),
+  plus: <path d="M12 5v14M5 12h14" />,
+  history: (
+    <>
+      <path d="M4 12a8 8 0 1 0 2.6-5.9L4 8.5M4 4v4.5h4.5" />
+      <path d="M12 8v4.5l3 1.8" />
+    </>
+  ),
   retry: (
     <>
       <path d="M4 12a8 8 0 0 1 14-5.3L20 9M20 4v5h-5" />
