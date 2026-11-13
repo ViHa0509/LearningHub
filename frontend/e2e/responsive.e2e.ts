@@ -414,6 +414,27 @@ test.describe('phone only', () => {
     await page.getByRole('button', { name: 'Close learned list' }).tap()
     await expect(drawer).toBeHidden()
 
+    // The note page's own More actions menu: inside the window, no sideways scroll, items at least 40 px tall.
+    await page.goto(`/#/note/${noteId}`)
+    const article = page.getByRole('article', { name: `Note: ${noteTitle}` })
+    const pageMore = article.getByRole('button', { name: 'More actions' })
+    await expect(pageMore).toBeVisible({ timeout: 15_000 })
+    expect((await box(pageMore)).height, 'note page More actions height').toBeGreaterThanOrEqual(40)
+    await pageMore.tap()
+    const pageMenu = article.getByRole('menu', { name: 'Note actions' })
+    await expect(pageMenu.getByRole('menuitem')).toHaveText(['Edit page', 'Export PDF', 'Archive', 'Delete'])
+    const menuBox = await box(pageMenu)
+    expect(menuBox.x, 'menu left edge').toBeGreaterThanOrEqual(0)
+    expect(menuBox.x + menuBox.width, 'menu right edge').toBeLessThanOrEqual(page.viewportSize()!.width)
+    const scroll = await overflow(page)
+    expect(scroll.html, 'no sideways scroll with the menu open').toBeLessThanOrEqual(0)
+    for (const item of await pageMenu.getByRole('menuitem').all()) {
+      expect((await box(item)).height, `${await item.innerText()} height`).toBeGreaterThanOrEqual(40)
+    }
+    await shotBoth(page, 'note-actions-menu')
+    await page.keyboard.press('Escape')
+    await expect(pageMenu).toHaveCount(0)
+
     // Top-bar controls.
     const short: string[] = []
     const controls = page.getByRole('banner').locator('a:visible, button:visible')

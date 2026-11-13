@@ -198,6 +198,98 @@ test('Learned-items list: Undo after archiving puts the note back', async ({ pag
   expect((await listNotes(request, '?archived=true')).some((n) => n.id === note.id)).toBeFalsy()
 })
 
+test('Read a note: Edit page, Export PDF, Archive and Delete are in the More actions menu, which works with the keyboard', async ({
+  page,
+  request,
+}) => {
+  const errors = watchErrors(page)
+  const note = await createNote(request, 'menu', 'backend/redis')
+  await page.goto(`/#/note/${note.id}`)
+  const article = page.getByRole('article', { name: `Note: ${note.title}` })
+  const header = article.locator('header')
+  const more = article.getByRole('button', { name: 'More actions' })
+  const menu = article.getByRole('menu', { name: 'Note actions' })
+  const items = menu.getByRole('menuitem')
+
+  // Scenario: More actions menu - none of the four is a separate control in the header.
+  await expect(more).toBeVisible()
+  await expect(more).toHaveAttribute('aria-expanded', 'false')
+  for (const name of ['Edit page', 'Export PDF', 'Archive', 'Delete']) {
+    await expect(header.getByRole('button', { name, exact: true })).toHaveCount(0)
+    await expect(header.getByRole('link', { name, exact: true })).toHaveCount(0)
+  }
+  await more.click()
+  await expect(more).toHaveAttribute('aria-expanded', 'true')
+  await expect(items).toHaveText(['Edit page', 'Export PDF', 'Archive', 'Delete'])
+  // The menu hangs under its button, inside the window.
+  const box = (await menu.boundingBox())!
+  const button = (await more.boundingBox())!
+  const width = page.viewportSize()!.width
+  expect(box.y).toBeGreaterThanOrEqual(button.y + button.height)
+  expect(box.x).toBeGreaterThanOrEqual(0)
+  expect(box.x + box.width).toBeLessThanOrEqual(width)
+  await page.emulateMedia({ colorScheme: 'light' })
+  await shot(page, 'note-actions-menu')
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await shot(page, 'note-actions-menu-dark')
+  await page.emulateMedia({ colorScheme: 'light' })
+
+  // Scenario: Menu with the keyboard.
+  await expect(items.nth(0)).toBeFocused()
+  await page.keyboard.press('ArrowDown')
+  await expect(items.nth(1)).toBeFocused()
+  await page.keyboard.press('ArrowUp')
+  await page.keyboard.press('ArrowUp')
+  await expect(items.nth(3)).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(menu).toHaveCount(0)
+  await expect(more).toBeFocused()
+
+  // A click outside closes it, and so does a click into the note's own page.
+  await more.click()
+  await article.getByRole('textbox', { name: 'Note title' }).click()
+  await expect(menu).toHaveCount(0)
+  await more.click()
+  await expect(menu).toBeVisible()
+  await page.locator(`iframe[title="Original page: ${note.title}"]`).click()
+  await expect(menu).toHaveCount(0)
+
+  // Scenario: Choosing an action closes the menu.
+  await more.click()
+  await menu.getByRole('menuitem', { name: 'Archive' }).click()
+  await expect(menu).toHaveCount(0)
+  await expect(page.getByRole('status').filter({ hasText: 'This note is archived.' })).toBeVisible()
+  await more.click()
+  await expect(items).toHaveText(['Edit page', 'Export PDF', 'Restore', 'Delete'])
+  await menu.getByRole('menuitem', { name: 'Restore' }).click()
+  await expect(page.getByText('This note is archived.')).toHaveCount(0)
+
+  // Scenario: Menu while editing the page.
+  await more.click()
+  await menu.getByRole('menuitem', { name: 'Edit page' }).click()
+  await expect(page.getByRole('region', { name: 'Edit page' })).toBeVisible()
+  await more.click()
+  await expect(items).toHaveText(['Archive', 'Delete'])
+  await page.keyboard.press('Escape')
+  await page.getByRole('region', { name: 'Edit page' }).getByRole('button', { name: 'Cancel' }).click()
+
+  // Scenario: Delete needs confirmation - asked in the header, after the menu closed.
+  await more.click()
+  await menu.getByRole('menuitem', { name: 'Delete' }).click()
+  await expect(menu).toHaveCount(0)
+  const confirm = page.getByRole('alertdialog', { name: 'Confirm delete' })
+  await expect(confirm).toBeVisible()
+  expect((await listNotes(request)).some((n) => n.id === note.id)).toBeTruthy()
+  await confirm.getByRole('button', { name: 'Cancel' }).click()
+  await expect(confirm).toHaveCount(0)
+  await more.click()
+  await menu.getByRole('menuitem', { name: 'Delete' }).click()
+  await confirm.getByRole('button', { name: 'Yes, delete' }).click()
+  await expect(article).toHaveCount(0)
+  expect((await listNotes(request)).some((n) => n.id === note.id)).toBeFalsy()
+  expect(errors).toEqual([])
+})
+
 test('Read a note: archived note page says so and Restore puts it back', async ({ page, request }) => {
   const errors = watchErrors(page)
   const note = await createNote(request, 'page', 'backend/redis')
@@ -205,14 +297,19 @@ test('Read a note: archived note page says so and Restore puts it back', async (
   const list = listOf(page)
   const article = page.getByRole('article', { name: `Note: ${note.title}` })
 
-  // The header button archives an active note.
+  // Archive in the header's More actions menu archives an active note.
   await list.getByRole('button', { name: note.title, exact: true }).click()
-  await expect(article.getByRole('button', { name: 'Archive' })).toBeVisible()
+  const more = article.getByRole('button', { name: 'More actions' })
+  const menu = article.getByRole('menu', { name: 'Note actions' })
+  await more.click()
+  await expect(menu.getByRole('menuitem', { name: 'Archive' })).toBeVisible()
   await expect(page.getByText('This note is archived.')).toHaveCount(0)
-  await article.getByRole('button', { name: 'Archive' }).click()
+  await menu.getByRole('menuitem', { name: 'Archive' }).click()
   await expect(page.getByRole('status').filter({ hasText: 'This note is archived.' })).toBeVisible()
   await shot(page, 'curation-note-archived')
-  await expect(article.getByRole('button', { name: 'Restore', exact: true })).toBeVisible()
+  await more.click()
+  await expect(menu.getByRole('menuitem', { name: 'Restore', exact: true })).toBeVisible()
+  await page.keyboard.press('Escape')
 
   // Open it from the Archived section after a reload, then restore from the banner.
   await page.reload()

@@ -221,7 +221,8 @@ const originalFrame = (page: Page, title: string) => page.frameLocator(`iframe[t
 
 /** Opens the in-place editor and waits until the page in the editing frame is editable. */
 async function openEditor(page: Page, article: Locator, title: string) {
-  await article.getByRole('button', { name: 'Edit page' }).click()
+  await article.getByRole('button', { name: 'More actions' }).click()
+  await article.getByRole('menu', { name: 'Note actions' }).getByRole('menuitem', { name: 'Edit page' }).click()
   const editor = page.getByRole('region', { name: 'Edit page' })
   await expect(editor).toBeVisible()
   // The frame loads the stored page first; under load that can take longer than the default 5 s.

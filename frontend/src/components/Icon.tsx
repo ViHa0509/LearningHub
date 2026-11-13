@@ -79,6 +79,13 @@ const PATHS = {
       <circle cx="18" cy="12" r="1" />
     </>
   ),
+  'more-vertical': (
+    <>
+      <circle cx="12" cy="6" r="1" />
+      <circle cx="12" cy="12" r="1" />
+      <circle cx="12" cy="18" r="1" />
+    </>
+  ),
   sun: (
     <>
       <circle cx="12" cy="12" r="4" />

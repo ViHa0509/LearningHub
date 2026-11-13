@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, type Note, type Roadmap } from '../api'
 import { groupNotes } from '../lib/grouping'
+import { ActionMenu } from './ActionMenu'
 import { Icon } from './Icon'
 import { NodePicker } from './NodePicker'
 
@@ -354,42 +355,8 @@ interface MenuProps {
 }
 
 function NoteMenu({ onClose, onRename, onMove, onArchive }: MenuProps) {
-  const ref = useRef<HTMLDivElement>(null)
-  const close = useRef(onClose)
-  useEffect(() => {
-    close.current = onClose
-  })
-
-  useEffect(() => {
-    ref.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus()
-    const outside = (event: MouseEvent) => {
-      const target = event.target as Element
-      if (ref.current?.contains(target)) return
-      // A click on a trigger is handled by its own toggle.
-      if (target.closest?.('.note-more')) return
-      close.current(false)
-    }
-    document.addEventListener('mousedown', outside)
-    return () => document.removeEventListener('mousedown', outside)
-  }, [])
-
-  const onKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === 'Escape') {
-      event.stopPropagation()
-      onClose(true)
-      return
-    }
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      event.preventDefault()
-      const items = Array.from(ref.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])
-      const at = items.indexOf(document.activeElement as HTMLElement)
-      const next = event.key === 'ArrowDown' ? (at + 1) % items.length : (at - 1 + items.length) % items.length
-      items[next]?.focus()
-    }
-  }
-
   return (
-    <div ref={ref} className="note-menu" role="menu" aria-label="Note actions" onKeyDown={onKeyDown}>
+    <ActionMenu label="Note actions" onClose={onClose} triggerSelector=".note-more">
       <button type="button" role="menuitem" onClick={onRename}>
         <Icon name="edit" />
         Rename
@@ -402,6 +369,6 @@ function NoteMenu({ onClose, onRename, onMove, onArchive }: MenuProps) {
         <Icon name="archive" />
         Archive
       </button>
-    </div>
+    </ActionMenu>
   )
 }

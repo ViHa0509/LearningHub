@@ -19,8 +19,20 @@ async function openNote(title: string, nodeId: string | null = 'backend/caching'
 
 type User = Awaited<ReturnType<typeof openNote>>['user']
 
+/** Opens the More actions menu of the note header. */
+async function openMenu(user: User, article: HTMLElement) {
+  await user.click(within(article).getByRole('button', { name: 'More actions' }))
+  return within(article).getByRole('menu', { name: 'Note actions' })
+}
+
+/** Opens the menu and chooses one of its actions. */
+async function choose(user: User, article: HTMLElement, name: string) {
+  const menu = await openMenu(user, article)
+  await user.click(within(menu).getByRole('menuitem', { name }))
+}
+
 async function startEditing(user: User, article: HTMLElement) {
-  await user.click(within(article).getByRole('button', { name: 'Edit page' }))
+  await choose(user, article, 'Edit page')
   await within(article).findByRole('region', { name: 'Edit page' })
   return (await within(article).findByTitle('Editing: Redis eviction')) as HTMLIFrameElement
 }
@@ -44,8 +56,9 @@ function answerCollect(frame: HTMLIFrameElement, edits: Record<string, string>) 
 describe('note view', () => {
   // Scenario: Export a note
   it('exports the note through its print view in a new tab', async () => {
-    const { article, note } = await openNote('Redis eviction')
-    const link = within(article).getByRole('link', { name: 'Export PDF' })
+    const { user, article, note } = await openNote('Redis eviction')
+    const link = within(await openMenu(user, article)).getByRole('menuitem', { name: 'Export PDF' })
+    expect(link.tagName).toBe('A')
     expect(link).toHaveAttribute('href', `/api/notes/${note.id}/print`)
     expect(link).toHaveAttribute('target', '_blank')
     expect(link.getAttribute('rel')).toContain('noopener')
@@ -194,14 +207,14 @@ describe('note view', () => {
 
   it('deletes only after confirmation', async () => {
     const { user, article, state } = await openNote('Redis eviction')
-    await user.click(within(article).getByRole('button', { name: 'Delete' }))
+    await choose(user, article, 'Delete')
     expect(state.calls.some((c) => c.method === 'DELETE')).toBe(false)
     expect(screen.getByRole('alertdialog', { name: 'Confirm delete' })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(state.calls.some((c) => c.method === 'DELETE')).toBe(false)
 
-    await user.click(within(article).getByRole('button', { name: 'Delete' }))
+    await choose(user, article, 'Delete')
     await user.click(screen.getByRole('button', { name: 'Yes, delete' }))
     await waitFor(() => expect(state.calls.some((c) => c.method === 'DELETE')).toBe(true))
     await waitFor(() => expect(screen.queryByRole('article')).not.toBeInTheDocument())
@@ -212,7 +225,9 @@ describe('note view', () => {
     const { article, state, user, note } = await openNote('Redis eviction')
     expect(within(article).queryByText('This note is archived.')).not.toBeInTheDocument()
     expect(within(article).queryByRole('button', { name: 'Restore' })).not.toBeInTheDocument()
-    await user.click(within(article).getByRole('button', { name: 'Archive' }))
+    const menu = await openMenu(user, article)
+    expect(within(menu).queryByRole('menuitem', { name: 'Restore' })).not.toBeInTheDocument()
+    await user.click(within(menu).getByRole('menuitem', { name: 'Archive' }))
     expect(state.calls).toContainEqual({ method: 'PATCH', url: `/api/notes/${note.id}`, body: { archived: true } })
     expect(await screen.findByText('This note is archived.')).toBeInTheDocument()
   })
@@ -222,18 +237,82 @@ describe('note view', () => {
       archived_at: '2026-11-07T00:00:00Z',
     })
     expect(within(article).getByText('This note is archived.')).toBeInTheDocument()
-    expect(within(article).queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument()
+    const archivedMenu = await openMenu(user, article)
+    expect(within(archivedMenu).queryByRole('menuitem', { name: 'Archive' })).not.toBeInTheDocument()
+    await user.keyboard('{Escape}')
     await user.click(within(article).getByRole('button', { name: 'Restore this note' }))
     expect(state.calls).toContainEqual({ method: 'PATCH', url: `/api/notes/${note.id}`, body: { archived: false } })
     await waitFor(() => expect(screen.queryByText('This note is archived.')).not.toBeInTheDocument())
     const group = screen.getByRole('group', { name: 'Backend > Caching' })
     expect(within(group).getByRole('button', { name: 'Redis eviction' })).toBeInTheDocument()
-    expect(within(article).getByRole('button', { name: 'Archive' })).toBeInTheDocument()
+    expect(within(await openMenu(user, article)).getByRole('menuitem', { name: 'Archive' })).toBeInTheDocument()
   })
 
-  it('restores from the action row button too', async () => {
+  it('restores from the More actions menu too', async () => {
     const { article, user } = await openNote('Redis eviction', null, { archived_at: '2026-11-07T00:00:00Z' })
-    await user.click(within(article).getByRole('button', { name: 'Restore' }))
+    await choose(user, article, 'Restore')
     await waitFor(() => expect(screen.queryByText('This note is archived.')).not.toBeInTheDocument())
+  })
+
+  // Scenario: More actions menu
+  it('offers Edit page, Export PDF, Archive and Delete only in the More actions menu', async () => {
+    const { article, user } = await openNote('Redis eviction')
+    const header = article.querySelector('header')!
+    for (const name of ['Edit page', 'Export PDF', 'Archive', 'Delete']) {
+      expect(within(header).queryByRole('button', { name })).not.toBeInTheDocument()
+      expect(within(header).queryByRole('link', { name })).not.toBeInTheDocument()
+    }
+    const more = within(article).getByRole('button', { name: 'More actions' })
+    expect(more).toHaveAttribute('aria-haspopup', 'menu')
+    expect(more).toHaveAttribute('aria-expanded', 'false')
+    const menu = await openMenu(user, article)
+    expect(more).toHaveAttribute('aria-expanded', 'true')
+    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
+      'Edit page',
+      'Export PDF',
+      'Archive',
+      'Delete',
+    ])
+    // Still no separate buttons while the menu is open.
+    expect(within(header).queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument()
+  })
+
+  // Scenario: Menu with the keyboard
+  it('moves between the items with the arrows, and Escape closes it and returns the focus', async () => {
+    const { article, user } = await openNote('Redis eviction')
+    const menu = await openMenu(user, article)
+    const items = within(menu).getAllByRole('menuitem')
+    expect(items[0]).toHaveFocus()
+    await user.keyboard('{ArrowDown}')
+    expect(items[1]).toHaveFocus()
+    await user.keyboard('{Escape}')
+    expect(within(article).queryByRole('menu')).not.toBeInTheDocument()
+    expect(within(article).getByRole('button', { name: 'More actions' })).toHaveFocus()
+  })
+
+  // Scenario: Choosing an action closes the menu
+  it('closes the menu when Archive is chosen, and then offers Restore instead', async () => {
+    const { article, user } = await openNote('Redis eviction')
+    await choose(user, article, 'Archive')
+    expect(within(article).queryByRole('menu')).not.toBeInTheDocument()
+    expect(await within(article).findByText('This note is archived.')).toBeInTheDocument()
+    const menu = await openMenu(user, article)
+    expect(within(menu).getByRole('menuitem', { name: 'Restore' })).toBeInTheDocument()
+    expect(within(menu).queryByRole('menuitem', { name: 'Archive' })).not.toBeInTheDocument()
+  })
+
+  it('closes the menu on a click outside it', async () => {
+    const { article, user } = await openNote('Redis eviction')
+    await openMenu(user, article)
+    await user.click(within(article).getByRole('textbox', { name: 'Note title' }))
+    expect(within(article).queryByRole('menu')).not.toBeInTheDocument()
+  })
+
+  // Scenario: Menu while editing the page
+  it('offers only Archive and Delete while the page editor is open', async () => {
+    const { article, user } = await openNote('Redis eviction')
+    await startEditing(user, article)
+    const menu = await openMenu(user, article)
+    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Archive', 'Delete'])
   })
 })

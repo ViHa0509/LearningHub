@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api, type Note, type Roadmap } from '../api'
 import { setLeaveGuard } from '../lib/route'
+import { ActionMenu } from './ActionMenu'
+import { Icon } from './Icon'
 import { DISCARD_PROMPT, NoteEditor } from './NoteEditor'
 import { NodePicker } from './NodePicker'
 
@@ -20,6 +22,19 @@ export function NoteView({ note, roadmaps, onClose, onChanged, onDeleted }: Prop
   const [editorDirty, setEditorDirty] = useState(false)
   // Bumped after a page save, so the frame reloads the stored page.
   const [version, setVersion] = useState(0)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const moreButton = useRef<HTMLButtonElement>(null)
+
+  const closeMenu = (restoreFocus: boolean) => {
+    setMenuOpen(false)
+    if (restoreFocus) moreButton.current?.focus()
+  }
+
+  /** A chosen menu action: the menu closes, the focus goes back to its button, the action runs. */
+  const choose = (action: () => void) => {
+    closeMenu(true)
+    action()
+  }
 
   const run = async (action: () => Promise<unknown>) => {
     setError(null)
@@ -93,46 +108,76 @@ export function NoteView({ note, roadmaps, onClose, onChanged, onDeleted }: Prop
           <span className="tag warn">Linked node {note.node_id} no longer exists</span>
         )}
         <div className="note-actions">
-        {!editing && (
-          <button type="button" onClick={() => setEditing(true)}>
-            Edit page
-          </button>
-        )}
-        {!editing && (
-          <a
-            className="button-link"
-            href={api.printUrl(note.id)}
-            target="_blank"
-            rel="noopener noreferrer"
-            title="Opens the page in a new tab with the print dialog: choose Save as PDF"
+          {confirming && (
+            <span className="confirm" role="alertdialog" aria-label="Confirm delete">
+              Delete this note and its original file?
+              <button type="button" className="danger" onClick={() => void remove()}>
+                Yes, delete
+              </button>
+              <button type="button" onClick={() => setConfirming(false)}>
+                Cancel
+              </button>
+            </span>
+          )}
+          <button
+            ref={moreButton}
+            type="button"
+            className="icon icon-only note-page-more"
+            aria-label="More actions"
+            title="More actions"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen(!menuOpen)}
           >
-            Export PDF
-          </a>
-        )}
-        {note.archived_at ? (
-          <button type="button" onClick={() => void run(() => api.setArchived(note.id, false))}>
-            Restore
+            <Icon name="more-vertical" />
           </button>
-        ) : (
-          <button type="button" onClick={() => void run(() => api.setArchived(note.id, true))}>
-            Archive
-          </button>
-        )}
-        {confirming ? (
-          <span className="confirm" role="alertdialog" aria-label="Confirm delete">
-            Delete this note and its original file?
-            <button type="button" className="danger" onClick={() => void remove()}>
-              Yes, delete
-            </button>
-            <button type="button" onClick={() => setConfirming(false)}>
-              Cancel
-            </button>
-          </span>
-        ) : (
-          <button type="button" className="danger" onClick={() => setConfirming(true)}>
-            Delete
-          </button>
-        )}
+          {menuOpen && (
+            <ActionMenu label="Note actions" onClose={closeMenu} triggerSelector=".note-page-more">
+              {!editing && (
+                <button type="button" role="menuitem" onClick={() => choose(() => setEditing(true))}>
+                  <Icon name="edit" />
+                  Edit page
+                </button>
+              )}
+              {!editing && (
+                <a
+                  role="menuitem"
+                  href={api.printUrl(note.id)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Opens the page in a new tab with the print dialog: choose Save as PDF"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  <Icon name="print" />
+                  Export PDF
+                </a>
+              )}
+              {note.archived_at ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => choose(() => void run(() => api.setArchived(note.id, false)))}
+                >
+                  <Icon name="archive" />
+                  Restore
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => choose(() => void run(() => api.setArchived(note.id, true)))}
+                >
+                  <Icon name="archive" />
+                  Archive
+                </button>
+              )}
+              <div role="separator" className="menu-divider" />
+              <button type="button" role="menuitem" className="danger" onClick={() => choose(() => setConfirming(true))}>
+                <Icon name="trash" />
+                Delete
+              </button>
+            </ActionMenu>
+          )}
         </div>
       </header>
       {note.archived_at && (
