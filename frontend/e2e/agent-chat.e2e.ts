@@ -241,9 +241,11 @@ test.describe('Skills in the composer', () => {
     await box.press('Enter')
     await expect(box).toHaveValue('/explain ')
 
-    // The Skills button opens the list too, and a click picks a skill.
+    // Skills in the options menu opens the list too, and a click picks a skill.
     await box.fill('')
-    await agent.getByRole('button', { name: 'Skills' }).click()
+    await agent.getByRole('button', { name: 'Message options' }).click()
+    await agent.getByRole('menuitem', { name: 'Skills' }).click()
+    await expect(agent.getByRole('menu')).toHaveCount(0)
     await popup.getByRole('option', { name: /\/mindmap/ }).click()
     await expect(box).toHaveValue('/mindmap ')
   })
@@ -273,11 +275,41 @@ test.describe('Effort per message', () => {
     request,
   }) => {
     const { p, agent, box } = await openChat(page, request)
-    const effort = agent.getByRole('group', { name: 'Effort' })
-    await expect(effort.getByRole('button', { name: 'Medium' })).toHaveAttribute('aria-pressed', 'true')
-    await effort.getByRole('button', { name: 'Low' }).click()
-    await expect(effort.getByRole('button', { name: 'Low' })).toHaveAttribute('aria-pressed', 'true')
-    await expect(effort.getByRole('button', { name: 'Medium' })).toHaveAttribute('aria-pressed', 'false')
+    // Scenario: Open the menu - one plus button instead of the Attach, Skills and effort controls.
+    const options = agent.getByRole('button', { name: 'Message options' })
+    const menu = agent.getByRole('menu', { name: 'Message options' })
+    const effort = menu.getByRole('group', { name: 'Effort' })
+    for (const name of ['Attach', 'Skills', 'Low', 'Medium', 'High']) {
+      await expect(agent.getByRole('button', { name, exact: true })).toHaveCount(0)
+    }
+    await options.click()
+    await expect(menu.getByRole('menuitem')).toHaveText(['Attach files', /Skills/, /Effort\s*Medium/])
+    // The menu opens above its button, inside the window.
+    const menuBox = (await menu.boundingBox())!
+    const buttonBox = (await options.boundingBox())!
+    expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(buttonBox.y)
+    expect(menuBox.x).toBeGreaterThanOrEqual(0)
+    expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(page.viewportSize()!.width)
+
+    // Scenario: Choose the effort.
+    await menu.getByRole('menuitem', { name: /Effort/ }).click()
+    await expect(effort.getByRole('menuitemradio', { name: 'Medium' })).toBeChecked()
+    await page.emulateMedia({ colorScheme: 'light' })
+    await shot(page, 'composer-menu')
+    await page.emulateMedia({ colorScheme: 'dark' })
+    await shot(page, 'composer-menu-dark')
+    await page.emulateMedia({ colorScheme: 'light' })
+    await effort.getByRole('menuitemradio', { name: 'Low' }).click()
+    await expect(menu).toHaveCount(0)
+    await expect(options).toBeFocused()
+    await expect(agent.getByText('Low effort')).toBeVisible()
+
+    // Scenario: Close with Escape.
+    await options.click()
+    await expect(menu).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(menu).toHaveCount(0)
+    await expect(options).toBeFocused()
 
     await box.fill('[[echo]] what is a JWT?')
     const body = await sendAndCapture(page, box)
@@ -289,12 +321,16 @@ test.describe('Effort per message', () => {
     await expect(log.locator('.agent-caption')).toHaveText(`${p.name} · fake-ok · Low`)
 
     await page.reload()
-    const after = page.getByRole('complementary', { name: 'Agent' }).getByRole('group', { name: 'Effort' })
-    await expect(after.getByRole('button', { name: 'Low' })).toHaveAttribute('aria-pressed', 'true')
+    const panelAfter = page.getByRole('complementary', { name: 'Agent' })
+    await expect(panelAfter.getByText('Low effort')).toBeVisible()
+    await panelAfter.getByRole('button', { name: 'Message options' }).click()
+    await panelAfter.getByRole('menuitem', { name: /Effort/ }).click()
+    const after = panelAfter.getByRole('group', { name: 'Effort' })
+    await expect(after.getByRole('menuitemradio', { name: 'Low' })).toBeChecked()
     expect(await page.evaluate("localStorage.getItem('learninghub.effort')")).toBe('low')
 
     // High effort reaches the model as the thoroughness line.
-    await after.getByRole('button', { name: 'High' }).click()
+    await after.getByRole('menuitemradio', { name: 'High' }).click()
     const box2 = page.getByRole('complementary', { name: 'Agent' }).getByRole('textbox', { name: 'Message the agent' })
     await box2.fill('[[echo]] again')
     expect((await sendAndCapture(page, box2)).effort).toBe('high')
@@ -317,7 +353,7 @@ test.describe('Text attachments', () => {
     const chips = agent.getByRole('list', { name: 'Attachments' })
     await expect(chips).toContainText('jwt.md')
     await expect(chips.getByRole('button', { name: 'Remove jwt.md' })).toBeVisible()
-    await expect(agent.getByRole('button', { name: 'Attach' })).toBeVisible()
+    await expect(agent.getByRole('button', { name: 'Message options' })).toBeVisible()
 
     await box.fill('summarize this')
     const body = await sendAndCapture(page, box)

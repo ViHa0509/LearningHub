@@ -325,7 +325,7 @@ function MainApp({ theme, onThemeChange, health, user }: MainProps) {
               archivedNotes={archived.data ?? []}
               roadmaps={roadmaps}
               selectedNoteId={route.page === 'note' ? route.id : null}
-              selectedNodeId={selectedNodeId}
+              selectedNodeId={route.page === 'lesson' ? selectedNodeId : null}
               onOpenNote={openNoteFromList}
               onImport={() => setImporting(true)}
               onChanged={refresh}

@@ -167,6 +167,18 @@ describe('agent panel', () => {
 const box = () => within(panel()).getByRole('textbox', { name: 'Message the agent' })
 const lastBody = (state: ReturnType<typeof installFakeApi>) => chats(state).at(-1)!.body as ChatRequest
 const fileInput = () => panel().querySelector('input[type="file"]') as HTMLInputElement
+type User = Awaited<ReturnType<typeof renderAppReady>>['user']
+/** Opens the composer's options menu (the plus button). */
+async function openOptions(user: User) {
+  await user.click(await within(panel()).findByRole('button', { name: 'Message options' }))
+  return within(panel()).getByRole('menu', { name: 'Message options' })
+}
+/** Opens the menu and its Effort choices. */
+async function openEffort(user: User) {
+  const menu = await openOptions(user)
+  await user.click(within(menu).getByRole('menuitem', { name: /Effort/ }))
+  return within(menu).getByRole('group', { name: 'Effort' })
+}
 const mdFile = (name: string, text: string) => new File([text], name, { type: 'text/markdown' })
 
 describe('chat panel layout', () => {
@@ -354,9 +366,9 @@ describe('skills in the composer', () => {
   it('opens all skills from the Skills button and picks one with a click', async () => {
     withProviders()
     const { user } = await renderAppReady()
-    const button = await within(panel()).findByRole('button', { name: 'Skills' })
-    await user.click(button)
-    expect(button).toHaveAttribute('aria-expanded', 'true')
+    const menu = await openOptions(user)
+    await user.click(within(menu).getByRole('menuitem', { name: 'Skills' }))
+    expect(within(panel()).queryByRole('menu')).not.toBeInTheDocument()
     const list = within(panel()).getByRole('listbox', { name: 'Skills' })
     expect(within(list).getAllByRole('option')).toHaveLength(SKILLS.length)
     await user.click(within(list).getByRole('option', { name: /\/flashcards/ }))
@@ -383,18 +395,22 @@ describe('effort per message', () => {
   it('sends the chosen effort, remembers it and shows it in the caption', async () => {
     const state = withProviders()
     const { user, unmount } = await renderAppReady()
-    const group = await within(panel()).findByRole('group', { name: 'Effort' })
-    const buttons = within(group).getAllByRole('button')
-    expect(buttons.map((b) => [b.textContent, b.getAttribute('title')])).toEqual([
+    // Medium is the default and is not called out in the composer.
+    expect(within(panel()).queryByText(/ effort$/)).not.toBeInTheDocument()
+    const group = await openEffort(user)
+    const choices = within(group).getAllByRole('menuitemradio')
+    expect(choices.map((b) => [b.textContent, b.getAttribute('title')])).toEqual([
       ['Low', 'Fast, saves tokens'],
       ['Medium', 'Balanced'],
       ['High', 'Deep reasoning, slower'],
     ])
-    expect(within(group).getByRole('button', { name: 'Medium' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(group).getByRole('menuitemradio', { name: 'Medium' })).toBeChecked()
 
-    await user.click(within(group).getByRole('button', { name: 'Low' }))
-    expect(within(group).getByRole('button', { name: 'Low' })).toHaveAttribute('aria-pressed', 'true')
-    expect(within(group).getByRole('button', { name: 'Medium' })).toHaveAttribute('aria-pressed', 'false')
+    await user.click(within(group).getByRole('menuitemradio', { name: 'Low' }))
+    // Choosing closes the menu, the focus is back on its button and the composer names the effort.
+    expect(within(panel()).queryByRole('menu')).not.toBeInTheDocument()
+    expect(within(panel()).getByRole('button', { name: 'Message options' })).toHaveFocus()
+    expect(within(panel()).getByText('Low effort')).toBeInTheDocument()
     expect(localStorage.getItem('learninghub.effort')).toBe('low')
 
     await user.type(box(), 'quick one{Enter}')
@@ -404,17 +420,76 @@ describe('effort per message', () => {
     expect(within(log).getByText('Low')).toBeInTheDocument()
 
     unmount()
-    await renderAppReady()
-    const again = await within(panel()).findByRole('group', { name: 'Effort' })
-    expect(within(again).getByRole('button', { name: 'Low' })).toHaveAttribute('aria-pressed', 'true')
+    const second = await renderAppReady()
+    const again = await openEffort(second.user)
+    expect(within(again).getByRole('menuitemradio', { name: 'Low' })).toBeChecked()
+    expect(within(again).getByRole('menuitemradio', { name: 'Medium' })).not.toBeChecked()
   })
 
   it('falls back to Medium when the stored effort is unknown', async () => {
     localStorage.setItem('learninghub.effort', 'extreme')
     withProviders()
-    await renderAppReady()
-    const group = await within(panel()).findByRole('group', { name: 'Effort' })
-    expect(within(group).getByRole('button', { name: 'Medium' })).toHaveAttribute('aria-pressed', 'true')
+    const { user } = await renderAppReady()
+    const group = await openEffort(user)
+    expect(within(group).getByRole('menuitemradio', { name: 'Medium' })).toBeChecked()
+  })
+})
+
+describe('composer options menu', () => {
+  it('opens with Attach files, Skills and Effort; the composer has no separate controls for them', async () => {
+    withProviders()
+    const { user } = await renderAppReady()
+    const button = await within(panel()).findByRole('button', { name: 'Message options' })
+    expect(button).toHaveAttribute('aria-haspopup', 'menu')
+    expect(button).toHaveAttribute('aria-expanded', 'false')
+    for (const name of ['Attach', 'Skills', 'Low', 'Medium', 'High']) {
+      expect(within(panel()).queryByRole('button', { name })).not.toBeInTheDocument()
+    }
+    const menu = await openOptions(user)
+    expect(button).toHaveAttribute('aria-expanded', 'true')
+    expect(within(menu).getAllByRole('menuitem').map((i) => i.textContent)).toEqual([
+      'Attach files',
+      '/Skills',
+      'EffortMedium',
+    ])
+    // Effort lists its three choices in the same menu.
+    expect(within(menu).queryByRole('menuitemradio')).not.toBeInTheDocument()
+    const effort = within(menu).getByRole('menuitem', { name: /Effort/ })
+    await user.click(effort)
+    expect(effort).toHaveAttribute('aria-expanded', 'true')
+    expect(within(menu).getAllByRole('menuitemradio')).toHaveLength(3)
+  })
+
+  it('works with the keyboard and closes with Escape or a click outside', async () => {
+    withProviders()
+    const { user } = await renderAppReady()
+    const menu = await openOptions(user)
+    const items = within(menu).getAllByRole('menuitem')
+    expect(items[0]).toHaveFocus()
+    await user.keyboard('{ArrowDown}')
+    expect(items[1]).toHaveFocus()
+    await user.keyboard('{ArrowUp}{ArrowUp}')
+    expect(items[2]).toHaveFocus()
+    await user.keyboard('{Enter}{ArrowDown}')
+    expect(within(menu).getByRole('menuitemradio', { name: 'Low' })).toHaveFocus()
+    await user.keyboard('{Escape}')
+    expect(within(panel()).queryByRole('menu')).not.toBeInTheDocument()
+    expect(within(panel()).getByRole('button', { name: 'Message options' })).toHaveFocus()
+
+    await openOptions(user)
+    await user.click(box())
+    expect(within(panel()).queryByRole('menu')).not.toBeInTheDocument()
+  })
+
+  it('Attach files in the menu opens the file picker', async () => {
+    withProviders()
+    const { user } = await renderAppReady()
+    const menu = await openOptions(user)
+    let picked = 0
+    fileInput().addEventListener('click', () => (picked += 1))
+    await user.click(within(menu).getByRole('menuitem', { name: 'Attach files' }))
+    expect(picked).toBe(1)
+    expect(within(panel()).queryByRole('menu')).not.toBeInTheDocument()
   })
 })
 

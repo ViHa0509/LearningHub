@@ -26,7 +26,7 @@ export function ActionMenu({ label, onClose, triggerSelector, children }: Props)
   })
 
   useEffect(() => {
-    ref.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus()
+    ref.current?.querySelector<HTMLElement>('[role^="menuitem"]')?.focus()
     const outside = (event: MouseEvent) => {
       const target = event.target as Element
       if (ref.current?.contains(target)) return
@@ -51,7 +51,7 @@ export function ActionMenu({ label, onClose, triggerSelector, children }: Props)
     }
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault()
-      const items = Array.from(ref.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])
+      const items = Array.from(ref.current?.querySelectorAll<HTMLElement>('[role^="menuitem"]') ?? [])
       const at = items.indexOf(document.activeElement as HTMLElement)
       const next = event.key === 'ArrowDown' ? (at + 1) % items.length : (at - 1 + items.length) % items.length
       items[next]?.focus()

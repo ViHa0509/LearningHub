@@ -285,3 +285,34 @@ describe('LearnedList actions', () => {
     expect(screen.getByRole('button', { name: 'Old JWT' })).toBeInTheDocument()
   })
 })
+
+describe('which notes the list marks', () => {
+  it('marks only the open note, and all notes of a node on its lesson page', async () => {
+    const { installFakeApi, makeNote } = await import('../test/fakeApi')
+    const { renderAppReady } = await import('../test/render')
+    const { screen, within } = await import('@testing-library/react')
+    installFakeApi([makeNote('OpenSpec in the backend repo', 'backend/caching'), makeNote('OpenSpec key ideas', 'backend/caching')])
+    const { user } = await renderAppReady()
+    const list = await screen.findByRole('complementary', { name: 'Learned items' })
+    const first = await within(list).findByRole('button', { name: 'OpenSpec in the backend repo' })
+    const second = within(list).getByRole('button', { name: 'OpenSpec key ideas' })
+    expect(first).toHaveAttribute('aria-pressed', 'false')
+
+    // A note of the same node is not marked with the open one.
+    await user.click(first)
+    await screen.findByRole('article', { name: 'Note: OpenSpec in the backend repo' })
+    expect(first).toHaveAttribute('aria-pressed', 'true')
+    expect(second).toHaveAttribute('aria-pressed', 'false')
+
+    // On the node's lesson page its notes are marked.
+    window.location.hash = '#/lesson/backend/caching'
+    await screen.findByRole('heading', { level: 1, name: /Caching/ })
+    expect(within(list).getByRole('button', { name: 'OpenSpec in the backend repo' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(list).getByRole('button', { name: 'OpenSpec key ideas' })).toHaveAttribute('aria-pressed', 'true')
+
+    // Back home nothing stays marked.
+    window.location.hash = '#/'
+    await screen.findByRole('heading', { level: 1, name: 'What do you want to learn?' })
+    expect(within(list).getByRole('button', { name: 'OpenSpec in the backend repo' })).toHaveAttribute('aria-pressed', 'false')
+  })
+})

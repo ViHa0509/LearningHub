@@ -172,6 +172,7 @@ button.icon-only { display: inline-flex; align-items: center; justify-content: c
 }
 .list-toolbar input { flex: 1; min-width: 0; }
 .note-item { display: flex; align-items: center; gap: 4px; border-radius: 6px; }
+.note-item:hover { background: var(--surface-2); }
 .note-item.highlighted { background: var(--accent-soft); }
 .note-select { flex: 1; text-align: left; border: none; background: transparent; padding: 4px 6px; }
 .note-item { position: relative; }
@@ -688,6 +689,24 @@ details.provider-section[open] > summary { margin-bottom: 10px; }
 }
 .composer-card textarea::placeholder { color: var(--muted); }
 .composer-footer { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+/* The options menu (change composer-plus-menu): opens above its plus button, inside the panel. */
+.composer-plus { position: relative; flex: none; }
+.agent-pane .plus-button {
+  display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0;
+  background: transparent; border: 1px solid var(--border); border-radius: 999px; color: var(--muted);
+}
+.agent-pane .plus-button:hover, .agent-pane .plus-button[aria-expanded='true'] { background: var(--surface-2); color: var(--text); }
+.plus-button .icon { margin-right: 0; }
+.composer-plus .note-menu { top: auto; bottom: calc(100% + 6px); left: 0; right: auto; min-width: 210px; max-width: calc(100vw - 48px); }
+.composer-plus .note-menu button { gap: 8px; padding: 6px 10px; border-radius: 6px; font-size: 13px; }
+.composer-plus .note-menu button .icon { margin-right: 0; }
+.composer-plus .note-menu .effort-bars { margin: 0 1px; }
+.menu-slash { width: 16px; text-align: center; font-weight: 700; color: var(--muted); }
+.menu-value { margin-left: auto; padding-left: 12px; color: var(--muted); font-size: 12px; }
+.menu-group { display: flex; flex-direction: column; margin: 2px 0 2px 12px; padding-left: 6px; border-left: 1px solid var(--border); }
+.menu-group [aria-checked='true'] { color: var(--accent); }
+.menu-check { margin-left: auto; }
+.composer-effort { flex: none; padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px; font-size: 11px; color: var(--accent); }
 .composer-hint { flex: 1; min-width: 0; font-size: 11px; color: var(--muted); }
 .agent-pane .send-button {
   width: 36px; height: 36px; flex: none; padding: 0; display: grid; place-items: center; border: 0; border-radius: 50%;
@@ -945,7 +964,8 @@ button.auth-provider:disabled { color: var(--muted); border-color: var(--border)
   .top-bar .theme-switch button { min-height: 40px; min-width: 40px; justify-content: center; }
   button.icon { min-height: 40px; min-width: 40px; }
   .note-select { min-height: 40px; }
-  .note-menu [role='menuitem'] { min-height: 40px; }
+  .note-menu [role='menuitem'], .note-menu [role='menuitemradio'] { min-height: 40px; }
+  .agent-pane .plus-button { width: 40px; height: 40px; }
   .agent-pane .ghost, .agent-pane .agent-menu-button { min-height: 40px; }
   .agent-pane .icon-btn { min-width: 40px; }
   .agent-pane .segmented button { min-height: 40px; }

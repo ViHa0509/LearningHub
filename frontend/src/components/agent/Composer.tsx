@@ -1,8 +1,9 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from 'react'
 import type { Effort } from '../../api'
-import { EFFORTS } from '../../lib/agentPrefs'
+import { EFFORTS, effortLabel } from '../../lib/agentPrefs'
 import { ACCEPT, extensionOf, formatSize, type Attachment } from '../../lib/attachments'
 import { SKILLS, suggestSkills } from '../../lib/skills'
+import { ActionMenu } from '../ActionMenu'
 import { Icon } from '../Icon'
 
 interface Props {
@@ -29,6 +30,15 @@ export function Composer(props: Props) {
   // The draft the popup was closed on with Escape; typing on reopens it.
   const [dismissed, setDismissed] = useState<string | null>(null)
   const [active, setActive] = useState(0)
+  // The options menu behind the plus button, and its Effort choices.
+  const plusButton = useRef<HTMLButtonElement>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [effortOpen, setEffortOpen] = useState(false)
+  const closeMenu = (restoreFocus: boolean) => {
+    setMenuOpen(false)
+    setEffortOpen(false)
+    if (restoreFocus) plusButton.current?.focus()
+  }
 
   const suggested = suggestSkills(draft)
   const typing = suggested !== null && dismissed !== draft
@@ -131,63 +141,18 @@ export function Composer(props: Props) {
         </div>
       )}
 
-      <div className="composer-tools">
-        <button type="button" className="chip" onClick={() => fileInput.current?.click()}>
-          <Icon name="paperclip" size={15} />
-          Attach
-        </button>
-        <input
-          ref={fileInput}
-          type="file"
-          multiple
-          accept={ACCEPT}
-          hidden
-          aria-label="Attach files"
-          onChange={(e) => {
-            props.onAddFiles(Array.from(e.target.files ?? []))
-            e.target.value = ''
-          }}
-        />
-        <button
-          type="button"
-          className="chip"
-          aria-haspopup="listbox"
-          aria-expanded={popupOpen}
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => {
-            if (popupOpen) closePopup()
-            else {
-              setSkillsOpen(true)
-              setDismissed(null)
-              setActive(0)
-            }
-            inputRef.current?.focus()
-          }}
-        >
-          <span className="mono" aria-hidden="true">
-            /
-          </span>
-          Skills
-        </button>
-        <div className="segmented" role="group" aria-label="Effort">
-          {EFFORTS.map((e, i) => (
-            <button
-              key={e.id}
-              type="button"
-              aria-pressed={props.effort === e.id}
-              title={e.tip}
-              onClick={() => props.onEffort(e.id)}
-            >
-              <span className="effort-bars" data-level={i + 1} aria-hidden="true">
-                <span />
-                <span />
-                <span />
-              </span>
-              {e.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <input
+        ref={fileInput}
+        type="file"
+        multiple
+        accept={ACCEPT}
+        hidden
+        aria-label="Attach files"
+        onChange={(e) => {
+          props.onAddFiles(Array.from(e.target.files ?? []))
+          e.target.value = ''
+        }}
+      />
 
       <div className="composer-card" data-dropping={props.dropping || undefined}>
         {props.attachments.length > 0 && (
@@ -225,6 +190,78 @@ export function Composer(props: Props) {
           onKeyDown={onKeyDown}
         />
         <div className="composer-footer">
+          <div className="composer-plus">
+            <button
+              ref={plusButton}
+              type="button"
+              className="plus-button"
+              aria-label="Message options"
+              title="Attach files, skills, effort"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              onClick={() => (menuOpen ? closeMenu(false) : setMenuOpen(true))}
+            >
+              <Icon name="plus" size={17} />
+            </button>
+            {menuOpen && (
+              <ActionMenu label="Message options" onClose={closeMenu} triggerSelector=".plus-button">
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    closeMenu(false)
+                    fileInput.current?.click()
+                  }}
+                >
+                  <Icon name="paperclip" />
+                  Attach files
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    closeMenu(false)
+                    setSkillsOpen(true)
+                    setDismissed(null)
+                    setActive(0)
+                    inputRef.current?.focus()
+                  }}
+                >
+                  <span className="menu-slash mono" aria-hidden="true">
+                    /
+                  </span>
+                  Skills
+                </button>
+                <button type="button" role="menuitem" aria-expanded={effortOpen} onClick={() => setEffortOpen(!effortOpen)}>
+                  <EffortBars level={EFFORTS.findIndex((e) => e.id === props.effort) + 1} />
+                  Effort
+                  <span className="menu-value">{effortLabel(props.effort)}</span>
+                </button>
+                {effortOpen && (
+                  <div role="group" aria-label="Effort" className="menu-group">
+                    {EFFORTS.map((e, i) => (
+                      <button
+                        key={e.id}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={props.effort === e.id}
+                        title={e.tip}
+                        onClick={() => {
+                          props.onEffort(e.id)
+                          closeMenu(true)
+                        }}
+                      >
+                        <EffortBars level={i + 1} />
+                        {e.label}
+                        {props.effort === e.id && <Icon name="check" className="menu-check" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </ActionMenu>
+            )}
+          </div>
+          {props.effort !== 'medium' && <span className="composer-effort">{effortLabel(props.effort)} effort</span>}
           <span className="composer-hint">Enter to send · Shift+Enter for a new line · drop files here</span>
           <button type="submit" className="send-button" aria-label="Send" title="Send" disabled={busy || !canSend}>
             <Icon name="send" size={17} />
@@ -241,5 +278,15 @@ export function Composer(props: Props) {
         )}
       </div>
     </form>
+  )
+}
+
+function EffortBars({ level }: { level: number }) {
+  return (
+    <span className="effort-bars" data-level={level} aria-hidden="true">
+      <span />
+      <span />
+      <span />
+    </span>
   )
 }
