@@ -224,10 +224,18 @@ button.disclosure .icon { width: 16px; height: 16px; flex: none; margin-right: 0
 .badge { min-width: 22px; text-align: center; border-radius: 11px; background: var(--has-notes); color: var(--surface); font-weight: 600; font-size: 12px; padding: 1px 6px; }
 
 .note-view { display: flex; flex-direction: column; height: 100%; }
-.note-header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--surface); }
-.title-input { flex: 1 1 220px; min-width: 0; font-weight: 600; }
-.note-header select { flex: 0 1 260px; min-width: 0; max-width: 260px; }
-.note-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
+/* One row: Back, the fields, More actions. Only the fields wrap (inside their own group), so More actions
+   stays at the right end of the first line at every width. */
+.note-header { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.note-header > button { flex: none; }
+.note-fields { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex: 1 1 0; min-width: 0; }
+.title-input { flex: 3 1 140px; min-width: 0; font-weight: 600; }
+.note-header select { flex: 1 1 120px; min-width: 0; max-width: 260px; }
+.note-actions { display: flex; flex: none; align-items: center; gap: 8px; margin-left: auto; }
+.note-confirm {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin: 0; padding: 8px 12px;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+}
 /* The note page's More actions menu hangs under its button, at the header's right edge. */
 .note-actions { position: relative; }
 .note-actions .note-menu { min-width: 180px; max-width: calc(100vw - 24px); margin-top: 4px; }
@@ -244,7 +252,17 @@ button.note-page-more .icon { margin-right: 0; }
 input[type='range'], input[type='checkbox'] { accent-color: var(--accent); }
 .check-field { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-weight: 600; }
 .confirm { display: inline-flex; align-items: center; gap: 6px; }
+/* The stored page: until it has loaded the frame is hidden and the app's background shows, with a spinner. */
+.original-wrap { position: relative; display: flex; flex: 1; min-height: 0; }
 .original { flex: 1; width: 100%; border: 0; background: #fff; }
+.original-wrap[data-loaded='false'] .original { visibility: hidden; }
+.page-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 10px; margin: 0; }
+.spinner {
+  width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
 .title-actions { display: inline-flex; gap: 6px; }
 .note-editor { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .note-editor-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--surface); }

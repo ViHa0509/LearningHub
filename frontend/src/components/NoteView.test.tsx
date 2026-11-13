@@ -1,5 +1,5 @@
 /** Spec: learning-views - Read a note; knowledge-import - Show the original page safely. */
-import { act, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { Note } from '../api'
 import { installFakeApi, makeNote } from '../test/fakeApi'
@@ -203,6 +203,25 @@ describe('note view', () => {
     await user.selectOptions(picker, '')
     const patches = state.calls.filter((c) => c.method === 'PATCH' && c.url === `/api/notes/${note.id}`)
     expect(patches.map((c) => c.body)).toEqual([{ node_id: 'devops/docker' }, { node_id: null }])
+  })
+
+  it('shows a loading indicator until the stored page has loaded', async () => {
+    const { article } = await openNote('Redis eviction')
+    const frame = within(article).getByTitle('Original page: Redis eviction')
+    expect(within(article).getByRole('status')).toHaveTextContent('Loading page…')
+    expect(frame.parentElement).toHaveAttribute('data-loaded', 'false')
+
+    fireEvent.load(frame)
+    expect(within(article).queryByRole('status')).not.toBeInTheDocument()
+    expect(frame.parentElement).toHaveAttribute('data-loaded', 'true')
+  })
+
+  it('asks to confirm a delete under the header, not inside its row', async () => {
+    const { user, article } = await openNote('Redis eviction')
+    await choose(user, article, 'Delete')
+    const confirm = within(article).getByRole('alertdialog', { name: 'Confirm delete' })
+    expect(article.querySelector('header')).not.toContainElement(confirm)
+    expect(article.querySelector('header')).toContainElement(within(article).getByRole('button', { name: 'More actions' }))
   })
 
   it('deletes only after confirmation', async () => {

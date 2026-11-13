@@ -434,6 +434,15 @@ test.describe('phone only', () => {
     await shotBoth(page, 'note-actions-menu')
     await page.keyboard.press('Escape')
     await expect(pageMenu).toHaveCount(0)
+    // Back and More actions share the header's first line, More actions at its right end.
+    const backBox = await box(article.getByRole('button', { name: '← Back' }))
+    const moreBox = await box(pageMore)
+    const headBox = await box(article.locator('header'))
+    expect(Math.abs(backBox.y - moreBox.y), 'Back and More actions on one line').toBeLessThan(6)
+    expect(moreBox.y - headBox.y, 'More actions on the first line').toBeLessThan(16)
+    expect(headBox.x + headBox.width - (moreBox.x + moreBox.width), 'More actions at the right end').toBeLessThan(16)
+    expect((await overflow(page)).html, 'no sideways scroll on the note page').toBeLessThanOrEqual(0)
+    await shotBoth(page, 'note-header')
 
     // Top-bar controls.
     const short: string[] = []

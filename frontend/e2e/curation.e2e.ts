@@ -198,6 +198,79 @@ test('Learned-items list: Undo after archiving puts the note back', async ({ pag
   expect((await listNotes(request, '?archived=true')).some((n) => n.id === note.id)).toBeFalsy()
 })
 
+test('Note page header: Back, title, node picker and More actions stay on one line on a laptop-size window', async ({
+  page,
+  request,
+}) => {
+  const note = await createNote(request, 'one line header with a fairly long title', 'backend/redis')
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.goto(`/#/note/${note.id}`)
+  const article = page.getByRole('article', { name: `Note: ${note.title}` })
+  const header = article.locator('header')
+  const more = article.getByRole('button', { name: 'More actions' })
+  const controls = [
+    article.getByRole('button', { name: '← Back' }),
+    article.getByRole('textbox', { name: 'Note title' }),
+    article.getByRole('combobox', { name: 'Roadmap node' }),
+    more,
+  ]
+  const oneLine = async () => {
+    const boxes = []
+    for (const control of controls) boxes.push((await control.boundingBox())!)
+    const middles = boxes.map((b) => b.y + b.height / 2)
+    for (const middle of middles) expect(Math.abs(middle - middles[0])).toBeLessThan(6)
+    const head = (await header.boundingBox())!
+    const button = boxes[3]
+    // More actions sits at the right end of the header (its padding is 12 px).
+    expect(head.x + head.width - (button.x + button.width)).toBeLessThan(16)
+  }
+  // Both side panels are open at this width.
+  await expect(page.locator('.pane.left')).toBeVisible()
+  await expect(page.locator('.pane.right')).toBeVisible()
+  await expect(more).toBeVisible()
+  await oneLine()
+  await shot(page, 'note-header-laptop')
+
+  // The delete confirmation opens under the header and does not move More actions.
+  await more.click()
+  await article.getByRole('menuitem', { name: 'Delete' }).click()
+  const confirm = article.getByRole('alertdialog', { name: 'Confirm delete' })
+  await expect(confirm).toBeVisible()
+  const head = (await header.boundingBox())!
+  expect((await confirm.boundingBox())!.y).toBeGreaterThanOrEqual(head.y + head.height - 1)
+  await oneLine()
+  await shot(page, 'note-header-laptop-confirm')
+  await confirm.getByRole('button', { name: 'Cancel' }).click()
+
+  // Narrower still (the tablet limit): the same line.
+  await page.setViewportSize({ width: 1100, height: 720 })
+  await oneLine()
+})
+
+test('Note page: a loading indicator on the app background until the stored page has loaded', async ({ page, request }) => {
+  const note = await createNote(request, 'loading', 'backend/redis')
+  let release = () => {}
+  const held = new Promise<void>((resolve) => (release = resolve))
+  await page.route(`**/api/notes/${note.id}/original`, async (route) => {
+    await held
+    await route.continue()
+  })
+  await page.goto(`/#/note/${note.id}`)
+  const article = page.getByRole('article', { name: `Note: ${note.title}` })
+  const status = article.getByRole('status')
+  const frame = article.locator('iframe.original')
+  await expect(status).toHaveText('Loading page…')
+  await expect(status.locator('.spinner')).toBeVisible()
+  await expect(frame).toBeHidden()
+  await shot(page, 'note-page-loading')
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await shot(page, 'note-page-loading-dark')
+  await page.emulateMedia({ colorScheme: 'light' })
+  release()
+  await expect(status).toHaveCount(0)
+  await expect(frame).toBeVisible()
+})
+
 test('Read a note: Edit page, Export PDF, Archive and Delete are in the More actions menu, which works with the keyboard', async ({
   page,
   request,

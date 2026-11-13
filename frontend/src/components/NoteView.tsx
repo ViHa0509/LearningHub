@@ -78,47 +78,38 @@ export function NoteView({ note, roadmaps, onClose, onChanged, onDeleted }: Prop
         <button type="button" onClick={onClose}>
           ← Back
         </button>
-        <input
-          className="title-input"
-          aria-label="Note title"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') rename()
-            if (e.key === 'Escape') setTitle(note.title)
-          }}
-        />
-        {titleDirty && (
-          <span className="title-actions">
-            <button type="button" className="primary" aria-label="Save title" disabled={!canSaveTitle} onClick={rename}>
-              Save
-            </button>
-            <button type="button" aria-label="Cancel title change" onClick={() => setTitle(note.title)}>
-              Cancel
-            </button>
-          </span>
-        )}
-        <NodePicker
-          roadmaps={roadmaps}
-          label="Roadmap node"
-          value={note.node_id && !note.node_missing ? note.node_id : null}
-          onChange={(node) => void run(() => api.link(note.id, node))}
-        />
-        {note.node_missing && (
-          <span className="tag warn">Linked node {note.node_id} no longer exists</span>
-        )}
-        <div className="note-actions">
-          {confirming && (
-            <span className="confirm" role="alertdialog" aria-label="Confirm delete">
-              Delete this note and its original file?
-              <button type="button" className="danger" onClick={() => void remove()}>
-                Yes, delete
+        <div className="note-fields">
+          <input
+            className="title-input"
+            aria-label="Note title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') rename()
+              if (e.key === 'Escape') setTitle(note.title)
+            }}
+          />
+          {titleDirty && (
+            <span className="title-actions">
+              <button type="button" className="primary" aria-label="Save title" disabled={!canSaveTitle} onClick={rename}>
+                Save
               </button>
-              <button type="button" onClick={() => setConfirming(false)}>
+              <button type="button" aria-label="Cancel title change" onClick={() => setTitle(note.title)}>
                 Cancel
               </button>
             </span>
           )}
+          <NodePicker
+            roadmaps={roadmaps}
+            label="Roadmap node"
+            value={note.node_id && !note.node_missing ? note.node_id : null}
+            onChange={(node) => void run(() => api.link(note.id, node))}
+          />
+          {note.node_missing && (
+            <span className="tag warn">Linked node {note.node_id} no longer exists</span>
+          )}
+        </div>
+        <div className="note-actions">
           <button
             ref={moreButton}
             type="button"
@@ -180,6 +171,17 @@ export function NoteView({ note, roadmaps, onClose, onChanged, onDeleted }: Prop
           )}
         </div>
       </header>
+      {confirming && (
+        <p className="note-confirm" role="alertdialog" aria-label="Confirm delete">
+          Delete this note and its original file?
+          <button type="button" className="danger" onClick={() => void remove()}>
+            Yes, delete
+          </button>
+          <button type="button" onClick={() => setConfirming(false)}>
+            Cancel
+          </button>
+        </p>
+      )}
       {note.archived_at && (
         <p className="archived-banner" role="status">
           This note is archived.
@@ -200,16 +202,32 @@ export function NoteView({ note, roadmaps, onClose, onChanged, onDeleted }: Prop
           onDirtyChange={setEditorDirty}
         />
       ) : (
-        /* No allow-same-origin: the page runs in an opaque origin and cannot reach the app. */
-        <iframe
-          key={version}
-          className="original"
-          title={`Original page: ${note.title}`}
-          src={api.originalUrl(note.id)}
-          sandbox="allow-scripts"
-          referrerPolicy="no-referrer"
-        />
+        <PageFrame key={version} note={note} />
       )}
     </article>
+  )
+}
+
+/** The stored page in its isolated frame; until it has loaded, a loading indicator on the app's background. */
+function PageFrame({ note }: { note: Note }) {
+  const [loaded, setLoaded] = useState(false)
+  return (
+    <div className="original-wrap" data-loaded={loaded}>
+      {!loaded && (
+        <p className="page-loading muted" role="status">
+          <span className="spinner" aria-hidden="true" />
+          Loading page…
+        </p>
+      )}
+      {/* No allow-same-origin: the page runs in an opaque origin and cannot reach the app. */}
+      <iframe
+        className="original"
+        title={`Original page: ${note.title}`}
+        src={api.originalUrl(note.id)}
+        sandbox="allow-scripts"
+        referrerPolicy="no-referrer"
+        onLoad={() => setLoaded(true)}
+      />
+    </div>
   )
 }
