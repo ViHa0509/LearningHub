@@ -147,6 +147,8 @@ jobs:
       # Secrets cannot be used in a job-level "if"; this step turns them into an output.
       - name: Check the deploy secrets
         id: secrets
+        # Runs before the checkout, so backend/ (the job's default directory) does not exist yet.
+        working-directory: ${{ github.workspace }}
         env:
           MIGRATE_URL: ${{ secrets.LH_MIGRATE_DATABASE_URL }}
           DEPLOY_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
