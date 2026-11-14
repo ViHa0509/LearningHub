@@ -27,7 +27,8 @@ setup('create the Owner and save its session', async ({ request, page }) => {
   }
   await expect(create.getByRole('button', { name: 'Create account' })).toBeEnabled()
   await expect(create.getByRole('link', { name: 'Continue with GitHub' })).toBeVisible()
-  await expect(create.getByRole('button', { name: 'Continue with Google' })).toBeDisabled()
+  // Google is not configured: not offered (auth-page-polish).
+  await expect(create.getByRole('link', { name: 'Continue with Google' })).toHaveCount(0)
   await page.screenshot({ path: 'e2e-results/screens/auth-create-owner.png', fullPage: true })
 
   // The Owner is created through that form, in this browser, which is then signed in.

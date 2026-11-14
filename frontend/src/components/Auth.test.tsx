@@ -59,8 +59,10 @@ describe('first account is the admin', () => {
     expect(within(page).getByLabelText('Email')).toBeInTheDocument()
     expect(within(page).getByLabelText('Password')).toBeInTheDocument()
     expect(within(page).getByLabelText('Confirm password')).toBeInTheDocument()
-    expect(within(page).getByRole('button', { name: 'Continue with GitHub' })).toBeInTheDocument()
-    expect(within(page).getByRole('button', { name: 'Continue with Google' })).toBeInTheDocument()
+    // Scenario: First visit without providers.
+    expect(within(page).queryByRole('link', { name: /Continue with/ })).not.toBeInTheDocument()
+    expect(within(page).queryByRole('button', { name: /Continue with/ })).not.toBeInTheDocument()
+    expect(within(page).getByText('GitHub and Google sign-in can be added later in Settings → Sign-in.')).toBeInTheDocument()
     expect(screen.queryByRole('complementary', { name: 'Learned items' })).not.toBeInTheDocument()
   })
 
@@ -134,7 +136,8 @@ describe('open sign-up', () => {
       expect(within(page).getByLabelText(label)).toBeInTheDocument()
     }
     expect(within(page).getByText(/yours only/)).toBeInTheDocument()
-    await user.click(within(page).getByRole('link', { name: 'Log in' }))
+    // The link under the form (the page also has Log in at the top).
+    await user.click(within(page).getAllByRole('link', { name: 'Log in' }).find((a) => !a.classList.contains('auth-corner'))!)
     expect(await screen.findByRole('main', { name: 'Log in' })).toBeInTheDocument()
   })
 
@@ -274,7 +277,8 @@ describe('email and password', () => {
 })
 
 describe('sign in with GitHub or Google', () => {
-  it('disables a provider that is not configured, with a note', async () => {
+  // Scenario: Not configured (auth-page-polish: not offered at all)
+  it('offers only the configured providers, with their logos', async () => {
     const state = installFakeApi()
     requireLogin(state)
     state.auth.providers.github = true
@@ -282,10 +286,36 @@ describe('sign in with GitHub or Google', () => {
     const page = await loginPage()
     const github = within(page).getByRole('link', { name: 'Continue with GitHub' })
     expect(github).toHaveAttribute('href', '/api/auth/oauth/github/start?next=%23%2Fnews')
-    const google = within(page).getByRole('button', { name: 'Continue with Google' })
-    expect(google).toBeDisabled()
-    expect(google).toHaveAccessibleDescription('Not configured on this server')
-    expect(within(page).getAllByText('Not configured on this server')).toHaveLength(1)
+    expect(github.querySelector('svg.auth-provider-logo')).not.toBeNull()
+    expect(within(page).queryByRole('link', { name: 'Continue with Google' })).not.toBeInTheDocument()
+    expect(within(page).queryByRole('button', { name: 'Continue with Google' })).not.toBeInTheDocument()
+    expect(within(page).queryByText('Not configured on this server')).not.toBeInTheDocument()
+    expect(within(page).getByText('or')).toBeInTheDocument()
+  })
+
+  it('shows no "or" line and no provider when none is configured', async () => {
+    const state = installFakeApi()
+    requireLogin(state)
+    renderApp()
+    const page = await loginPage()
+    expect(within(page).queryByText('or')).not.toBeInTheDocument()
+    expect(within(page).queryByRole('link', { name: /Continue with/ })).not.toBeInTheDocument()
+    expect(within(page).queryByText(/can be added later/)).not.toBeInTheDocument()
+  })
+
+  // Scenario: Switch between log in and sign up
+  it('has Sign up at the top of the login page and Log in at the top of the Sign up page', async () => {
+    const state = installFakeApi()
+    requireLogin(state)
+    const { user } = renderApp()
+    const page = await loginPage()
+    const corner = within(page).getAllByRole('link', { name: 'Sign up' })[0]
+    expect(corner).toHaveClass('auth-corner')
+    await user.click(corner)
+    const signup = await screen.findByRole('main', { name: 'Sign up' })
+    const back = within(signup).getAllByRole('link', { name: 'Log in' }).find((a) => a.classList.contains('auth-corner'))!
+    await user.click(back)
+    expect(await screen.findByRole('main', { name: 'Log in' })).toBeInTheDocument()
   })
 
   it.each([

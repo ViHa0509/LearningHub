@@ -28,11 +28,10 @@ async function loginOffersGoogle(browser: Browser): Promise<'enabled' | 'not con
     const login = page.getByRole('main', { name: 'Log in' })
     await expect(login.getByRole('heading', { name: 'Log in' })).toBeVisible({ timeout: 15_000 })
     await expect(login.getByRole('link', { name: 'Continue with GitHub' })).toBeVisible()
+    // A provider that is not configured is not offered at all (auth-page-polish).
     const link = login.getByRole('link', { name: 'Continue with Google' })
-    const off = login.getByRole('button', { name: 'Continue with Google' })
-    await expect(link.or(off)).toBeVisible()
-    if (await link.isVisible()) return 'enabled'
-    await expect(off).toBeDisabled()
+    if ((await link.count()) > 0) return 'enabled'
+    await expect(login.getByRole('button', { name: 'Continue with Google' })).toHaveCount(0)
     return 'not configured'
   } finally {
     await context.close()
