@@ -110,14 +110,68 @@ describe('first account is the admin', () => {
     requireLogin(state, { owner: null })
     const { user } = renderApp()
     const page = await screen.findByRole('main', { name: 'Create the admin account' })
-    // Someone else created the owner meanwhile.
+    // Someone else created an account with this email meanwhile.
     state.auth.owner = { ...OWNER }
-    await user.type(within(page).getByLabelText('Email'), 'other@example.test')
+    await user.type(within(page).getByLabelText('Email'), OWNER.email)
     await user.type(within(page).getByLabelText('Password'), 'long enough pass')
     await user.type(within(page).getByLabelText('Confirm password'), 'long enough pass')
     await user.click(within(page).getByRole('button', { name: 'Create account' }))
-    expect(await within(page).findByRole('alert')).toHaveTextContent('This app has an owner already')
+    expect(await within(page).findByRole('alert')).toHaveTextContent('An account with this email already exists')
     expect(state.auth.signedIn).toBe(false)
+  })
+})
+
+describe('open sign-up', () => {
+  it('links the login page to Sign up and back', async () => {
+    const state = installFakeApi()
+    requireLogin(state)
+    const { user } = renderApp()
+    const login = await screen.findByRole('main', { name: 'Log in' })
+    await user.click(within(login).getByRole('link', { name: 'Create an account' }))
+    const page = await screen.findByRole('main', { name: 'Sign up' })
+    expect(window.location.hash).toBe('#/auth/signup')
+    for (const label of ['Display name (optional)', 'Email', 'Password', 'Confirm password']) {
+      expect(within(page).getByLabelText(label)).toBeInTheDocument()
+    }
+    expect(within(page).getByText(/yours only/)).toBeInTheDocument()
+    await user.click(within(page).getByRole('link', { name: 'Log in' }))
+    expect(await screen.findByRole('main', { name: 'Log in' })).toBeInTheDocument()
+  })
+
+  it('signs up a member after the admin exists and opens the app', async () => {
+    const state = installFakeApi()
+    requireLogin(state)
+    const { user } = renderApp('#/auth/signup')
+    const page = await screen.findByRole('main', { name: 'Sign up' })
+    await user.type(within(page).getByLabelText('Display name (optional)'), 'Ana Member')
+    await user.type(within(page).getByLabelText('Email'), 'ana@example.test')
+    await user.type(within(page).getByLabelText('Password'), 'long enough pass')
+    await user.type(within(page).getByLabelText('Confirm password'), 'long enough pass')
+    await user.click(within(page).getByRole('button', { name: 'Create account' }))
+    await appShows()
+    expect(state.auth.owner).toMatchObject({ email: 'ana@example.test', role: 'member' })
+    expect(screen.getByRole('button', { name: 'Account menu: Ana Member' })).toBeInTheDocument()
+  })
+
+  it('refuses a used email on the Sign up page', async () => {
+    const state = installFakeApi()
+    requireLogin(state)
+    const { user } = renderApp('#/auth/signup')
+    const page = await screen.findByRole('main', { name: 'Sign up' })
+    await user.type(within(page).getByLabelText('Email'), OWNER.email)
+    await user.type(within(page).getByLabelText('Password'), 'long enough pass')
+    await user.type(within(page).getByLabelText('Confirm password'), 'long enough pass')
+    await user.click(within(page).getByRole('button', { name: 'Create account' }))
+    expect(await within(page).findByRole('alert')).toHaveTextContent('An account with this email already exists')
+    expect(state.auth.signedIn).toBe(false)
+  })
+
+  it('explains that an unverified account cannot be joined with GitHub', async () => {
+    const state = installFakeApi()
+    requireLogin(state)
+    renderApp('#/auth/login?error=account_unverified')
+    const page = await screen.findByRole('main', { name: 'Log in' })
+    expect(within(page).getByRole('alert')).toHaveTextContent('its email is not verified yet')
   })
 })
 

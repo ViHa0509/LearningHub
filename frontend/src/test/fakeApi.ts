@@ -550,16 +550,19 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
     const email = (body?.email ?? '').trim().toLowerCase()
     switch (url) {
       case '/api/auth/signup': {
-        if (auth.owner) return respond({ detail: 'This app has an owner already' }, 403)
+        // Open sign-up: the first account is the admin, a later one a member (one signed-in user here).
+        if (auth.owner?.email === email) return respond({ detail: 'An account with this email already exists' }, 409)
         if ((body?.password ?? '').length < 10) {
           return respond({ detail: 'Use at least 10 characters for the password.' }, 400)
         }
+        const role: Role = auth.owner ? 'member' : 'admin'
         auth.owner = {
           email,
           password: body?.password ?? '',
           display_name: body?.display_name ?? null,
           email_verified: false,
           avatar_url: null,
+          role,
         }
         auth.signedIn = true
         issue('verify_email')

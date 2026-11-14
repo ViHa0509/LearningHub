@@ -30,7 +30,6 @@ const GH_STRANGER = `gh-stranger-${STAMP}@example.test`
 const REVOKED = `revoked-${STAMP}@example.test`
 
 const INVITE_GONE = 'This invitation has expired or was already used.'
-const NOT_INVITED = 'You need an invitation to join.'
 const CLAUDE_CODE = 'Claude Code (subscription)'
 
 const ADMIN_NOTE_TITLE = `QC-members admin note ${STAMP}`
@@ -472,7 +471,7 @@ test('disabling the member shows them the login page and refuses their sign-in; 
   expect((await member.request.get('/api/notes')).status()).toBe(200)
 })
 
-test('GitHub sign-in: an invited email becomes a member; an email without an invitation is refused', async ({
+test('GitHub sign-in: an invited email becomes a member; an email without an invitation signs up a member too', async ({
   page,
   browser,
 }) => {
@@ -501,33 +500,30 @@ test('GitHub sign-in: an invited email becomes a member; an email without an inv
     const pending = (await (await page.request.get('/api/admin/invitations')).json()) as Array<{ email: string }>
     expect(pending.map((i) => i.email)).not.toContain(GH_INVITED)
 
-    // Not invited: refused with the invitation message, no account and no session.
+    // Not invited (open-signup): a member account is created for the verified email.
     expect((await page.request.post(`${FAKE}/oauth-control`, { data: { email: GH_STRANGER, user_id: 880002 } })).ok()).toBe(true)
     const stranger = await freshBrowser(browser)
     try {
       const visitor = await stranger.newPage()
       await visitor.goto('/#/')
       await visitor.getByRole('main', { name: 'Log in' }).getByRole('link', { name: 'Continue with GitHub' }).click()
-      const form = visitor.getByRole('main', { name: 'Log in' })
-      await expect(form.getByRole('alert')).toHaveText(NOT_INVITED)
-      await expect(visitor.getByRole('button', { name: /^Account menu: / })).toHaveCount(0)
-      expect((await visitor.request.get('/api/auth/me')).status()).toBe(401)
-      await shot(visitor, 'login-not-invited')
+      await expect(visitor.getByRole('button', { name: /^Account menu: / })).toBeVisible({ timeout: 30_000 })
+      expect(await (await visitor.request.get('/api/auth/me')).json()).toMatchObject({ email: GH_STRANGER, role: 'member' })
     } finally {
       await stranger.close()
     }
-    expect(await userByEmail(page.request, GH_STRANGER)).toBeUndefined()
+    expect((await userByEmail(page.request, GH_STRANGER))?.role).toBe('member')
   } finally {
     await page.request.post(`${FAKE}/oauth-control`, { data: {} })
   }
 
-  // Sign-up by password without an invitation is refused the same way.
+  // A password sign-up with that email is refused now that the account exists.
   const signup = await page.request.post('/api/auth/signup', {
     headers: H,
     data: { email: GH_STRANGER, password: 'stranger-password-1' },
   })
-  expect(signup.status()).toBe(403)
-  expect((await signup.json()).detail).toBe('You need an invitation to join')
+  expect(signup.status()).toBe(409)
+  expect((await signup.json()).detail).toBe('An account with this email already exists')
 })
 
 test("deleting the member after typing their email removes them; the admin's data stays", async ({ page }) => {

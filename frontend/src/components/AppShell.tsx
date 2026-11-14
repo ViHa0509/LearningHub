@@ -56,7 +56,7 @@ export function AppShell() {
   }, [needsLogin, hash])
 
   // Signed in already on the login or create page: go on to the app.
-  const onEntryPage = authRoute?.page === 'login' || authRoute?.page === 'create'
+  const onEntryPage = authRoute?.page === 'login' || authRoute?.page === 'create' || authRoute?.page === 'signup'
   useEffect(() => {
     if (onEntryPage && signedInUser) {
       const target = returnRoute()

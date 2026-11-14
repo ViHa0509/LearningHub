@@ -19,7 +19,7 @@ from tests.auth_fakes import provider_settings as provider_values
 from tests.conftest import TEST_DATABASE_URL
 
 APP = "http://localhost:5173"
-INVITE_REQUIRED = "You need an invitation to join"
+EMAIL_TAKEN = "An account with this email already exists"
 MEMBER_EMAIL = "ana@example.test"
 
 
@@ -59,27 +59,46 @@ def invite_member(kit: AuthKit, email: str = MEMBER_EMAIL, password: str | None 
 # --- roles and sign-up ---------------------------------------------------------------------------
 
 
-# Scenario: First visit
-def test_first_signup_creates_the_admin_and_the_next_one_needs_an_invitation(kit: AuthKit) -> None:
+# Scenario: First visit; Sign up with a password (open-signup)
+def test_first_signup_creates_the_admin_and_the_next_one_a_member(kit: AuthKit) -> None:
     assert kit.client.get("/api/auth/status").json()["has_owner"] is False
     assert kit.signup().status_code == 201
     assert rows("SELECT role, placeholder FROM users")[0] == ("admin", False)
     assert kit.client.get("/api/auth/status").json()["has_owner"] is True
-    # Scenario: Not invited
+    kit.client.post(
+        "/api/notes/import",
+        files=[("files", ("a.html", b"<title>Admin note</title>", "text/html"))],
+    )
     stranger = kit.browser()
-    refused = kit.signup(stranger, email="other@example.test")
-    assert refused.status_code == 403
-    assert refused.json()["detail"] == INVITE_REQUIRED
-    assert "lh_session" not in refused.cookies
-    assert scalar("SELECT count(*) FROM users") == 1
+    created = kit.signup(stranger, email="other@example.test")
+    assert created.status_code == 201, created.text
+    assert created.json()["role"] == "member"
+    assert created.json()["email_verified"] is False
+    assert "lh_session" in created.cookies
+    assert stranger.get("/api/auth/me").json()["email"] == "other@example.test"
+    # Separate data: the admin's note is not the member's.
+    assert stranger.get("/api/notes").json() == []
+    assert kit.mailer.token("verify-email")
+    assert rows("SELECT role FROM users WHERE email = 'other@example.test'") == [("member",)]
+    assert scalar("SELECT count(*) FROM users") == 2
 
 
-def test_signup_is_refused_after_a_member_exists_too(kit: AuthKit) -> None:
+# Scenario: Email already used
+def test_signup_with_a_used_email_is_refused(kit: AuthKit) -> None:
     kit.signup()
     invite_member(kit)
-    refused = kit.signup(kit.browser(), email="third@example.test")
-    assert (refused.status_code, refused.json()["detail"]) == (403, INVITE_REQUIRED)
+    for email in (MEMBER_EMAIL, EMAIL, EMAIL.upper()):
+        refused = kit.signup(kit.browser(), email=email)
+        assert (refused.status_code, refused.json()["detail"]) == (409, EMAIL_TAKEN), email
+        assert "lh_session" not in refused.cookies
     assert scalar("SELECT count(*) FROM users") == 2
+
+
+def test_signup_after_the_admin_keeps_the_password_rules(kit: AuthKit) -> None:
+    kit.signup()
+    weak = kit.signup(kit.browser(), email="weak@example.test", password="short")
+    assert weak.status_code == 400
+    assert scalar("SELECT count(*) FROM users") == 1
 
 
 # Scenario: Existing data kept (no login yet, then the first sign-up)
@@ -106,8 +125,11 @@ def test_login_off_acts_as_the_admin_and_the_first_signup_takes_over_its_data(
         assert (email, role, placeholder) == (EMAIL, "admin", False)
         assert scalar(f"SELECT count(*) FROM sync_keys WHERE user_id = '{user_id}'") == 1
         assert kit.client.get("/api/auth/status").json()["has_owner"] is True
-        # Now invite only.
-        assert kit.signup(kit.browser(), email="x@example.test").status_code == 403
+        # A later sign-up is a member with none of that data (open-signup).
+        later = kit.browser()
+        created = kit.signup(later, email="x@example.test")
+        assert (created.status_code, created.json()["role"]) == (201, "member")
+        assert later.get("/api/notes").json() == []
 
 
 def test_the_placeholder_admin_cannot_sign_in(
@@ -232,8 +254,8 @@ def test_github_with_an_invited_verified_email_creates_a_member(
     assert scalar("SELECT count(*) FROM users") == 2
 
 
-# Scenario: Not invited
-def test_github_without_an_invitation_is_refused_and_creates_nothing(
+# Scenario: Sign up with GitHub (open-signup)
+def test_github_without_an_invitation_creates_a_verified_member(
     okit: AuthKit, provider: tuple[str, ProviderState]
 ) -> None:
     _, state = provider
@@ -241,20 +263,22 @@ def test_github_without_an_invitation_is_refused_and_creates_nothing(
     with okit.app.state.session_factory() as db:
         issue(db, "someone-else@example.test", None, okit.clock())
         db.commit()
-    sessions = scalar("SELECT count(*) FROM sessions")
     browser = okit.browser()
     response = approve(browser, state, "github")
-    assert error_of(response) == "not_invited"
-    assert "lh_session" not in response.headers.get("set-cookie", "")
-    assert browser.get("/api/notes").status_code == 401
-    assert scalar("SELECT count(*) FROM users") == 1
-    assert scalar("SELECT count(*) FROM oauth_accounts") == 0
-    assert scalar("SELECT count(*) FROM sessions") == sessions
+    assert error_of(response) is None
+    assert "lh_session" in response.headers.get("set-cookie", "")
+    me = browser.get("/api/auth/me").json()
+    assert (me["role"], me["email_verified"], me["linked"]) == ("member", True, ["github"])
+    assert browser.get("/api/notes").json() == []
+    assert scalar("SELECT count(*) FROM users") == 2
+    assert scalar("SELECT count(*) FROM oauth_accounts") == 1
+    # The other invitation is untouched.
+    assert scalar("SELECT count(*) FROM invitations WHERE accepted_at IS NULL") == 1
 
 
-# Scenario: Expired or revoked invitation
+# A dead invitation no longer matters: sign-up is open (open-signup).
 @pytest.mark.parametrize("how", ["expired", "revoked", "used"])
-def test_github_with_a_dead_invitation_is_refused(
+def test_github_with_a_dead_invitation_still_signs_up_a_member(
     okit: AuthKit, provider: tuple[str, ProviderState], how: str
 ) -> None:
     _, state = provider
@@ -269,8 +293,8 @@ def test_github_with_a_dead_invitation_is_refused(
     if how == "expired":
         okit.clock.advance(days=7, seconds=1)
     response = approve(okit.browser(), state, "github")
-    assert error_of(response) == "not_invited"
-    assert scalar("SELECT count(*) FROM users") == 1
+    assert error_of(response) is None
+    assert rows("SELECT role FROM users WHERE email = 'owner@example.test'") == [("member",)]
 
 
 def test_github_with_the_email_of_an_unverified_account_is_refused(
@@ -278,7 +302,8 @@ def test_github_with_the_email_of_an_unverified_account_is_refused(
 ) -> None:
     _, state = provider
     okit.signup(email="owner@example.test")  # the admin, email not verified yet
-    assert error_of(approve(okit.browser(), state, "github")) == "not_invited"
+    # Scenario: Unverified account is not taken over
+    assert error_of(approve(okit.browser(), state, "github")) == "account_unverified"
     assert scalar("SELECT count(*) FROM oauth_accounts") == 0
 
 

@@ -71,6 +71,7 @@ guarded = [Depends(require_app_header)]
 DbDep = Annotated[Session, Depends(get_session)]
 
 INVITE_REQUIRED = "You need an invitation to join"
+EMAIL_TAKEN = "An account with this email already exists"
 DISABLED = "This account is disabled"
 INVALID_INVITATION = "This invitation has expired or was already used."
 WRONG_LOGIN = "Wrong email or password"
@@ -245,24 +246,31 @@ def signup(
 ) -> MeOut:
     email = normalize_email(body.email)
     limit(request, "signup", email)
-    if real_users(db) > 0:
-        raise HTTPException(status_code=403, detail=INVITE_REQUIRED)
     if not EMAIL_RE.match(email):
         raise HTTPException(status_code=400, detail=BAD_EMAIL)
     check_password(body.password)
+    if owner_by_email(db, email) is not None:
+        raise HTTPException(status_code=409, detail=EMAIL_TAKEN)
     name = (body.display_name or "").strip() or None
-    user = make_admin(
-        db,
-        email,
-        clock_of(request)(),
-        password_hash=hash_password(body.password),
-        display_name=name,
-    )
+    now = clock_of(request)()
+    password_hash = hash_password(body.password)
+    # Sign-up is open (change open-signup): the first account is the admin, later ones members.
+    if real_users(db) == 0:
+        user = make_admin(db, email, now, password_hash=password_hash, display_name=name)
+    else:
+        user = User(
+            email=email,
+            display_name=name,
+            password_hash=password_hash,
+            role="member",
+            preferences={},
+        )
+        db.add(user)
     try:
         db.flush()
     except IntegrityError:
         db.rollback()
-        raise HTTPException(status_code=403, detail=INVITE_REQUIRED) from None
+        raise HTTPException(status_code=409, detail=EMAIL_TAKEN) from None
     verify_token = tokens.issue(db, "verify_email", user, clock_of(request)())
     start_session(db, user, request, response)
     queue_mail(request, background, verify_mail(request, user, verify_token))
@@ -525,7 +533,8 @@ def user_for(db: Session, identity: Identity, request: Request) -> User:
     """Apply the sign-in rules to a verified provider identity (not committed).
 
     In order: a linked identity; the user with that verified email; a valid invitation for
-    it (creates a member); the first account on the server (creates the admin); else refused.
+    it (creates a member); the first account on the server (creates the admin); else a new member
+    (sign-up is open). The email of an account that is not verified is refused.
     """
     now = clock_of(request)()
     account = db.scalar(
@@ -543,7 +552,7 @@ def user_for(db: Session, identity: Identity, request: Request) -> User:
         user = db.scalar(select(User).where(User.email == identity.email))
         if user is not None and user.email_verified_at is None:
             # An unverified account must not be taken over by whoever owns the email at GitHub.
-            raise OAuthError("not_invited")
+            raise OAuthError("account_unverified")
         if user is None:
             invitation = invitations.find_pending_by_email(db, identity.email, now)
             if invitation is not None:
@@ -553,7 +562,15 @@ def user_for(db: Session, identity: Identity, request: Request) -> User:
                     db, identity.email, now, display_name=identity.name, verified=True
                 )
             else:
-                raise OAuthError("not_invited")
+                # Open sign-up: the provider verified the email.
+                user = User(
+                    email=identity.email,
+                    email_verified_at=now,
+                    display_name=identity.name,
+                    role="member",
+                    preferences={},
+                )
+                db.add(user)
             try:
                 db.flush()
             except IntegrityError:

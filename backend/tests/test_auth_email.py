@@ -65,13 +65,13 @@ def test_signup_creates_the_owner_signs_in_and_sends_a_verify_link(kit: AuthKit)
     assert stored.startswith("scrypt$") and PASSWORD not in stored
 
 
-# Scenario: Sign-up closed
-def test_signup_is_refused_once_the_owner_exists(kit: AuthKit) -> None:
+# Scenario: Email already used (open-signup: sign-up is no longer closed)
+def test_signup_with_the_owner_email_is_refused(kit: AuthKit) -> None:
     assert kit.signup().status_code == 201
     stranger = kit.browser()
-    refused = kit.signup(stranger, email="other@example.test")
-    assert refused.status_code == 403
-    assert refused.json()["detail"] == "You need an invitation to join"
+    refused = kit.signup(stranger)
+    assert refused.status_code == 409
+    assert refused.json()["detail"] == "An account with this email already exists"
     assert "lh_session" not in refused.cookies
     assert db_scalar("SELECT count(*) FROM users") == 1
 

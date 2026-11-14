@@ -12,7 +12,8 @@ async function openNote(title: string, nodeId: string | null = 'backend/caching'
   if (extra.archived_at) {
     await view.user.click(await screen.findByRole('button', { name: 'Archived (1)' }))
   }
-  await view.user.click(await screen.findByRole('button', { name: title }))
+  // The first render of a file is slow under a full run: wait longer than the default second.
+  await view.user.click(await screen.findByRole('button', { name: title }, { timeout: 5000 }))
   const article = await screen.findByRole('article', { name: `Note: ${title}` })
   return { ...view, state, note, article }
 }

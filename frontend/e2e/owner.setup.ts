@@ -38,11 +38,12 @@ setup('create the Owner and save its session', async ({ request, page }) => {
   await create.getByRole('button', { name: 'Create account' }).click()
   await expect(page.getByRole('button', { name: `Account menu: ${OWNER.name}` })).toBeVisible({ timeout: 15_000 })
   await expect(page.getByRole('heading', { name: 'What do you want to learn?' })).toBeVisible()
+  // Sign-up is open (open-signup), but not with the admin's email; no second admin, no extra mail.
   const refused = await request.post('/api/auth/signup', {
     headers: H,
-    data: { email: 'second@example.test', password: 'second-owner-password' },
+    data: { email: OWNER.email, password: 'second-owner-password' },
   })
-  expect(refused.status()).toBe(403)
+  expect(refused.status()).toBe(409)
 
   // The sign-up email's link, opened in a browser (spec: "Verify email"). This is the only fresh
   // verification link of the run: once verified, a resend sends none.

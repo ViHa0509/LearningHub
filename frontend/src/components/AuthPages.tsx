@@ -17,6 +17,8 @@ const OAUTH_ERRORS: Record<string, string> = {
   access_denied: 'The sign-in was cancelled at the provider.',
   owner_exists: 'This app has an owner already',
   not_invited: 'You need an invitation to join.',
+  account_unverified:
+    'An account with this email exists but its email is not verified yet. Log in with its password, or verify the email first.',
   not_configured: 'This sign-in method is not configured on this server.',
   provider_error: 'The provider did not answer as expected. Try again.',
 }
@@ -35,10 +37,12 @@ export function AuthPages({ route, status, next }: Props) {
   const token = route.params.get('token')
   const noOwner = status?.has_owner === false
   switch (route.page) {
+    case 'signup':
+      return <CreateAccountPage status={status} next={next} admin={noOwner} />
     case 'login':
     case 'create':
       return noOwner ? (
-        <CreateOwnerPage status={status} next={next} />
+        <CreateAccountPage status={status} next={next} admin />
       ) : (
         <LoginPage status={status} next={next} error={route.page === 'login' ? route.params.get('error') : null} />
       )
@@ -195,11 +199,15 @@ function LoginPage({ status, next, error }: { status: AuthStatus | undefined; ne
       </p>
       <p className="auth-or muted">or</p>
       <ProviderButtons status={status} next={next} />
+      <p className="auth-switch muted">
+        New here? <a href="#/auth/signup">Create an account</a>
+      </p>
     </Card>
   )
 }
 
-function CreateOwnerPage({ status, next }: { status: AuthStatus | undefined; next: string }) {
+/** The first account (the admin), or a member's own account once the admin exists (open sign-up). */
+function CreateAccountPage({ status, next, admin }: { status: AuthStatus | undefined; next: string; admin: boolean }) {
   const signedIn = useSignedIn()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -231,8 +239,12 @@ function CreateOwnerPage({ status, next }: { status: AuthStatus | undefined; nex
   }
 
   return (
-    <Card title="Create the admin account">
-      <p className="muted auth-lead">The first account is the admin, who invites everyone else. Create it to start.</p>
+    <Card title={admin ? 'Create the admin account' : 'Sign up'}>
+      <p className="muted auth-lead">
+        {admin
+          ? 'The first account is the admin, who invites everyone else. Create it to start.'
+          : 'Create your own account. Your notes, lessons, chats and AI providers are yours only.'}
+      </p>
       <form className="auth-form" onSubmit={submit} noValidate>
         <Field label="Display name (optional)" type="text" value={name} onChange={setName} autoComplete="name" autoFocus />
         <Field label="Email" type="email" value={email} onChange={setEmail} autoComplete="email" />
@@ -246,6 +258,11 @@ function CreateOwnerPage({ status, next }: { status: AuthStatus | undefined; nex
       </form>
       <p className="auth-or muted">or</p>
       <ProviderButtons status={status} next={next} />
+      {!admin && (
+        <p className="auth-switch muted">
+          Already have an account? <a href="#/auth/login">Log in</a>
+        </p>
+      )}
     </Card>
   )
 }

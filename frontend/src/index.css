@@ -841,6 +841,8 @@ details.provider-section[open] > summary { margin-bottom: 10px; }
 .auth-sent { padding: 10px 14px; border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: var(--radius); background: var(--surface-2); display: flex; flex-direction: column; gap: 6px; }
 .auth-links { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
 .auth-links a { color: var(--accent); }
+.auth-switch { margin: 12px 0 0; text-align: center; font-size: 13px; }
+.auth-switch a { color: var(--accent); }
 .auth-or { text-align: center; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
 .auth-providers { display: flex; flex-direction: column; gap: 8px; }
 .auth-provider { display: block; width: 100%; text-align: center; padding: 8px 12px; color: var(--text); background: var(--surface); border: 1px solid var(--border-strong); border-radius: 6px; }

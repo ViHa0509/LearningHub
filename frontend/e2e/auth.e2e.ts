@@ -35,6 +35,18 @@ const USED_LINK = 'This link has expired or was already used.'
 const FORGOT_SENT = 'If that email belongs to the owner, a reset link is on its way.'
 const MAGIC_SENT = 'If that email belongs to the owner, a sign-in link is on its way.'
 
+/** Removes an account made by a test (open sign-up creates one where invite-only refused), as the admin. */
+async function removeUser(playwright: { request: APIRequest }, email: string) {
+  const admin = await playwright.request.newContext({ baseURL: APP, storageState: OWNER_STATE })
+  try {
+    const users = (await (await admin.get('/api/admin/users')).json()) as Array<{ id: string; email: string }>
+    const found = users.find((u) => u.email === email)
+    if (found) await admin.delete(`/api/admin/users/${found.id}`, { headers: H, data: { confirm_email: email } })
+  } finally {
+    await admin.dispose()
+  }
+}
+
 async function shot(page: Page, name: string) {
   await page.screenshot({ path: `e2e-results/screens/${name}.png`, fullPage: true })
 }
@@ -167,18 +179,19 @@ test.describe('Signed out', () => {
     await expect(accountButton(page)).toHaveCount(0)
   })
 
-  test('sign-up is refused once the admin exists, and the login page shows instead of create-admin', async ({
+  test('after the admin, sign-up with a used email is refused; the login page shows instead of create-admin', async ({
     page,
     request,
   }) => {
+    // Spec (open-signup): the admin's email is refused ...
     const refused = await request.post('/api/auth/signup', {
       headers: H,
-      data: { email: 'second@example.test', password: 'second-owner-password', display_name: 'Second' },
+      data: { email: OWNER.email, password: 'second-owner-password', display_name: 'Second' },
     })
-    expect(refused.status()).toBe(403)
-    // Spec (multi-user, Invite only): once the admin exists, sign-up needs an invitation.
-    expect((await refused.json()).detail).toBe('You need an invitation to join')
+    expect(refused.status()).toBe(409)
+    expect((await refused.json()).detail).toBe('An account with this email already exists')
     expect((await request.get('/api/auth/me')).status()).toBe(401)
+    // A new email becomes a member: e2e/signup.e2e.ts (here it would add a verification mail to the outbox).
     // The refused account was not created: its email cannot log in or ask for a link either way.
     expect((await (await request.get('/api/auth/status')).json()).has_owner).toBe(true)
 
@@ -287,22 +300,26 @@ test.describe('Signed out', () => {
     expect(me.linked).toContain('github')
   })
 
-  test('a GitHub identity with another email and no invitation is refused: "You need an invitation to join", no session', async ({
-    page,
+  test('a GitHub identity with another email and no account signs up a member (open sign-up)', async ({
     request,
+    browser,
+    playwright,
   }) => {
-    await request.post(`${FAKE}/oauth-control`, { data: { email: 'stranger@example.test', user_id: 777001 } })
+    const stranger = `stranger-${Date.now().toString(36)}@example.test`
+    await request.post(`${FAKE}/oauth-control`, { data: { email: stranger, user_id: 777001 } })
+    const visitor = await freshBrowser(browser)
     try {
-      await page.goto('/#/')
-      await loginPage(page).getByRole('link', { name: 'Continue with GitHub' }).click()
-      const form = loginPage(page)
-      await expect(form.getByRole('alert')).toHaveText('You need an invitation to join.')
-      // The error code leaves the address bar once shown.
-      await expect(page).toHaveURL(/#\/auth\/login$/)
-      await expect(accountButton(page)).toHaveCount(0)
-      expect((await page.request.get('/api/auth/me')).status()).toBe(401)
-      expect((await page.request.get('/api/notes')).status()).toBe(401)
+      const tab = await visitor.newPage()
+      await tab.goto('/#/')
+      await loginPage(tab).getByRole('link', { name: 'Continue with GitHub' }).click()
+      await expect(accountButton(tab)).toBeVisible({ timeout: 30_000 })
+      const me = await (await tab.request.get('/api/auth/me')).json()
+      expect(me).toMatchObject({ email: stranger, role: 'member', email_verified: true })
+      expect(me.linked).toContain('github')
+      expect(await (await tab.request.get('/api/notes')).json()).toEqual([])
     } finally {
+      await visitor.close()
+      await removeUser(playwright, stranger)
       await resetFakeGithub(request)
     }
   })

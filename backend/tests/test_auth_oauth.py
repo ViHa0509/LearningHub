@@ -144,8 +144,8 @@ def test_linked_github_identity_signs_in_and_lands_on_its_page(
     assert count("SELECT count(*) FROM oauth_accounts") == 1
 
 
-# Scenario: Unknown GitHub identity
-def test_unknown_github_identity_is_refused_when_the_owner_differs(
+# Scenario: Unknown GitHub identity (open-signup: it becomes a member)
+def test_unknown_github_identity_becomes_a_member_when_the_owner_differs(
     okit: AuthKit, provider: tuple[str, ProviderState]
 ) -> None:
     _, state = provider
@@ -156,11 +156,11 @@ def test_unknown_github_identity_is_refused_when_the_owner_differs(
     sessions_before = count("SELECT count(*) FROM sessions")
     browser = okit.browser()
     response = approve(browser, state, "github", start(browser, "github"))
-    assert error_of(response) == "not_invited"
-    assert "lh_session" not in response.headers.get("set-cookie", "")
-    assert browser.get("/api/notes").status_code == 401
-    assert count("SELECT count(*) FROM sessions") == sessions_before
-    assert count("SELECT count(*) FROM oauth_accounts") == 0
+    assert error_of(response) is None
+    assert browser.get("/api/auth/me").json()["role"] == "member"
+    assert browser.get("/api/notes").json() == []
+    assert count("SELECT count(*) FROM sessions") == sessions_before + 1
+    assert count("SELECT count(*) FROM oauth_accounts") == 1
 
 
 def test_same_email_links_only_when_the_owner_email_is_verified(
@@ -170,7 +170,7 @@ def test_same_email_links_only_when_the_owner_email_is_verified(
     okit.signup(email="owner@example.test", password=PASSWORD)
     browser = okit.browser()
     refused = approve(browser, state, "google", start(browser, "google"))
-    assert error_of(refused) == "not_invited"
+    assert error_of(refused) == "account_unverified"
     okit.client.post(
         "/api/auth/verify", json={"token": okit.mailer.token("verify-email")}
     ).raise_for_status()

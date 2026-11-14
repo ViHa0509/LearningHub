@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-export type AuthPage = 'login' | 'create' | 'forgot' | 'reset' | 'magic' | 'verify' | 'invite'
+export type AuthPage = 'login' | 'create' | 'signup' | 'forgot' | 'reset' | 'magic' | 'verify' | 'invite'
 
 export interface AuthRoute {
   page: AuthPage
@@ -8,7 +8,7 @@ export interface AuthRoute {
   params: URLSearchParams
 }
 
-const PAGES: AuthPage[] = ['login', 'create', 'forgot', 'reset', 'magic', 'verify', 'invite']
+const PAGES: AuthPage[] = ['login', 'create', 'signup', 'forgot', 'reset', 'magic', 'verify', 'invite']
 
 /** An auth page address (`#/auth/<page>[?query]`), or null for any other hash. */
 export function parseAuthRoute(hash: string): AuthRoute | null {
