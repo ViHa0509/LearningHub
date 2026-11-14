@@ -6,7 +6,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import type { ChatRequest } from '../api'
 import { SKILLS } from '../lib/skills'
-import { installFakeApi, makeProvider, twoProviders } from '../test/fakeApi'
+import { installFakeApi, makeNote, makeProvider, twoProviders } from '../test/fakeApi'
 import { renderAppReady } from '../test/render'
 
 const panel = () => screen.getByRole('complementary', { name: 'Agent' })
@@ -580,6 +580,22 @@ describe('text attachments', () => {
     await user.type(box(), 'go{Enter}')
     await waitFor(() => expect(chats(state)).toHaveLength(1))
     expect(lastBody(state).attachments?.map((a) => a.name)).toEqual(['n2.md', 'n3.md', 'n4.md', 'n5.md'])
+  })
+})
+
+describe('learned notes saved by the assistant', () => {
+  it('refreshes the Learned list when the answer reports a saved note', async () => {
+    const state = withProviders()
+    state.chat = () => {
+      state.notes.unshift(makeNote('gRPC', null, { source: 'agent' }))
+      return { reply: 'Saved the note "gRPC".', changed_lessons: [], changed_notes: ['n-new'] }
+    }
+    const { user } = await renderAppReady('#/roadmap/backend')
+    const box = await within(panel()).findByRole('textbox', { name: 'Message the agent' })
+    await user.type(box, 'explain gRPC{Enter}')
+    expect(await within(panel()).findByText(/Saved the note/)).toBeInTheDocument()
+    const saved = await screen.findByRole('button', { name: /^gRPC/ })
+    expect(within(saved).getByText('agent')).toBeInTheDocument()
   })
 })
 

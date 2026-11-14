@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useRef, useState, type DragEvent } from 'react'
-import type { ChatPage, Effort } from '../api'
+import type { ChatPage, Effort, ProposedTopics } from '../api'
 import { useAgents, useProviders } from '../hooks'
 import { readEffort, saveEffort } from '../lib/agentPrefs'
 import { readAttachments, type Attachment, type ReadyAttachment } from '../lib/attachments'
@@ -27,6 +27,8 @@ interface Props {
   request: AgentRequest | null
   /** On a phone the panel is a drawer over the page. */
   drawer?: boolean
+  /** "Review in editor" on an answer that proposes topics. */
+  onReviewTopics?: (proposed: ProposedTopics) => void
 }
 
 const ASSISTANT = 'assistant'
@@ -36,7 +38,7 @@ const FILES_ONLY = 'Read the attached files.'
 
 const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes('Files')
 
-export function AgentPanel({ open, onToggle, page, request, drawer = false }: Props) {
+export function AgentPanel({ open, onToggle, page, request, drawer = false, onReviewTopics }: Props) {
   const providers = useProviders()
   const agents = useAgents()
   const available = (providers.data ?? []).filter((p) => p.is_active)
@@ -197,6 +199,7 @@ export function AgentPanel({ open, onToggle, page, request, drawer = false }: Pr
             entries={chat.entries}
             busy={chat.busy}
             onRetry={chat.retry}
+            onReview={onReviewTopics}
             onStarter={(text) => {
               setDraft(text)
               inputRef.current?.focus()

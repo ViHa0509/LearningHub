@@ -25,6 +25,7 @@ import type {
   ResourceSyncStatus,
   Roadmap,
   TestResult,
+  TopicInput,
 } from '../api'
 
 export const backend: Roadmap = {
@@ -190,6 +191,7 @@ export function makeNote(title: string, nodeId: string | null = null, extra: Par
     size_bytes: 100,
     node_id: nodeId,
     node_missing: false,
+    source: 'import',
     archived_at: null,
     created_at: '2026-11-06T00:00:00Z',
     updated_at: '2026-11-06T00:00:00Z',
@@ -197,7 +199,49 @@ export function makeNote(title: string, nodeId: string | null = null, extra: Par
   }
 }
 
+/** An area of a fake field: its topics are the roadmap served under `#/roadmap/<slug>`. */
+export interface FakeArea {
+  slug: string
+  title: string
+  description: string | null
+  order: number
+  topics: TopicInput[]
+}
+
+/** A learning field of the fake API; `mine: false` is another user's published field (read only). */
+export interface FakeField {
+  id: string
+  title: string
+  order: number
+  published: boolean
+  mine: boolean
+  areas: FakeArea[]
+}
+
+let fieldSeq = 0
+
+export function makeField(title: string, areas: Partial<FakeArea>[] = [], extra: Partial<FakeField> = {}): FakeField {
+  fieldSeq += 1
+  return {
+    id: `field-${fieldSeq}`,
+    title,
+    order: fieldSeq,
+    published: false,
+    mine: true,
+    areas: areas.map((a, i) => ({
+      slug: a.slug ?? `area-${fieldSeq}-${i}`,
+      title: a.title ?? a.slug ?? `Area ${i + 1}`,
+      description: a.description ?? null,
+      order: a.order ?? i,
+      topics: a.topics ?? [],
+    })),
+    ...extra,
+  }
+}
+
 export interface FakeState {
+  /** Learning fields (the IT field is virtual and always first in GET /api/fields). */
+  fields: FakeField[]
   notes: Note[]
   /** Stored chats, newest activity first; every answered chat request is saved here. */
   chatSessions: ChatSessionDetail[]
@@ -429,6 +473,7 @@ const HEADER_REQUIRED = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome[]): FakeState {
   providerSeq = 0
   const state: FakeState = {
+    fields: [],
     notes: [...notes],
     chatSessions: [],
     sources: {},
@@ -693,6 +738,62 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
     'ai-engineer': 'Building with LLMs and agents.',
   }
 
+  const KEBAB = /^[a-z0-9]+(-[a-z0-9]+)*$/
+  const customRoadmap = (slug: string): Roadmap | undefined => {
+    for (const f of state.fields) {
+      const a = f.areas.find((x) => x.slug === slug)
+      if (a) {
+        return {
+          id: a.slug,
+          title: a.title,
+          nodes: a.topics.map((t, i) => ({
+            id: t.slug,
+            full_id: `${a.slug}/${t.slug}`,
+            title: t.title,
+            description: t.description ?? null,
+            parent: t.parent ?? null,
+            order: i,
+          })),
+        }
+      }
+    }
+    return undefined
+  }
+  const roadmapOf = (id: string): Roadmap | undefined => roadmaps[id] ?? customRoadmap(id)
+  const visibleFields = () =>
+    state.fields.filter((f) => f.mine || f.published).sort((a, b) => a.order - b.order)
+  const summaryOf = (r: Roadmap, description: string | null, field: FakeField | null) => {
+    const linked = new Set(state.notes.filter((n) => !n.archived_at).map((n) => n.node_id))
+    return {
+      id: r.id,
+      title: r.title,
+      description,
+      node_count: r.nodes.length,
+      learned_nodes: r.nodes.filter((n) => linked.has(n.full_id)).length,
+      field_id: field ? field.id : null,
+      field_title: field ? field.title : 'IT',
+      editable: field ? field.mine : false,
+    }
+  }
+  const builtinSummaries = () => Object.values(roadmaps).map((r) => summaryOf(r, descriptions[r.id], null))
+  const areaSummaries = (f: FakeField) =>
+    [...f.areas]
+      .sort((a, b) => a.order - b.order)
+      .map((a) => summaryOf(customRoadmap(a.slug)!, a.description, f))
+  const fieldOut = (f: FakeField) => ({
+    id: f.id,
+    title: f.title,
+    order: f.order,
+    published: f.published,
+    editable: f.mine,
+    areas: areaSummaries(f),
+  })
+  const slugTaken = (slug: string) => !!roadmaps[slug] || state.fields.some((f) => f.areas.some((a) => a.slug === slug))
+  const titleProblem = (title: unknown) =>
+    typeof title === 'string' && title.trim().length >= 1 && title.trim().length <= 60
+      ? null
+      : [{ msg: 'Value error, the title must have 1 to 60 characters', field: 'title' }]
+
   const find = (id: string | null | undefined) => state.providers.find((p) => p.id === id)
   const effective = (agentId: string): { provider?: ProviderOut; reason: AgentOut['effective_reason'] } => {
     // Like the backend: an agent without any assignment of its own uses the assistant's.
@@ -891,16 +992,121 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
       }
 
       if (url === '/api/domains') {
-        const linked = new Set(state.notes.filter((n) => !n.archived_at).map((n) => n.node_id))
-        return respond(
-          Object.values(roadmaps).map((r) => ({
-            id: r.id,
-            title: r.title,
-            description: descriptions[r.id],
-            node_count: r.nodes.length,
-            learned_nodes: r.nodes.filter((n) => linked.has(n.full_id)).length,
-          })),
-        )
+        return respond([...builtinSummaries(), ...visibleFields().flatMap(areaSummaries)])
+      }
+
+      // ---- learning fields, areas, topics (design.md of learning-fields) ----
+      if (url === '/api/fields' && method === 'GET') {
+        const it = { id: 'it', title: 'IT', order: 0, published: false, editable: false, areas: builtinSummaries() }
+        return respond([it, ...visibleFields().map(fieldOut)])
+      }
+      if (url === '/api/fields' && method === 'POST') {
+        const problem = titleProblem(body?.title)
+        if (problem) return respond({ detail: problem }, 422)
+        const created = makeField(String(body.title).trim())
+        state.fields.push(created)
+        return respond(fieldOut(created), 201)
+      }
+      const fieldAreas = url.match(/^\/api\/fields\/([^/]+)\/areas$/)
+      if (fieldAreas && method === 'POST') {
+        const f = visibleFields().find((x) => x.id === fieldAreas[1])
+        if (!f) return respond({ detail: 'field not found' }, 404)
+        if (!f.mine) return respond({ detail: 'Only the owner can change this field' }, 403)
+        const slug = String(body?.slug ?? '')
+        const problems = []
+        if (slug.length < 2 || slug.length > 40 || !KEBAB.test(slug)) {
+          problems.push({ msg: 'Value error, the slug must be lowercase kebab-case, 2 to 40 characters', field: 'slug' })
+        }
+        if (titleProblem(body?.title)) problems.push(...titleProblem(body?.title)!)
+        if (problems.length) return respond({ detail: problems }, 422)
+        if (slugTaken(slug)) return respond({ detail: `The slug '${slug}' is already taken` }, 409)
+        f.areas.push({
+          slug,
+          title: String(body.title).trim(),
+          description: body.description ? String(body.description) : null,
+          order: f.areas.length,
+          topics: [],
+        })
+        return respond(areaSummaries(f).find((a) => a.id === slug), 201)
+      }
+      const fieldOne = url.match(/^\/api\/fields\/([^/]+)$/)
+      if (fieldOne && (method === 'PATCH' || method === 'DELETE')) {
+        const f = visibleFields().find((x) => x.id === fieldOne[1])
+        if (!f) return respond({ detail: 'field not found' }, 404)
+        if (!f.mine) return respond({ detail: 'Only the owner can change this field' }, 403)
+        if (method === 'DELETE') {
+          state.fields = state.fields.filter((x) => x !== f)
+          return respond(null, 204)
+        }
+        if (body.published !== undefined && state.auth.owner?.role === 'member') {
+          return respond({ detail: 'Only the admin can publish fields' }, 403)
+        }
+        if (body.title !== undefined) {
+          const problem = titleProblem(body.title)
+          if (problem) return respond({ detail: problem }, 422)
+          f.title = String(body.title).trim()
+        }
+        if (body.order !== undefined) f.order = body.order
+        if (body.published !== undefined) f.published = !!body.published
+        return respond(fieldOut(f))
+      }
+      const areaTopics = url.match(/^\/api\/areas\/([^/]+)\/topics$/)
+      const areaOne = url.match(/^\/api\/areas\/([^/]+)$/)
+      if ((areaTopics && method === 'PUT') || (areaOne && (method === 'PATCH' || method === 'DELETE'))) {
+        const slug = (areaTopics ?? areaOne)![1]
+        const owner = visibleFields().find((f) => f.areas.some((a) => a.slug === slug))
+        const area = owner?.areas.find((a) => a.slug === slug)
+        if (!owner || !area) return respond({ detail: `unknown area '${slug}'` }, 404)
+        if (!owner.mine) return respond({ detail: 'Only the owner can change this area' }, 403)
+        if (areaOne && method === 'DELETE') {
+          owner.areas = owner.areas.filter((a) => a !== area)
+          return respond(null, 204)
+        }
+        if (areaOne) {
+          if (body.title !== undefined) {
+            const problem = titleProblem(body.title)
+            if (problem) return respond({ detail: problem }, 422)
+            area.title = String(body.title).trim()
+          }
+          if (body.description !== undefined) area.description = body.description ? String(body.description) : null
+          if (body.order !== undefined) area.order = body.order
+          return respond(areaSummaries(owner).find((a) => a.id === slug))
+        }
+        const topics = (body?.topics ?? []) as TopicInput[]
+        const problems: { msg: string; field: string }[] = []
+        const seen = new Set<string>()
+        if (topics.length > 300) problems.push({ msg: 'Value error, at most 300 topics', field: 'topics' })
+        for (const t of topics) {
+          if (!KEBAB.test(t.slug ?? '') || t.slug.length < 2 || t.slug.length > 40) {
+            problems.push({ msg: `Value error, the slug '${t.slug}' must be lowercase kebab-case`, field: 'topics' })
+          }
+          if (!String(t.title ?? '').trim()) problems.push({ msg: `Value error, the topic '${t.slug}' needs a title`, field: 'topics' })
+          if (seen.has(t.slug)) problems.push({ msg: `Value error, the slug '${t.slug}' is used twice`, field: 'topics' })
+          seen.add(t.slug)
+        }
+        for (const t of topics) {
+          if (t.parent && !seen.has(t.parent)) {
+            problems.push({ msg: `Value error, the parent '${t.parent}' of '${t.slug}' does not exist`, field: 'topics' })
+          }
+        }
+        for (const t of topics) {
+          let at: string | null | undefined = t.parent
+          for (let hops = 0; at && hops <= topics.length; hops++) {
+            if (at === t.slug) {
+              problems.push({ msg: `Value error, '${t.slug}' is its own ancestor`, field: 'topics' })
+              break
+            }
+            at = topics.find((x) => x.slug === at)?.parent
+          }
+        }
+        if (problems.length) return respond({ detail: problems }, 422)
+        area.topics = topics.map((t) => ({
+          slug: t.slug,
+          title: t.title.trim(),
+          description: t.description || null,
+          parent: t.parent || null,
+        }))
+        return respond(customRoadmap(slug))
       }
       if (url === '/api/lessons/extract-pdf' && method === 'POST') {
         const file = init?.body instanceof FormData ? init.body.get('file') : null
@@ -911,7 +1117,7 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
       const lesson = url.match(/^\/api\/lessons\/([^/]+)\/([^/]+)$/)
       if (lesson) {
         const fullId = `${lesson[1]}/${lesson[2]}`
-        if (!roadmaps[lesson[1]]?.nodes.some((n) => n.full_id === fullId)) {
+        if (!roadmapOf(lesson[1])?.nodes.some((n) => n.full_id === fullId)) {
           return respond({ detail: `unknown node '${fullId}'` }, 404)
         }
         if (method === 'PUT') {
@@ -1001,7 +1207,7 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
       const resources = url.match(/^\/api\/resources\/([^/]+)\/([^/]+)$/)
       if (resources) {
         const fullId = `${resources[1]}/${resources[2]}`
-        if (!roadmaps[resources[1]]?.nodes.some((n) => n.full_id === fullId)) {
+        if (!roadmapOf(resources[1])?.nodes.some((n) => n.full_id === fullId)) {
           return respond({ detail: `unknown node '${fullId}'` }, 404)
         }
         const items = state.resources[fullId] ?? []
@@ -1015,7 +1221,10 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
         })
       }
       let match = url.match(/^\/api\/domains\/([^/]+)\/roadmap$/)
-      if (match) return respond(roadmaps[match[1]])
+      if (match) {
+        const found = roadmapOf(match[1])
+        return found ? respond(found) : respond({ detail: `unknown domain '${match[1]}'` }, 404)
+      }
       match = url.match(/^\/api\/domains\/([^/]+)\/counts$/)
       if (match) {
         const domain = match[1]

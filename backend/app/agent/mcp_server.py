@@ -17,7 +17,7 @@ import uuid
 from collections.abc import Callable, Iterable
 from typing import IO, Any
 
-from app.agent.tools import AgentTools, ToolOutcome
+from app.agent.tools import ASSISTANT_SPECS, SPECS, AgentTools, ToolOutcome
 
 LOG = logging.getLogger("learninghub.mcp")
 
@@ -48,6 +48,8 @@ def tool_result(outcome: ToolOutcome) -> dict[str, Any]:
     meta: dict[str, Any] = {"summary": outcome.summary}
     if outcome.changed_lesson:
         meta["changed_lesson"] = outcome.changed_lesson
+    if outcome.changed_note:
+        meta["changed_note"] = outcome.changed_note
     return {
         "content": [{"type": "text", "text": outcome.result}],
         "isError": _is_error(outcome),
@@ -104,7 +106,7 @@ class McpServer:
         return {
             "tools": [
                 {"name": s.name, "description": s.description, "inputSchema": s.parameters}
-                for s in AgentTools.specs()
+                for s in SPECS + ASSISTANT_SPECS
             ]
         }
 
@@ -152,6 +154,8 @@ def database_tools() -> RunTool:
     """
     from app.config import Settings
     from app.db import User, make_engine, make_session_factory
+    from app.learning.catalog import catalog_for
+    from app.main import build_store
     from app.roadmaps import RoadmapCatalog
 
     raw = os.environ.get(USER_VARIABLE, "").strip()
@@ -162,7 +166,8 @@ def database_tools() -> RunTool:
     except ValueError:
         raise SystemExit(f"{USER_VARIABLE} is not a valid user id") from None
     settings = Settings()
-    catalog = RoadmapCatalog.load(settings.roadmaps_dir)
+    builtin = RoadmapCatalog.load(settings.roadmaps_dir)
+    store = build_store(settings)
     sessions = make_session_factory(make_engine(settings.database_url))
     with sessions() as session:
         if session.get(User, user_id) is None:
@@ -170,7 +175,11 @@ def database_tools() -> RunTool:
 
     def run_tool(name: str, arguments: dict[str, Any]) -> ToolOutcome:
         with sessions() as session:
-            return AgentTools(session, catalog, user_id=user_id).run(name, arguments)
+            user = session.get(User, user_id)
+            if user is None:
+                raise LookupError("the user no longer exists")
+            catalog = catalog_for(session, user, builtin)
+            return AgentTools(session, catalog, user_id=user_id, store=store).run(name, arguments)
 
     return run_tool
 

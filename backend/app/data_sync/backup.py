@@ -24,6 +24,9 @@ from app.db import (
     AIProvider,
     ChatMessage,
     ChatSession,
+    LearningArea,
+    LearningField,
+    LearningTopic,
     Lesson,
     Note,
 )
@@ -41,7 +44,10 @@ DATA_FILES = {
     "agent_settings": "data/agent_settings.json",
 }
 # Entries a restore accepts but does not require (older backups do not have them).
-OPTIONAL_FILES = {"chat_sessions": "data/chat_sessions.json"}
+OPTIONAL_FILES = {
+    "chat_sessions": "data/chat_sessions.json",
+    "learning_fields": "data/learning_fields.json",
+}
 # An answer has no request limit; this bounds what a restore accepts for one message.
 MAX_MESSAGE_CHARS = 1_000_000
 SHA = re.compile(r"^[0-9a-f]{64}$")
@@ -61,6 +67,7 @@ class NoteRow(Row):
     content_sha256: str = Field(pattern=SHA.pattern)
     storage_key: str = Field(pattern=BLOB_KEY.pattern)
     node_id: str | None = None
+    source: str = "import"
     archived_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
@@ -135,6 +142,33 @@ class ChatSessionRow(Row):
     messages: list[ChatMessageRow] = Field(default_factory=list)
 
 
+class TopicRow(Row):
+    slug: str = Field(min_length=1, max_length=60)
+    title: str = Field(min_length=1, max_length=80)
+    description: str = Field(default="", max_length=300)
+    parent_slug: str | None = None
+    position: int = Field(ge=0)
+
+
+class AreaRow(Row):
+    slug: str = Field(min_length=2, max_length=40)
+    title: str = Field(min_length=1, max_length=60)
+    description: str = Field(default="", max_length=200)
+    position: int = Field(ge=0)
+    topics: list[TopicRow] = Field(default_factory=list, max_length=300)
+
+
+class FieldRow(Row):
+    """A learning field with its areas and their topics nested, in order."""
+
+    title: str = Field(min_length=1, max_length=60)
+    position: int = Field(ge=0)
+    published: bool = False
+    created_at: datetime
+    updated_at: datetime
+    areas: list[AreaRow] = Field(default_factory=list)
+
+
 class Manifest(BaseModel):
     format: int
     app_version: str
@@ -161,6 +195,52 @@ def known_migrations() -> set[str]:
 def _dump(rows: list[Any], model: type[Row]) -> bytes:
     items = [model.model_validate(row).model_dump(mode="json") for row in rows]
     return json.dumps(items, ensure_ascii=False, indent=1).encode("utf-8")
+
+
+def _field_rows(session: Session, user_id: uuid.UUID) -> list[FieldRow]:
+    """The user's fields with their areas and topics, in order (ids are left out)."""
+    fields = list(
+        session.scalars(
+            select(LearningField)
+            .where(LearningField.user_id == user_id)
+            .order_by(LearningField.position, LearningField.created_at, LearningField.id)
+        )
+    )
+    areas: dict[uuid.UUID, list[LearningArea]] = {f.id: [] for f in fields}
+    topics: dict[uuid.UUID, list[LearningTopic]] = {}
+    for area in session.scalars(
+        select(LearningArea)
+        .where(LearningArea.field_id.in_(list(areas)))
+        .order_by(LearningArea.position, LearningArea.slug)
+    ):
+        areas[area.field_id].append(area)
+        topics[area.id] = []
+    for topic in session.scalars(
+        select(LearningTopic)
+        .where(LearningTopic.area_id.in_(list(topics)))
+        .order_by(LearningTopic.area_id, LearningTopic.position)
+    ):
+        topics[topic.area_id].append(topic)
+    return [
+        FieldRow(
+            title=f.title,
+            position=f.position,
+            published=f.published,
+            created_at=f.created_at,
+            updated_at=f.updated_at,
+            areas=[
+                AreaRow(
+                    slug=a.slug,
+                    title=a.title,
+                    description=a.description,
+                    position=a.position,
+                    topics=[TopicRow.model_validate(t) for t in topics[a.id]],
+                )
+                for a in areas[f.id]
+            ],
+        )
+        for f in fields
+    ]
 
 
 def build_backup(
@@ -223,6 +303,7 @@ def build_backup(
         )
         for chat in chats
     ]
+    field_rows = _field_rows(session, user_id)
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as archive:
         written: set[str] = set()
         kept: list[Note] = []
@@ -247,6 +328,9 @@ def build_backup(
             "agent_settings": len(switches),
             "chat_sessions": len(chat_rows),
             "chat_messages": sum(len(c.messages) for c in chat_rows),
+            "learning_fields": len(field_rows),
+            "learning_areas": sum(len(f.areas) for f in field_rows),
+            "learning_topics": sum(len(a.topics) for f in field_rows for a in f.areas),
         }
         manifest = {
             "format": FORMAT,
@@ -270,6 +354,12 @@ def build_backup(
             OPTIONAL_FILES["chat_sessions"],
             json.dumps(
                 [c.model_dump(mode="json") for c in chat_rows], ensure_ascii=False, indent=1
+            ).encode("utf-8"),
+        )
+        archive.writestr(
+            OPTIONAL_FILES["learning_fields"],
+            json.dumps(
+                [f.model_dump(mode="json") for f in field_rows], ensure_ascii=False, indent=1
             ).encode("utf-8"),
         )
     return counts

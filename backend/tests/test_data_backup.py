@@ -175,6 +175,9 @@ def test_backup_content(client: TestClient) -> None:
         "agent_settings": 1,
         "chat_sessions": 0,
         "chat_messages": 0,
+        "learning_fields": 0,
+        "learning_areas": 0,
+        "learning_topics": 0,
     }
     assert {n["title"] for n in json.loads(archive.read("data/notes.json"))} == {"Alpha", "Beta"}
     assert json.loads(archive.read("data/lessons.json"))[0]["node_id"] == "devops/docker"
@@ -261,6 +264,9 @@ def test_round_trip_gives_identical_rows(client: TestClient) -> None:
             "agent_settings": 1,
             "chat_sessions": 0,
             "chat_messages": 0,
+            "learning_fields": 0,
+            "learning_areas": 0,
+            "learning_topics": 0,
         },
         "providers_needing_key": ["Claude main"],
     }

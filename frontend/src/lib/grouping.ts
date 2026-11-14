@@ -41,7 +41,19 @@ export function matchesFilter(note: Note, filter: string): boolean {
   return needle === '' || note.title.toLowerCase().includes(needle)
 }
 
-/** Group notes by domain, then node in roadmap order; notes without a valid link are unsorted. */
+const updated = (note: Note) => Date.parse(note.updated_at) || 0
+
+/** Newest update first; the list is the caller's (a copy is sorted). */
+const newestFirst = (notes: Note[]) => [...notes].sort((a, b) => updated(b) - updated(a))
+
+/** The most recent update among the notes (0 for none). */
+const latest = (notes: Note[]) => notes.reduce((max, note) => Math.max(max, updated(note)), 0)
+
+/**
+ * Group notes by domain, then node; notes without a valid link are unsorted. Notes in a group are
+ * newest first by `updated_at`; nodes and domains follow their most recently updated note (ties
+ * keep roadmap order); Unsorted comes last, also newest first.
+ */
 export function groupNotes(notes: Note[], roadmaps: Roadmap[], filter = ''): GroupedNotes {
   const visible = notes.filter((note) => matchesFilter(note, filter))
   const byNode = new Map<string, Note[]>()
@@ -62,10 +74,15 @@ export function groupNotes(notes: Note[], roadmaps: Roadmap[], filter = ''): Gro
   for (const roadmap of roadmaps) {
     const nodes = roadmapOrder(roadmap)
       .filter((node) => byNode.has(node.full_id))
-      .map((node) => ({ node, notes: byNode.get(node.full_id) ?? [] }))
+      .map((node) => ({ node, notes: newestFirst(byNode.get(node.full_id) ?? []) }))
+      // Array.sort is stable: equal times keep the roadmap order.
+      .sort((a, b) => updated(b.notes[0]) - updated(a.notes[0]))
     if (nodes.length > 0) domains.push({ domainId: roadmap.id, title: roadmap.title, nodes })
   }
-  return { domains, unsorted }
+  domains.sort(
+    (a, b) => latest(b.nodes.flatMap((n) => n.notes)) - latest(a.nodes.flatMap((n) => n.notes)),
+  )
+  return { domains, unsorted: newestFirst(unsorted) }
 }
 
 export function domainOf(nodeId: string): string {

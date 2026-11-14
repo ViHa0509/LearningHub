@@ -1,6 +1,14 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
-import { api, queryKeys, type AgentStep, type ChatPage, type ChatSessionDetail, type Effort } from '../../api'
+import {
+  api,
+  queryKeys,
+  type AgentStep,
+  type ChatPage,
+  type ChatSessionDetail,
+  type Effort,
+  type ProposedTopics,
+} from '../../api'
 import type { ReadyAttachment } from '../../lib/attachments'
 
 /** One user message: what the user typed, what is sent, its files and the agent that answers it. */
@@ -25,6 +33,8 @@ export interface Entry {
   answeredBy?: { name: string; model: string; fallback: boolean; effort: Effort }
   /** The id of the stored message; a question that failed has none. */
   messageId?: string
+  /** Topics the outline agent proposed with this answer (not stored with the chat). */
+  proposal?: ProposedTopics
 }
 
 let seq = 0
@@ -172,6 +182,7 @@ export function useAgentChat({ effort, page }: Options) {
           content: answer.reply,
           steps: answer.steps,
           messageId: answer.assistant_message_id,
+          ...(answer.proposed_topics ? { proposal: answer.proposed_topics } : {}),
           answeredBy: {
             name: answer.provider.name,
             model: answer.provider.model,
@@ -182,6 +193,14 @@ export function useAgentChat({ effort, page }: Options) {
       ])
       await Promise.all([
         client.invalidateQueries({ queryKey: queryKeys.chatSessions }),
+        // The assistant saved a note: the Learned list, counts and roadmap badges refresh.
+        ...(answer.changed_notes?.length
+          ? [
+              client.invalidateQueries({ queryKey: queryKeys.notes }),
+              client.invalidateQueries({ queryKey: queryKeys.domains }),
+              client.invalidateQueries({ queryKey: ['counts'] }),
+            ]
+          : []),
         ...answer.changed_lessons.map((nodeId) => {
           const [domain, node] = nodeId.split('/')
           return client.invalidateQueries({ queryKey: queryKeys.lesson(domain, node) })

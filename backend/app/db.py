@@ -47,6 +47,8 @@ class Note(Base):
     content_sha256: Mapped[str] = mapped_column(String(64))
     storage_key: Mapped[str] = mapped_column(Text)
     node_id: Mapped[str | None] = mapped_column(Text, index=True)
+    # "import" for an uploaded page, "agent" for a note the assistant saved.
+    source: Mapped[str] = mapped_column(Text, server_default="import", default="import")
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -217,6 +219,58 @@ class ChatMessage(Base):
     fallback_used: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     effort: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class LearningField(Base):
+    """A field of learning (for example "Cloud") owned by a user; the admin may publish it.
+
+    Its areas and topics are owned through it, like chat messages through their session.
+    """
+
+    __tablename__ = "learning_fields"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = user_fk()
+    title: Mapped[str] = mapped_column(Text)
+    position: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    published: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class LearningArea(Base):
+    """An area of a field: a domain like the built-in roadmaps. The slug is global (node ids are
+    ``<slug>/<topic slug>``) and never changes."""
+
+    __tablename__ = "learning_areas"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    field_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("learning_fields.id", ondelete="CASCADE"), index=True
+    )
+    slug: Mapped[str] = mapped_column(Text, unique=True)
+    title: Mapped[str] = mapped_column(Text)
+    description: Mapped[str] = mapped_column(Text, default="", server_default="")
+    position: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
+
+class LearningTopic(Base):
+    """A topic of an area; ``parent_slug`` names another topic of the same area."""
+
+    __tablename__ = "learning_topics"
+    __table_args__ = (UniqueConstraint("area_id", "slug", name="uq_learning_topics_area_slug"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    area_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("learning_areas.id", ondelete="CASCADE"), index=True
+    )
+    slug: Mapped[str] = mapped_column(Text)
+    title: Mapped[str] = mapped_column(Text)
+    description: Mapped[str] = mapped_column(Text, default="", server_default="")
+    parent_slug: Mapped[str | None] = mapped_column(Text, nullable=True)
+    position: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
 
 class NodeResource(Base):

@@ -428,6 +428,9 @@ def test_send_to_the_target(
                 "agent_settings": 1,
                 "chat_sessions": 0,
                 "chat_messages": 0,
+                "learning_fields": 0,
+                "learning_areas": 0,
+                "learning_topics": 0,
             },
             "providers_needing_key": ["Claude main"],
         }

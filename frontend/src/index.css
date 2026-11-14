@@ -152,6 +152,7 @@ button.icon-only { display: inline-flex; align-items: center; justify-content: c
 .error { color: var(--danger); }
 .tag { font-size: 11px; border-radius: 4px; padding: 0 5px; margin-left: 6px; }
 .tag.warn { color: var(--warn); border: 1px solid currentColor; }
+.tag.agent { color: var(--secondary-text); border: 1px solid currentColor; }
 
 .app-frame { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
 .app-shell { display: grid; flex: 1; min-height: 0; transition: grid-template-columns 0.15s ease; }
@@ -1030,5 +1031,39 @@ a.auth-provider:hover { border-color: var(--accent); color: var(--accent); }
   .agent-pane .send-button { min-width: 40px; min-height: 40px; }
   .agent-pane .code-copy { min-height: 40px; min-width: 40px; }
   .agent-pane .attachment-remove { min-width: 40px; min-height: 40px; }
+  .field-tabs button, .field-new, .field-toolbar button, .area-toolbar button, .topic-row-actions button, .topic-editor .dialog-actions button, .field-form .dialog-actions button { min-height: 40px; }
 }
 /* ===== end responsive layout ===== */
+
+/* ===== learning fields ===== */
+.field-tabs-row { display: flex; align-items: center; gap: 8px; margin-top: 24px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+.field-tabs { display: flex; gap: 6px; flex: 1 1 0; min-width: 0; overflow-x: auto; }
+.field-tabs button, .field-new { flex: none; white-space: nowrap; }
+.field-tabs [aria-selected='true'] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.field-toolbar, .area-toolbar { display: flex; align-items: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.area-toolbar { margin: 0; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--surface); justify-content: flex-end; }
+.field-actions { position: relative; }
+.field-actions .note-menu { min-width: 170px; max-width: calc(100vw - 24px); margin-top: 4px; }
+.field-badge { padding: 2px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--text); font-size: 12px; }
+.field-note, .area-note { margin: 12px 0 0; }
+.area-note { padding: 0 12px; }
+.field-hint { margin: 0; font-size: 12px; }
+.field-form { display: flex; flex-direction: column; gap: 10px; margin: 12px 12px 0 0; padding: 12px; max-width: 480px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.field-form label, .topic-row label { display: flex; flex-direction: column; gap: 4px; font-weight: 600; font-size: 13px; }
+.field-form input, .topic-row input, .topic-row select { min-width: 0; width: 100%; }
+.field-panel .note-confirm { justify-content: flex-start; margin-top: 12px; border: 1px solid var(--border); border-radius: var(--radius); }
+.topic-editor-wrap { flex: 1; min-height: 0; overflow: auto; padding: 12px; }
+.topic-editor { display: flex; flex-direction: column; gap: 12px; max-width: 900px; }
+.topic-editor h2 { margin: 0; font-size: 18px; }
+.topic-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.topic-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1.5fr) minmax(0, 1.5fr); gap: 8px; padding: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.topic-row .topic-description { grid-column: 1 / -1; }
+.topic-row-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
+.topic-row input[readonly] { background: var(--surface-2); color: var(--muted); }
+.topic-problems { margin: 0; padding-left: 20px; }
+.empty-area { padding: 24px 16px; }
+.agent-proposal { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin: 6px 0; }
+.agent-proposal p { margin: 0; font-size: 12px; }
+@media (max-width: 700px) {
+  .topic-row { grid-template-columns: minmax(0, 1fr); }
+}

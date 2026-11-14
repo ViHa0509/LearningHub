@@ -8,7 +8,7 @@ Nothing here logs file contents or keys.
 import hashlib
 import json
 import zipfile
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -31,6 +31,7 @@ from app.data_sync.backup import (
     AgentProviderRow,
     AgentSettingRow,
     ChatSessionRow,
+    FieldRow,
     LessonRow,
     Manifest,
     NoteRow,
@@ -44,9 +45,15 @@ from app.db import (
     AIProvider,
     ChatMessage,
     ChatSession,
+    LearningArea,
+    LearningField,
+    LearningTopic,
     Lesson,
     Note,
+    User,
 )
+from app.learning.topics import clean_topics
+from app.roadmaps import KEBAB
 from app.storage import FileStore, release_blob
 
 KEEP_AUTO_BACKUPS = 3
@@ -73,6 +80,8 @@ class Parsed:
     blob_names: list[str]  # archive member names of the files
     # None when the archive has no chat entry: the chat history is then left as it is.
     chats: list[ChatSessionRow] | None = None
+    # None when the archive has no fields entry: the user's fields are then left as they are.
+    fields: list[FieldRow] | None = None
 
 
 def _check_name(name: str) -> None:
@@ -123,6 +132,42 @@ def _rows[T: BaseModel](archive: zipfile.ZipFile, name: str, model: type[T], b: 
         raise RestoreRefused(f"{name} is not valid backup data") from None
 
 
+def _check_fields(fields: list[FieldRow]) -> None:
+    """Slugs are kebab-case and unique in the archive; every area's topics are a valid tree."""
+    slugs: set[str] = set()
+    for field in fields:
+        for area in field.areas:
+            if not KEBAB.match(area.slug) or area.slug in slugs:
+                raise RestoreRefused("data/learning_fields.json is not valid backup data")
+            slugs.add(area.slug)
+            rows = [(t.slug, t.title, t.description, t.parent_slug) for t in area.topics]
+            if clean_topics(rows)[1]:
+                raise RestoreRefused("data/learning_fields.json is not valid backup data")
+
+
+def _check_slugs_free(
+    session: Session, user_id: UUID, fields: list[FieldRow], reserved: Collection[str]
+) -> None:
+    """Refuse (before anything changes) an area slug that a roadmap or another user's area has."""
+    slugs = [a.slug for f in fields for a in f.areas]
+    if not slugs:
+        return
+    used = set(
+        session.scalars(
+            select(LearningArea.slug)
+            .join(LearningField, LearningField.id == LearningArea.field_id)
+            .where(LearningArea.slug.in_(slugs), LearningField.user_id != user_id)
+        )
+    )
+    used |= {slug for slug in slugs if slug in reserved}
+    if used:
+        names = ", ".join(f"'{slug}'" for slug in sorted(used))
+        raise RestoreRefused(
+            f"the area slug {names} is already used by a built-in roadmap or another user's "
+            "area; nothing was changed"
+        )
+
+
 def validate(path: Path) -> Parsed:
     """Check the whole archive; raise RestoreRefused before anything is written."""
     try:
@@ -168,6 +213,11 @@ def validate(path: Path) -> Parsed:
             if OPTIONAL_FILES["chat_sessions"] in names
             else None
         )
+        fields = (
+            _rows(archive, OPTIONAL_FILES["learning_fields"], FieldRow, budget)
+            if OPTIONAL_FILES["learning_fields"] in names
+            else None
+        )
         blobs = [n for n in names if n.startswith("files/")]
         for name in blobs:
             match = BLOB_KEY.match(name.removeprefix("files/"))
@@ -187,7 +237,9 @@ def validate(path: Path) -> Parsed:
         raise RestoreRefused("an agent uses a provider that is not in the archive")
     if any(p.provider_type not in PROVIDER_TYPES for p in providers):
         raise RestoreRefused("the archive has an unknown provider type")
-    return Parsed(manifest, notes, lessons, providers, assignments, switches, blobs, chats)
+    if fields is not None:
+        _check_fields(fields)
+    return Parsed(manifest, notes, lessons, providers, assignments, switches, blobs, chats, fields)
 
 
 def write_auto_backup(
@@ -208,6 +260,46 @@ def write_auto_backup(
     return target
 
 
+def _restore_fields(session: Session, user_id: UUID, fields: list[FieldRow]) -> None:
+    """Replace the user's fields (areas and topics go with them, ON DELETE CASCADE). Only the
+    admin keeps ``published``: a member's restore never publishes anything."""
+    admin = session.get(User, user_id)
+    may_publish = admin is not None and admin.role == "admin"
+    session.execute(delete(LearningField).where(LearningField.user_id == user_id))
+    session.flush()  # the freed area slugs can be used again below
+    for field in fields:
+        field_id = uuid4()
+        session.add(
+            LearningField(
+                id=field_id,
+                user_id=user_id,
+                title=field.title,
+                position=field.position,
+                published=field.published and may_publish,
+                created_at=field.created_at,
+                updated_at=field.updated_at,
+            )
+        )
+        session.flush()
+        for area in field.areas:
+            area_id = uuid4()
+            session.add(
+                LearningArea(
+                    id=area_id,
+                    field_id=field_id,
+                    slug=area.slug,
+                    title=area.title,
+                    description=area.description,
+                    position=area.position,
+                )
+            )
+            session.flush()
+            session.add_all(
+                LearningTopic(id=uuid4(), area_id=area_id, **topic.model_dump())
+                for topic in area.topics
+            )
+
+
 def restore_archive(
     path: Path,
     factory: sessionmaker[Session],
@@ -216,6 +308,7 @@ def restore_archive(
     version: str,
     now: Callable[[], datetime],
     user_id: UUID,
+    reserved_slugs: Collection[str] = (),
 ) -> dict[str, Any]:
     """Validate, back up the user's data, write the files, replace the user's rows.
 
@@ -223,6 +316,9 @@ def restore_archive(
     only ``user_id``'s rows are deleted. Blobs no note refers to any more are released.
     """
     parsed = validate(path)
+    if parsed.fields is not None:
+        with factory() as session:
+            _check_slugs_free(session, user_id, parsed.fields, reserved_slugs)
     with factory() as session:
         write_auto_backup(session, user_id, store, storage_dir, version, now())
     with zipfile.ZipFile(path) as archive:
@@ -290,6 +386,8 @@ def restore_archive(
                         )
                         for position, message in enumerate(chat.messages)
                     )
+            if parsed.fields is not None:
+                _restore_fields(session, user_id, parsed.fields)
             session.commit()
         except SQLAlchemyError:
             session.rollback()
@@ -306,6 +404,15 @@ def restore_archive(
             "chat_messages": sum(len(c.messages) for c in parsed.chats),
         }
     )
+    field_counts = (
+        {}
+        if parsed.fields is None
+        else {
+            "learning_fields": len(parsed.fields),
+            "learning_areas": sum(len(f.areas) for f in parsed.fields),
+            "learning_topics": sum(len(a.topics) for f in parsed.fields for a in f.areas),
+        }
+    )
     return {
         "counts": {
             "notes": len(parsed.notes),
@@ -315,6 +422,7 @@ def restore_archive(
             "agent_providers": len(parsed.assignments),
             "agent_settings": len(parsed.switches),
             **chat_counts,
+            **field_counts,
         },
         "providers_needing_key": [
             p.name for p in parsed.providers if PROVIDER_TYPES[p.provider_type].needs_key

@@ -38,6 +38,10 @@ class Domain:
     nodes: tuple[Node, ...]
     description: str | None = None
     order: int | None = None
+    # Set for areas of a learning field (app/learning/catalog.py); built-in roadmaps leave them.
+    field_id: str | None = None
+    field_title: str | None = None
+    editable: bool = False
 
 
 def _fail(path: Path, message: str) -> RoadmapError:

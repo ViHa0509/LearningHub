@@ -37,6 +37,7 @@ from app.routes import (
     data,
     data_upload,
     domains,
+    fields,
     lessons,
     news,
     notes,
@@ -45,8 +46,8 @@ from app.routes import (
 )
 from app.storage import FileStore, LocalFileStore, StorageError, SupabaseFileStore
 
-# Routes whose 422 answers use ``detail: [{field, msg}]`` (the provider settings forms).
-FIELD_ERROR_PREFIXES = ("/api/ai-providers", "/api/agents")
+# Routes whose 422 answers use ``detail: [{field, msg}]`` (the provider settings and field forms).
+FIELD_ERROR_PREFIXES = ("/api/ai-providers", "/api/agents", "/api/fields", "/api/areas")
 
 
 def build_store(settings: Settings) -> FileStore:
@@ -188,6 +189,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     for module in (
         data,
         domains,
+        fields,
         notes,
         lessons,
         agent,

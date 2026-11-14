@@ -1,20 +1,20 @@
 from typing import Annotated
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.auth.current import CurrentUser
 from app.db import Note, get_session
+from app.learning.catalog import UserCatalog
 from app.roadmaps import Domain, RoadmapCatalog
 from app.schemas import DomainSummary, NodeCounts, NodeOut, RoadmapOut
 
 router = APIRouter(prefix="/api/domains", tags=["domains"])
 
 
-def get_catalog(request: Request) -> RoadmapCatalog:
-    catalog: RoadmapCatalog = request.app.state.catalog
-    return catalog
+IT_FIELD_TITLE = "IT"
 
 
 def require_domain(catalog: RoadmapCatalog, domain_id: str) -> Domain:
@@ -24,32 +24,43 @@ def require_domain(catalog: RoadmapCatalog, domain_id: str) -> Domain:
     return domain
 
 
-@router.get("", response_model=list[DomainSummary])
-def list_domains(
-    request: Request, session: Annotated[Session, Depends(get_session)], user: CurrentUser
-) -> list[DomainSummary]:
-    linked = set(
+def linked_nodes(session: Session, user_id: UUID) -> set[str]:
+    return set(
         session.scalars(
             select(Note.node_id)
-            .where(Note.user_id == user.id, Note.node_id.is_not(None), Note.archived_at.is_(None))
+            .where(Note.user_id == user_id, Note.node_id.is_not(None), Note.archived_at.is_(None))
             .distinct()
         )
     )
-    return [
-        DomainSummary(
-            id=d.id,
-            title=d.title,
-            description=d.description,
-            node_count=len(d.nodes),
-            learned_nodes=sum(1 for n in d.nodes if n.full_id in linked),
-        )
-        for d in get_catalog(request).domains()
-    ]
+
+
+def domain_summary(domain: Domain, linked: set[str]) -> DomainSummary:
+    return DomainSummary(
+        id=domain.id,
+        title=domain.title,
+        description=domain.description,
+        node_count=len(domain.nodes),
+        learned_nodes=sum(1 for n in domain.nodes if n.full_id in linked),
+        field_id=domain.field_id,
+        field_title=domain.field_title or IT_FIELD_TITLE,
+        editable=domain.editable,
+    )
+
+
+@router.get("", response_model=list[DomainSummary])
+def list_domains(
+    catalog: UserCatalog, session: Annotated[Session, Depends(get_session)], user: CurrentUser
+) -> list[DomainSummary]:
+    linked = linked_nodes(session, user.id)
+    return [domain_summary(d, linked) for d in catalog.domains()]
 
 
 @router.get("/{domain_id}/roadmap", response_model=RoadmapOut)
-def read_roadmap(domain_id: str, request: Request) -> RoadmapOut:
-    domain = require_domain(get_catalog(request), domain_id)
+def read_roadmap(domain_id: str, catalog: UserCatalog) -> RoadmapOut:
+    return roadmap_out(require_domain(catalog, domain_id))
+
+
+def roadmap_out(domain: Domain) -> RoadmapOut:
     return RoadmapOut(
         id=domain.id,
         title=domain.title,
@@ -70,12 +81,12 @@ def read_roadmap(domain_id: str, request: Request) -> RoadmapOut:
 @router.get("/{domain_id}/counts", response_model=NodeCounts)
 def read_counts(
     domain_id: str,
-    request: Request,
+    catalog: UserCatalog,
     session: Annotated[Session, Depends(get_session)],
     user: CurrentUser,
 ) -> NodeCounts:
     """Number of notes per node of one domain; nodes without notes are left out."""
-    domain = require_domain(get_catalog(request), domain_id)
+    domain = require_domain(catalog, domain_id)
     known = {n.full_id: n.id for n in domain.nodes}
     rows = session.execute(
         select(Note.node_id, func.count())

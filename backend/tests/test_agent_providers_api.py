@@ -88,6 +88,7 @@ def test_list_agents(client: TestClient) -> None:
     assert [(a["id"], a["name"]) for a in agents] == [
         ("assistant", "Learning assistant"),
         ("lesson-writer", "Lesson writer"),
+        ("outline", "Topic outline"),
     ]
     for agent in agents:
         assert agent["description"]

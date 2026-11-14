@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import Markdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import type { ProposedTopics } from '../../api'
 import { effortLabel } from '../../lib/agentPrefs'
 import { formatSize } from '../../lib/attachments'
 import { Icon } from '../Icon'
@@ -27,9 +28,10 @@ interface Props {
   busy: boolean
   onRetry: (entryId: number) => void
   onStarter: (text: string) => void
+  onReview?: (proposed: ProposedTopics) => void
 }
 
-export function MessageList({ entries, busy, onRetry, onStarter }: Props) {
+export function MessageList({ entries, busy, onRetry, onStarter, onReview }: Props) {
   const end = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -43,7 +45,7 @@ export function MessageList({ entries, busy, onRetry, onStarter }: Props) {
         entry.role === 'user' ? (
           <UserMessage key={entry.id} entry={entry} busy={busy} onRetry={onRetry} />
         ) : (
-          <AssistantMessage key={entry.id} entry={entry} busy={busy} onRetry={onRetry} />
+          <AssistantMessage key={entry.id} entry={entry} busy={busy} onRetry={onRetry} onReview={onReview} />
         ),
       )}
       {busy && (
@@ -134,7 +136,17 @@ function UserMessage({ entry, busy, onRetry }: { entry: Entry; busy: boolean; on
   )
 }
 
-function AssistantMessage({ entry, busy, onRetry }: { entry: Entry; busy: boolean; onRetry: (id: number) => void }) {
+function AssistantMessage({
+  entry,
+  busy,
+  onRetry,
+  onReview,
+}: {
+  entry: Entry
+  busy: boolean
+  onRetry: (id: number) => void
+  onReview?: (proposed: ProposedTopics) => void
+}) {
   const by = entry.answeredBy
   return (
     <div className="agent-row">
@@ -145,6 +157,16 @@ function AssistantMessage({ entry, busy, onRetry }: { entry: Entry; busy: boolea
             {entry.content}
           </Markdown>
         </div>
+        {entry.proposal && onReview && (
+          <div className="agent-proposal">
+            <p className="muted">
+              {entry.proposal.topics.length} proposed topics for {entry.proposal.area}. Nothing is saved until you press Save in the editor.
+            </p>
+            <button type="button" className="primary" onClick={() => onReview(entry.proposal!)}>
+              Review in editor
+            </button>
+          </div>
+        )}
         {entry.steps && entry.steps.length > 0 && (
           <details className="agent-steps">
             <summary>

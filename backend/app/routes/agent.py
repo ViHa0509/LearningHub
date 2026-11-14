@@ -22,7 +22,7 @@ from app.agent.resolve import ResolveError, resolve_chain, web_search_enabled
 from app.agent.tools import AgentTools
 from app.auth.current import CurrentUser
 from app.db import get_session
-from app.roadmaps import RoadmapCatalog
+from app.learning.catalog import UserCatalog
 from app.routes.guard import box_of, factory_of, require_app_header
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
@@ -80,10 +80,24 @@ class SessionRef(BaseModel):
     title: str
 
 
+class ProposedTopic(BaseModel):
+    slug: str
+    title: str
+    description: str
+    parent: str | None
+
+
+class ProposedTopics(BaseModel):
+    area: str
+    topics: list[ProposedTopic]
+
+
 class ChatOut(BaseModel):
     reply: str
     steps: list[StepOut]
     changed_lessons: list[str]
+    # Ids of notes saved by the assistant in this answer; the panel refreshes the notes list.
+    changed_notes: list[str] = []
     stopped: bool
     provider: AnsweredBy
     fallback_used: bool
@@ -91,12 +105,15 @@ class ChatOut(BaseModel):
     session: SessionRef
     user_message_id: uuid.UUID
     assistant_message_id: uuid.UUID
+    # The outline agent's proposal (not saved): the panel opens it in the topic editor.
+    proposed_topics: ProposedTopics | None = None
 
 
 @router.post("/chat", response_model=ChatOut, dependencies=[Depends(require_app_header)])
 def chat(
     payload: ChatIn,
     request: Request,
+    catalog: UserCatalog,
     session: Annotated[Session, Depends(get_session)],
     user: CurrentUser,
 ) -> ChatOut:
@@ -145,14 +162,19 @@ def chat(
             headers={"Retry-After": str(wait)},
         )
 
-    catalog: RoadmapCatalog = request.app.state.catalog
     conversation = stored + [Message(role=m.role, text=m.content) for m in payload.messages]
     page = Page(**payload.page.model_dump())
     try:
         result = run_agent(
             chat_model,
             conversation,
-            AgentTools(session, catalog, user_id=user.id),
+            AgentTools(
+                session,
+                catalog,
+                user_id=user.id,
+                agent_id=agent.id,
+                store=request.app.state.store,
+            ),
             catalog,
             page,
             request.app.state.settings.agent_max_steps,
@@ -193,6 +215,7 @@ def chat(
         reply=result.reply,
         steps=steps,
         changed_lessons=result.changed_lessons,
+        changed_notes=result.changed_notes,
         stopped=result.stopped,
         provider=AnsweredBy(id=answered.id, name=answered.name, model=answered.model_name),
         fallback_used=chat_model.fallback_used,
@@ -200,4 +223,9 @@ def chat(
         session=SessionRef(id=saved.id, title=saved.title),
         user_message_id=rows[-2].id,
         assistant_message_id=rows[-1].id,
+        proposed_topics=(
+            ProposedTopics.model_validate(result.proposed_topics)
+            if result.proposed_topics is not None
+            else None
+        ),
     )

@@ -231,6 +231,12 @@ def tool_loop(
             result.steps.append(Step(tool=call.name, input=call.input, summary=outcome.summary))
             if outcome.changed_lesson and outcome.changed_lesson not in result.changed_lessons:
                 result.changed_lessons.append(outcome.changed_lesson)
+            saved = getattr(outcome, "changed_note", None)
+            if saved and saved not in result.changed_notes:
+                result.changed_notes.append(saved)
+            proposal = getattr(outcome, "proposal", None)
+            if proposal is not None:
+                result.proposed_topics = proposal
             messages.append(Message(role="tool", text=outcome.result, tool_call_id=call.id))
     result.stopped = True
     result.reply = stopped_reply(max_steps)

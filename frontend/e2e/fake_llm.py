@@ -5,9 +5,15 @@ with an OpenAI-style error body, fake-slow answers after 5 seconds.
 
 fake-ok answers "OK from fake", except when the last user message contains a trigger:
 [[markdown]] answers with a Markdown table, a code block and an HTML tag; [[history]] answers
-with the number of user messages received and the first one; [[echo]] answers
+with the number of user messages received and the first one; [[learn:<title>]] makes the assistant call save_learned_note and then report
+"LEARN saved <title>" or "LEARN refused <title>"; [[echo]] answers
 with one line per fact about what the model received (system prompt and last user message),
 so the UI tests can observe effort lines and attachment wrapping without a real provider.
+
+When the request offers the tool propose_topics (only the outline agent gets it) and the
+conversation has no tool result yet, the model answers with one propose_topics tool call for the
+area named in the last user message ("(<slug>)", as "Draft topics with agent" sends it); once the
+tool result is in, it answers "Proposed topics for review." as plain text.
 
 It also fakes the reference source (GitHub's tree API and raw files of the roadmap repository)
 under /roadmap-api and /roadmap-raw, so the resource sync never reaches GitHub or roadmap.sh.
@@ -19,6 +25,8 @@ POST /roadmap-control {"fail": true} makes the tree listing answer 500 until swi
 import asyncio
 import base64
 import hashlib
+import json
+import re
 import secrets
 import time
 from pathlib import Path
@@ -181,6 +189,64 @@ def _answer(payload: dict) -> str:
     return "OK from fake"
 
 
+OUTLINE_TOPICS = [
+    ("iam", "IAM", None),
+    ("iam-policies", "IAM policies", "iam"),
+    ("ec2", "EC2", None),
+    ("ec2-instance-types", "EC2 instance types", "ec2"),
+    ("s3", "S3", None),
+    ("s3-storage-classes", "S3 storage classes", "s3"),
+    ("vpc", "VPC", None),
+    ("vpc-subnets", "VPC subnets", "vpc"),
+]
+
+
+def _outline_call(payload: dict) -> dict | None:
+    """The propose_topics tool call the outline agent gets, until a tool result is in."""
+    names = {(t.get("function") or {}).get("name") for t in payload.get("tools") or []}
+    messages = payload.get("messages") or []
+    if "propose_topics" not in names or any(m.get("role") == "tool" for m in messages):
+        return None
+    users = [_text(m.get("content")) for m in messages if m.get("role") == "user"]
+    found = re.search(r"\(([a-z0-9-]+)\)", users[-1] if users else "")
+    topics = [
+        {"slug": slug, "title": title, "description": f"About {title}.", **({"parent": parent} if parent else {})}
+        for slug, title, parent in OUTLINE_TOPICS
+    ]
+    arguments = json.dumps({"area": found.group(1) if found else "", "topics": topics})
+    return {"id": "call_outline", "type": "function", "function": {"name": "propose_topics", "arguments": arguments}}
+
+
+LEARN_RE = re.compile(r"\[\[learn:([^\]]+)\]\]")
+
+
+def _learn(payload: dict) -> tuple[dict | None, str | None]:
+    """[[learn:<title>]] in the last user message: one save_learned_note call, then a text answer.
+
+    Returns (tool call, None) before the tool result of this turn is in, and (None, answer) after
+    it: "LEARN saved <title>" or "LEARN refused <title>" by what the tool result said.
+    """
+    names = {(t.get("function") or {}).get("name") for t in payload.get("tools") or []}
+    messages = payload.get("messages") or []
+    last_user = max((i for i, m in enumerate(messages) if m.get("role") == "user"), default=-1)
+    found = LEARN_RE.search(_text(messages[last_user].get("content"))) if last_user >= 0 else None
+    if not found or "save_learned_note" not in names:
+        return None, None
+    title = found.group(1).strip()
+    results = [_text(m.get("content")) for m in messages[last_user + 1 :] if m.get("role") == "tool"]
+    if results:
+        saved = '"saved": true' in results[-1]
+        return None, f"LEARN {'saved' if saved else 'refused'} {title}"
+    markdown = (
+        f"## Overview\n\n{title} is a topic written up by the fake model.\n\n"
+        "## Takeaways\n\n- First point\n- Second point\n\n"
+        "Raw tag: <script>alert(1)</script>\n"
+    )
+    arguments = json.dumps({"title": title, "markdown": markdown})
+    call = {"id": "call_learn", "type": "function", "function": {"name": "save_learned_note", "arguments": arguments}}
+    return call, None
+
+
 def error_response(status: int, kind: str, message: str, code: str | None) -> JSONResponse:
     body = {"error": {"message": message, "type": kind, "param": None, "code": code}}
     return JSONResponse(body, status_code=status)
@@ -203,6 +269,21 @@ async def chat_completions(payload: dict) -> JSONResponse:
         await asyncio.sleep(5)
     elif model != "fake-ok":
         return error_response(404, "invalid_request_error", f"The model `{model}` does not exist", "model_not_found")
+    call = _outline_call(payload)
+    learn_call, learn_text = _learn(payload)
+    if learn_call is not None:
+        message = {"role": "assistant", "content": None, "tool_calls": [learn_call]}
+        finish = "tool_calls"
+    elif learn_text is not None:
+        message = {"role": "assistant", "content": learn_text}
+        finish = "stop"
+    elif call is not None:
+        message: dict = {"role": "assistant", "content": None, "tool_calls": [call]}
+        finish = "tool_calls"
+    else:
+        text = "Proposed topics for review." if "propose_topics" in json.dumps(payload.get("tools") or []) else _answer(payload)
+        message = {"role": "assistant", "content": text}
+        finish = "stop"
     return JSONResponse(
         {
             "id": "chatcmpl-fake",
@@ -210,11 +291,7 @@ async def chat_completions(payload: dict) -> JSONResponse:
             "created": int(time.time()),
             "model": model,
             "choices": [
-                {
-                    "index": 0,
-                    "message": {"role": "assistant", "content": _answer(payload)},
-                    "finish_reason": "stop",
-                }
+                {"index": 0, "message": message, "finish_reason": finish}
             ],
             "usage": {"prompt_tokens": 1, "completion_tokens": 3, "total_tokens": 4},
         }

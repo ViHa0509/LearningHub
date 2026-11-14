@@ -43,6 +43,7 @@ def test_web_search_is_off_by_default_and_saved_per_agent(client: TestClient) ->
     assert [(a["id"], a["web_search"]) for a in agents] == [
         ("assistant", False),
         ("lesson-writer", False),
+        ("outline", False),
     ]
     response = set_web_search(client, "assistant", True)
     assert response.status_code == 200, response.text

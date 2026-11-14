@@ -37,6 +37,8 @@ export function useRefreshNotes() {
       client.invalidateQueries({ queryKey: queryKeys.notes }),
       client.invalidateQueries({ queryKey: queryKeys.domains }),
       client.invalidateQueries({ queryKey: ['counts'] }),
+      // Notes show whether their topic still exists (a removed topic).
+      client.invalidateQueries({ queryKey: queryKeys.notes }),
     ])
   }
 }
@@ -220,5 +222,22 @@ export function useServiceHealth(): ServiceHealth {
     nextRetryAt: dataUpdatedAt ? new Date(dataUpdatedAt + interval) : null,
     checking: isFetching,
     retryNow: check,
+  }
+}
+
+export function useFields() {
+  return useQuery({ queryKey: queryKeys.fields, queryFn: api.fields })
+}
+
+/** Refresh everything that depends on the fields, areas and topics after a change. */
+export function useRefreshFields() {
+  const client = useQueryClient()
+  return async () => {
+    await Promise.all([
+      client.invalidateQueries({ queryKey: queryKeys.fields }),
+      client.invalidateQueries({ queryKey: queryKeys.domains }),
+      client.invalidateQueries({ queryKey: ['roadmap'] }),
+      client.invalidateQueries({ queryKey: ['counts'] }),
+    ])
   }
 }

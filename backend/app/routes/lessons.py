@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.current import CurrentUser
 from app.db import Lesson, User, get_session
+from app.learning.catalog import UserCatalog
 from app.lesson_pdf import PdfImportError, extract_pdf
 from app.roadmaps import RoadmapCatalog
 from app.routes.guard import require_app_header
@@ -40,8 +41,7 @@ def extract_lesson_pdf(request: Request, file: Annotated[UploadFile, File()]) ->
     return ExtractedPdfOut(**extracted.__dict__)
 
 
-def require_node(request: Request, domain_id: str, node_id: str) -> str:
-    catalog: RoadmapCatalog = request.app.state.catalog
+def require_node(catalog: RoadmapCatalog, domain_id: str, node_id: str) -> str:
     full_id = f"{domain_id}/{node_id}"
     if not catalog.has_node(full_id):
         raise HTTPException(status_code=404, detail=f"unknown node '{full_id}'")
@@ -69,11 +69,11 @@ def to_out(full_id: str, lesson: Lesson | None) -> LessonOut:
 def read_lesson(
     domain_id: str,
     node_id: str,
-    request: Request,
+    catalog: UserCatalog,
     session: Annotated[Session, Depends(get_session)],
     user: CurrentUser,
 ) -> LessonOut:
-    full_id = require_node(request, domain_id, node_id)
+    full_id = require_node(catalog, domain_id, node_id)
     return to_out(full_id, find_lesson(session, user, full_id))
 
 
@@ -82,12 +82,12 @@ def write_lesson(
     domain_id: str,
     node_id: str,
     payload: LessonWrite,
-    request: Request,
+    catalog: UserCatalog,
     session: Annotated[Session, Depends(get_session)],
     user: CurrentUser,
 ) -> LessonOut:
     """Replace the node's lesson; an empty or whitespace-only body removes it."""
-    full_id = require_node(request, domain_id, node_id)
+    full_id = require_node(catalog, domain_id, node_id)
     lesson = find_lesson(session, user, full_id)
     if not payload.body.strip():
         if lesson is not None:

@@ -9,10 +9,10 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.config import Settings
 from app.db import get_session
 from app.job_status import load_status, save_status
+from app.learning.catalog import UserCatalog
 from app.resources.mapping import ResourceMapping
 from app.resources.store import node_resources
 from app.resources.sync import SOURCE, SyncJob, SyncJobs
-from app.roadmaps import RoadmapCatalog
 from app.routes.guard import require_app_header
 from app.routes.lessons import require_node
 from app.schemas import NodeResourcesOut, ResourceItem, ResourceSyncRequest, ResourceSyncStatus
@@ -76,12 +76,14 @@ def start_sync(payload: ResourceSyncRequest, request: Request) -> ResourceSyncSt
 
 @router.get("/sync/{domain}", response_model=ResourceSyncStatus)
 def sync_status(
-    domain: str, request: Request, session: Annotated[Session, Depends(get_session)]
+    domain: str,
+    request: Request,
+    catalog: UserCatalog,
+    session: Annotated[Session, Depends(get_session)],
 ) -> ResourceSyncStatus:
     """A roadmap without a mapping is "unavailable" (200, so lesson pages log no error);
     a domain that is not in the catalog is 404."""
     if domain not in _mappings(request):
-        catalog: RoadmapCatalog = request.app.state.catalog
         if not any(d.id == domain for d in catalog.domains()):
             raise HTTPException(status_code=404, detail=f"unknown domain '{domain}'")
         return ResourceSyncStatus(
@@ -106,9 +108,10 @@ def read_resources(
     domain_id: str,
     node_id: str,
     request: Request,
+    catalog: UserCatalog,
     session: Annotated[Session, Depends(get_session)],
 ) -> NodeResourcesOut:
-    full_id = require_node(request, domain_id, node_id)
+    full_id = require_node(catalog, domain_id, node_id)
     rows = node_resources(session, full_id)
     mapping = _mappings(request).get(domain_id)
     source_url = (

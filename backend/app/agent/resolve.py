@@ -139,11 +139,15 @@ def merged(before: AgentResult, after: AgentResult) -> AgentResult:
     """Steps a failed primary already ran stay in the trace before the fallback's."""
     changed = list(before.changed_lessons)
     changed += [c for c in after.changed_lessons if c not in changed]
+    notes = list(before.changed_notes)
+    notes += [c for c in after.changed_notes if c not in notes]
     return AgentResult(
         reply=after.reply,
         steps=[*before.steps, *after.steps],
         changed_lessons=changed,
+        changed_notes=notes,
         stopped=after.stopped,
+        proposed_topics=after.proposed_topics or before.proposed_topics,
     )
 
 

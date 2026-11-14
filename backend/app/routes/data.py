@@ -78,6 +78,7 @@ def run_restore(request: Request, path: Path, user_id: UUID) -> dict[str, Any]:
             request.app.version,
             lambda: datetime.now(UTC),
             user_id,
+            {d.id for d in state.catalog.domains()},
         )
     except RestoreRefused as refused:
         raise HTTPException(status_code=422, detail=refused.detail) from None

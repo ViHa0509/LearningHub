@@ -46,7 +46,7 @@ def clean_tables() -> None:
                 "TRUNCATE notes, lessons, agent_providers, ai_providers, node_resources, "
                 "news_items, agent_settings, users, oauth_accounts, sessions, auth_tokens, "
                 "app_settings, sync_keys, invitations, oauth_pending, sync_uploads, "
-                "chat_sessions, chat_messages"
+                "chat_sessions, chat_messages, learning_fields, learning_areas, learning_topics"
             )
         )
     engine.dispose()

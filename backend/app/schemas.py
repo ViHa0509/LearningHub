@@ -11,6 +11,10 @@ class DomainSummary(BaseModel):
     description: str | None
     node_count: int
     learned_nodes: int
+    # null / "IT" for the built-in roadmaps; editable is true for the owner of the field.
+    field_id: str | None = None
+    field_title: str | None = None
+    editable: bool = False
 
 
 class NodeOut(BaseModel):
@@ -40,6 +44,7 @@ class NoteOut(BaseModel):
     size_bytes: int
     node_id: str | None
     node_missing: bool
+    source: str
     archived_at: datetime | None
     created_at: datetime
     updated_at: datetime

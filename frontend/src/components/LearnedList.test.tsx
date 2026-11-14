@@ -73,6 +73,47 @@ describe('groupNotes', () => {
     const grouped = groupNotes(notes, [backend])
     expect(grouped.domains[0].nodes.map((g) => g.node.id)).toEqual(['caching', 'redis', 'auth'])
   })
+
+  // Scenario: Newest first
+  it('orders by last update: notes, then nodes, then domains; Unsorted last and newest first', () => {
+    const at = (day: number) => ({ updated_at: `2026-11-0${day}T00:00:00Z` })
+    const notes = [
+      makeNote('caching old', 'backend/caching', at(2)),
+      makeNote('apis today', 'backend/apis', at(5)),
+      makeNote('caching new', 'backend/caching', at(3)),
+      makeNote('ci yesterday', 'devops/ci-cd', at(6)),
+      makeNote('loose old', null, at(1)),
+      makeNote('loose new', null, at(7)),
+    ]
+    const grouped = groupNotes(notes, [backend, devops])
+    expect(grouped.domains.map((d) => d.domainId)).toEqual(['devops', 'backend'])
+    const nodes = grouped.domains[1].nodes
+    expect(nodes.map((g) => g.node.id)).toEqual(['apis', 'caching'])
+    expect(nodes[1].notes.map((n) => n.title)).toEqual(['caching new', 'caching old'])
+    expect(grouped.unsorted.map((n) => n.title)).toEqual(['loose new', 'loose old'])
+  })
+
+  it('shows Backend > APIs before Backend > Caching when APIs was updated more recently', () => {
+    renderList([
+      makeNote('caching', 'backend/caching', { updated_at: '2026-11-05T00:00:00Z' }),
+      makeNote('apis', 'backend/apis', { updated_at: '2026-11-06T00:00:00Z' }),
+    ])
+    const groups = screen.getAllByRole('group').map((g) => g.getAttribute('aria-label'))
+    expect(groups).toEqual(['Backend > APIs', 'Backend > Caching'])
+  })
+})
+
+describe('agent badge', () => {
+  it('marks a note the agent saved, and only that note', () => {
+    renderList([
+      makeNote('gRPC', 'backend/apis', { source: 'agent' }),
+      makeNote('Redis eviction', 'backend/caching'),
+    ])
+    const saved = screen.getByRole('button', { name: /^gRPC/ })
+    expect(within(saved).getByText('agent')).toBeInTheDocument()
+    const imported = screen.getByRole('button', { name: 'Redis eviction' })
+    expect(within(imported).queryByText('agent')).not.toBeInTheDocument()
+  })
 })
 
 describe('LearnedList actions', () => {

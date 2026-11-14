@@ -525,6 +525,7 @@ def test_mcp_handshake_and_tool_list(mcp: McpClient) -> None:
         "write_lesson",
         "list_node_resources",
         "fetch_reference",
+        "save_learned_note",
     ]
     assert all(t["inputSchema"]["type"] == "object" and t["description"] for t in tools)
 

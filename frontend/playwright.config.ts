@@ -53,6 +53,8 @@ export const OWNER_STATE = join(import.meta.dirname, 'e2e-results', '.auth', 'ow
 
 /** The responsive-layout checks: run by the phone and tablet projects only. */
 const RESPONSIVE_SPEC = 'responsive.e2e.ts'
+/** Also run by the phone project (its phone: test only); the other tests of the file skip there. */
+const PHONE_EXTRA_SPEC = 'learning-fields.e2e.ts'
 
 export default defineConfig({
   testDir: './e2e',
@@ -77,7 +79,7 @@ export default defineConfig({
     {
       name: 'phone',
       dependencies: ['setup'],
-      testMatch: RESPONSIVE_SPEC,
+      testMatch: [RESPONSIVE_SPEC, PHONE_EXTRA_SPEC],
       use: { storageState: OWNER_STATE, viewport: { width: 390, height: 844 }, hasTouch: true },
     },
     {

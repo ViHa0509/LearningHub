@@ -10,7 +10,7 @@ import threading
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, ClassVar
@@ -324,7 +324,8 @@ def test_read_synced_node_in_order(api: TestClient) -> None:
     assert body["node_id"] == "frontend/html"
     assert (body["source"], body["commit"]) == ("roadmap.sh", COMMIT)
     assert body["source_url"] == "https://roadmap.sh/frontend"
-    assert datetime.fromisoformat(body["synced_at"]) <= datetime.now(UTC)
+    # The database clock may run a few ms ahead of this process.
+    assert datetime.fromisoformat(body["synced_at"]) <= datetime.now(UTC) + timedelta(seconds=5)
     assert [(i["type"], i["title"]) for i in body["items"]] == [
         ("official", "Example Spec"),
         ("course", "A Course"),

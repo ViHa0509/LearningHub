@@ -347,6 +347,7 @@ class StreamReader:
         self.with_tools = with_tools
         self.steps: list[Step] = []
         self.changed_lessons: list[str] = []
+        self.changed_notes: list[str] = []
         self.tool_uses = 0
         self.over_limit = False
         self.server_failed = False
@@ -440,6 +441,9 @@ class StreamReader:
             changed = meta.get("changed_lesson")
             if isinstance(changed, str) and changed and changed not in self.changed_lessons:
                 self.changed_lessons.append(changed)
+            saved = meta.get("changed_note")
+            if isinstance(saved, str) and saved and saved not in self.changed_notes:
+                self.changed_notes.append(saved)
 
 
 def classify(result: dict[str, Any] | None, stderr: str, returncode: int | None) -> ProviderError:
@@ -611,6 +615,7 @@ class ClaudeCodeAgent:
                 reply=stopped_reply(max_steps),
                 steps=reader.steps,
                 changed_lessons=reader.changed_lessons,
+                changed_notes=reader.changed_notes,
                 stopped=True,
             )
         if reader.server_failed:
@@ -624,6 +629,7 @@ class ClaudeCodeAgent:
             reply=reply or "(The model gave an empty answer.)",
             steps=reader.steps,
             changed_lessons=reader.changed_lessons,
+            changed_notes=reader.changed_notes,
         )
 
     def run(

@@ -243,6 +243,11 @@ export function LearnedList({
             onClick={() => onOpenNote(note)}
           >
             {note.title}
+            {note.source === 'agent' && (
+              <span className="tag agent" title="Saved by the learning agent">
+                agent
+              </span>
+            )}
             {note.node_missing && <span className="tag warn" title={`Node ${note.node_id} no longer exists`}>missing node</span>}
           </button>
         )}

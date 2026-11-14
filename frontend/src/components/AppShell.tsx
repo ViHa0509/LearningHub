@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { ChatPage, Me, Note } from '../api'
+import type { ChatPage, Me, Note, ProposedTopics } from '../api'
 import {
   useAllRoadmaps,
   useArchivedNotes,
@@ -141,6 +141,12 @@ function MainApp({ theme, onThemeChange, health, user }: MainProps) {
   const [lastNodeId, setLastNodeId] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
   const [agentRequest, setAgentRequest] = useState<AgentRequest | null>(null)
+  // Topics the outline agent proposed: the editor of their area opens filled with them.
+  const [proposal, setProposal] = useState<ProposedTopics | null>(null)
+  const reviewTopics = (proposed: ProposedTopics) => {
+    setProposal(proposed)
+    navigate({ page: 'roadmap', domain: proposed.area })
+  }
   const providers = useProviders()
   const agentAvailable = (providers.data ?? []).some((p) => p.is_active)
 
@@ -189,7 +195,7 @@ function MainApp({ theme, onThemeChange, health, user }: MainProps) {
 
   let center: React.ReactNode = null
   if (route.page === 'home') {
-    center = domains.data && <HomePage domains={domains.data} />
+    center = domains.data && <HomePage />
   } else if (route.page === 'roadmap') {
     center = domains.data && (
       <RoadmapMap
@@ -198,6 +204,13 @@ function MainApp({ theme, onThemeChange, health, user }: MainProps) {
         selectedNodeId={selectedNodeId}
         onSelectDomain={(domain) => navigate({ page: 'roadmap', domain })}
         onSelectNode={openLesson}
+        proposal={proposal}
+        onProposalTaken={() => setProposal(null)}
+        onDraft={
+          agentAvailable
+            ? () => askAgent(`Propose the topics of this area (${route.domain}).`, 'outline')
+            : undefined
+        }
       />
     )
   } else if (route.page === 'news') {
@@ -348,6 +361,7 @@ function MainApp({ theme, onThemeChange, health, user }: MainProps) {
           page={page}
           request={agentRequest}
           drawer={phone}
+          onReviewTopics={reviewTopics}
         />
       </div>
 

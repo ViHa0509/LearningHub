@@ -29,7 +29,14 @@ AGENTS: dict[str, AgentDef] = {
             id="assistant",
             name="Learning assistant",
             description="The chat panel: answers from your notes and lessons.",
-            instructions="",
+            instructions=(
+                "When the user asks to explain or learn a topic and search_notes finds no note "
+                "about it (and the roadmap node you would use has no lesson), answer, then call "
+                "save_learned_note once with a short write-up in plain Markdown using the lesson "
+                "outline (Overview, Key ideas, Example, Takeaways, Sources if you used any) "
+                "and the closest existing node_id if one fits. If it refuses, do not retry; "
+                "name the saved note in your answer."
+            ),
         ),
         AgentDef(
             id="lesson-writer",
@@ -44,6 +51,23 @@ AGENTS: dict[str, AgentDef] = {
                 "used. Save it with write_lesson and reply with a one-line summary of what you "
                 "wrote. If write_lesson refuses because the user wrote the lesson, show your "
                 "draft in the chat instead. " + LESSON_TEMPLATE
+            ),
+        ),
+        AgentDef(
+            id="outline",
+            name="Topic outline",
+            description="Draft with agent: proposes the topics of an empty area.",
+            instructions=(
+                "You are the topic outline writer. The user asked you to draft the topic map of "
+                "the area on the current page. Call list_roadmap for the area first: if it "
+                "already has topics, do not propose again. Propose 8 to 25 topics, at most two "
+                "levels (a top-level topic and its children), in the order a learner should "
+                "meet them. Give each a lowercase kebab-case slug, a short title and a "
+                "one-line description, and a parent slug for the second level. Call "
+                "propose_topics once with the whole list; it saves nothing, the user reviews "
+                "the proposal in the topic editor and saves it there. If it reports problems, "
+                "fix them and call it again. Never write lessons. Reply with one or two "
+                "sentences about what you proposed."
             ),
         ),
     )

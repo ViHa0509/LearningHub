@@ -6,6 +6,33 @@ export interface DomainSummary {
   description: string | null
   node_count: number
   learned_nodes: number
+  /** The learning field the area belongs to; null for the built-in IT roles. */
+  field_id: string | null
+  field_title: string
+  /** The signed-in user owns the area's field (the built-in roles are never editable). */
+  editable: boolean
+}
+
+/** One learning field (a home-page tab) with its areas; the virtual IT field has id `it`. */
+export interface LearningField {
+  id: string
+  title: string
+  order: number
+  published: boolean
+  editable: boolean
+  areas: DomainSummary[]
+}
+
+export interface TopicInput {
+  slug: string
+  title: string
+  description?: string | null
+  parent?: string | null
+}
+
+export interface ProposedTopics {
+  area: string
+  topics: TopicInput[]
 }
 
 export interface RoadmapNode {
@@ -35,6 +62,8 @@ export interface Note {
   size_bytes: number
   node_id: string | null
   node_missing: boolean
+  /** 'agent' for a note the assistant saved, 'import' for an uploaded page. */
+  source: 'import' | 'agent'
   archived_at: string | null
   created_at: string
   updated_at: string
@@ -307,6 +336,8 @@ export interface ChatReply {
   reply: string
   steps: AgentStep[]
   changed_lessons: string[]
+  /** Ids of notes the assistant saved in this answer; the notes list is refreshed. */
+  changed_notes?: string[]
   stopped: boolean
   provider: { id: string; name: string; model: string }
   fallback_used: boolean
@@ -315,6 +346,8 @@ export interface ChatReply {
   session: { id: string; title: string }
   user_message_id: string
   assistant_message_id: string
+  /** Set by the outline agent: topics to review in the editor (nothing is saved). */
+  proposed_topics?: ProposedTopics | null
 }
 
 export interface ChatRequest {
@@ -542,6 +575,18 @@ export const api = {
   domains: () => request<DomainSummary[]>('/api/domains'),
   roadmap: (domain: string) => request<Roadmap>(`/api/domains/${domain}/roadmap`),
   counts: (domain: string) => request<NodeCounts>(`/api/domains/${domain}/counts`),
+  fields: () => request<LearningField[]>('/api/fields'),
+  createField: (title: string) => request<LearningField>('/api/fields', json('POST', { title })),
+  updateField: (id: string, change: { title?: string; order?: number; published?: boolean }) =>
+    request<LearningField>(`/api/fields/${id}`, json('PATCH', change)),
+  deleteField: (id: string) => request<void>(`/api/fields/${id}`, { method: 'DELETE' }),
+  createArea: (fieldId: string, area: { slug: string; title: string; description?: string }) =>
+    request<DomainSummary>(`/api/fields/${fieldId}/areas`, json('POST', area)),
+  updateArea: (slug: string, change: { title?: string; description?: string; order?: number }) =>
+    request<DomainSummary>(`/api/areas/${slug}`, json('PATCH', change)),
+  deleteArea: (slug: string) => request<void>(`/api/areas/${slug}`, { method: 'DELETE' }),
+  saveTopics: (slug: string, topics: TopicInput[]) =>
+    request<Roadmap>(`/api/areas/${slug}/topics`, json('PUT', { topics })),
   notes: () => request<Note[]>('/api/notes'),
   archivedNotes: () => request<Note[]>('/api/notes?archived=true'),
   /** Imports files in one request. */
@@ -714,6 +759,7 @@ export const api = {
 export const queryKeys = {
   health: ['health'] as const,
   domains: ['domains'] as const,
+  fields: ['fields'] as const,
   roadmap: (domain: string) => ['roadmap', domain] as const,
   counts: (domain: string) => ['counts', domain] as const,
   notes: ['notes'] as const,

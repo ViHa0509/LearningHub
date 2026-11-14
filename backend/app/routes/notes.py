@@ -11,9 +11,9 @@ from app.auth.current import CurrentUser
 from app.config import Settings
 from app.db import Note, User, get_session
 from app.extract import UndecodableError, decode_html, extract
+from app.learning.catalog import UserCatalog
 from app.lesson_pdf import PdfImportError, extract_pdf, pdf_note_html
 from app.roadmaps import RoadmapCatalog
-from app.routes.domains import get_catalog
 from app.routes.guard import require_app_header
 from app.schemas import (
     ImportOutcome,
@@ -75,6 +75,7 @@ def note_out(note: Note, catalog: RoadmapCatalog) -> NoteOut:
         size_bytes=note.size_bytes,
         node_id=note.node_id,
         node_missing=note.node_id is not None and not catalog.has_node(note.node_id),
+        source=note.source,
         archived_at=note.archived_at,
         created_at=note.created_at,
         updated_at=note.updated_at,
@@ -104,11 +105,11 @@ def rejected(filename: str, reason: str) -> ImportOutcome:
 @router.post("/import", response_model=ImportResult)
 def import_notes(
     request: Request,
+    catalog: UserCatalog,
     session: SessionDep,
     user: CurrentUser,
     files: Annotated[list[UploadFile], File()],
 ) -> ImportResult:
-    catalog = get_catalog(request)
     store = get_store(request)
     limit = get_settings_from(request).max_upload_bytes
     results: list[ImportOutcome] = []
@@ -181,14 +182,13 @@ def import_notes(
 
 @router.get("", response_model=list[NoteOut])
 def list_notes(
-    request: Request,
+    catalog: UserCatalog,
     session: SessionDep,
     user: CurrentUser,
     node: Annotated[str | None, Query()] = None,
     unsorted: Annotated[bool, Query()] = False,
     archived: Annotated[bool, Query()] = False,
 ) -> list[NoteOut]:
-    catalog = get_catalog(request)
     if archived and node is None and not unsorted:
         query = (
             select(Note)
@@ -211,16 +211,15 @@ def list_notes(
 
 @router.get("/{note_id}", response_model=NoteDetail)
 def read_note(
-    note_id: UUID, request: Request, session: SessionDep, user: CurrentUser
+    note_id: UUID, catalog: UserCatalog, session: SessionDep, user: CurrentUser
 ) -> NoteDetail:
-    return note_detail(require_note(session, user, note_id), get_catalog(request))
+    return note_detail(require_note(session, user, note_id), catalog)
 
 
 @router.patch("/{note_id}", response_model=NoteDetail)
 def update_note(
-    note_id: UUID, update: NoteUpdate, request: Request, session: SessionDep, user: CurrentUser
+    note_id: UUID, update: NoteUpdate, catalog: UserCatalog, session: SessionDep, user: CurrentUser
 ) -> NoteDetail:
-    catalog = get_catalog(request)
     note = require_note(session, user, note_id)
     fields = update.model_fields_set
 
@@ -252,10 +251,10 @@ def replace_content(
     note_id: UUID,
     update: NoteContentUpdate,
     request: Request,
+    catalog: UserCatalog,
     session: SessionDep,
     user: CurrentUser,
 ) -> NoteDetail:
-    catalog = get_catalog(request)
     store = get_store(request)
     limit = get_settings_from(request).max_upload_bytes
     note = require_note(session, user, note_id)
