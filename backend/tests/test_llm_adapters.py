@@ -162,8 +162,17 @@ def test_anthropic_sends_only_set_parameters_and_a_default_max_tokens() -> None:
     AnthropicChat(client, "claude-sonnet-5-5", {"temperature": 0.2}).complete(
         "SYS", CONVERSATION[:1], []
     )
-    assert set(create.kwargs) == {"model", "system", "messages", "max_tokens", "temperature"}
+    assert set(create.kwargs) == {
+        "model",
+        "system",
+        "messages",
+        "max_tokens",
+        "temperature",
+        "cache_control",
+    }
     assert create.kwargs["max_tokens"] == 2048
+    # Prompt caching is on by default (change lesson-template).
+    assert create.kwargs["cache_control"] == {"type": "ephemeral"}
     assert create.kwargs["temperature"] == 0.2
 
 
@@ -188,7 +197,16 @@ def test_anthropic_sends_every_supported_parameter() -> None:
         "top_k": 40,
         "stop_sequences": ["###"],
         "extra_body": {"metadata": {"user_id": "u"}},
+        "cache_control": {"type": "ephemeral"},
     }
+
+
+def test_anthropic_prompt_cache_can_be_turned_off() -> None:
+    client, create = anthropic_client(anthropic_answer("hi"))
+    AnthropicChat(client, "claude-sonnet-5-5", {"prompt_cache": False}).complete(
+        "SYS", CONVERSATION[:1], []
+    )
+    assert "cache_control" not in create.kwargs
 
 
 # --- errors and model listing ---------------------------------------------------------------

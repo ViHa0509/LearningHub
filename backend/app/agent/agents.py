@@ -11,6 +11,17 @@ class AgentDef:
     instructions: str
 
 
+# The lesson page draws the layout (title, contents, numbered cards, callouts); the writer sends
+# only this Markdown outline. No HTML or CSS: the template is never generated again.
+LESSON_TEMPLATE = (
+    "Lesson format (plain Markdown, about 500 to 900 words, no title line, no HTML or CSS): "
+    "one or two intro sentences, then these '## ' sections in this order: Overview; Key ideas; "
+    "How it works; Example; Common pitfalls; Key takeaways (3 to 5 bullets); Sources (the "
+    "URLs). Leave out a section that has nothing to say, except Key takeaways. Use at most "
+    "two callouts, written as '> [!KEY] text', '> [!TIP] text' or '> [!WARNING] text'. Use a "
+    "table only to compare options, and fenced code blocks with the language for code."
+)
+
 AGENTS: dict[str, AgentDef] = {
     agent.id: agent
     for agent in (
@@ -32,7 +43,7 @@ AGENTS: dict[str, AgentDef] = {
                 "words, never copying text, and end it with a 'Sources' list of the URLs you "
                 "used. Save it with write_lesson and reply with a one-line summary of what you "
                 "wrote. If write_lesson refuses because the user wrote the lesson, show your "
-                "draft in the chat instead."
+                "draft in the chat instead. " + LESSON_TEMPLATE
             ),
         ),
     )

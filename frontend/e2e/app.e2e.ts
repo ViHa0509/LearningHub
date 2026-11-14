@@ -215,3 +215,59 @@ test('a provider added in Settings enables the chat without a restart', async ({
   )
   expect(errors).toEqual([])
 })
+
+const API = 'http://127.0.0.1:8001'
+const H = { 'X-LearningHub': '1' }
+
+// Spec: lesson-pages - Lesson content is rendered safely: the lesson template (change lesson-template).
+test('a lesson in the template shows contents, numbered cards, callouts and a takeaways card', async ({ page }) => {
+  const errors = watchErrors(page)
+  const text = [
+    'Caching keeps answers close to where they are needed.',
+    '',
+    '## Overview',
+    'A cache stores the results of slow work.',
+    '',
+    '> [!KEY] Cache what is read often and changes rarely.',
+    '',
+    '## How it works',
+    '| Policy | Evicts |',
+    '| --- | --- |',
+    '| LRU | least recently used |',
+    '| LFU | least frequently used |',
+    '',
+    '```python',
+    'value = cache.get(key) or load(key)',
+    '```',
+    '',
+    '> [!WARNING] Stale data is the price of speed.',
+    '',
+    '## Key takeaways',
+    '- Measure the hit rate.',
+    '- Pick an eviction policy on purpose.',
+  ].join('\n')
+  const saved = await page.request.put(`${API}/api/lessons/backend/redis`, { headers: H, data: { body: text } })
+  expect(saved.ok(), await saved.text()).toBeTruthy()
+  try {
+    await page.goto('/#/lesson/backend/redis')
+    const lesson = page.getByRole('article', { name: 'Lesson: Redis' })
+    const toc = lesson.getByRole('navigation', { name: 'On this page' })
+    await expect(toc.getByRole('link')).toHaveText(['Overview', 'How it works', 'Key takeaways'])
+    await expect(lesson.getByText('1 min read · 3 sections')).toBeVisible()
+    const body = lesson.getByTestId('lesson-body')
+    await expect(body.locator('section.lesson-card h2')).toHaveText(['Overview', 'How it works', 'Key takeaways'])
+    await expect(body.locator('section.lesson-card.takeaways')).toHaveCount(1)
+    await expect(body.getByRole('complementary', { name: 'Key idea' })).toContainText('Cache what is read often')
+    await expect(body.getByRole('complementary', { name: 'Watch out' })).toContainText('Stale data')
+    await expect(body.getByRole('table')).toContainText('least frequently used')
+    await expect(body.locator('.code-block')).toContainText('cache.get(key)')
+    await page.emulateMedia({ colorScheme: 'light' })
+    await shot(page, 'lesson-template')
+    await page.emulateMedia({ colorScheme: 'dark' })
+    await shot(page, 'lesson-template-dark')
+    await page.emulateMedia({ colorScheme: 'light' })
+    expect(errors).toEqual([])
+  } finally {
+    await page.request.put(`${API}/api/lessons/backend/redis`, { headers: H, data: { body: '' } })
+  }
+})

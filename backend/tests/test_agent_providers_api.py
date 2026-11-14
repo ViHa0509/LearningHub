@@ -138,6 +138,10 @@ def test_different_providers_per_agent(client: TestClient) -> None:
     # The lesson writer gets its own instructions on top of the shared prompt.
     assert "lesson writer" in fake.by_name["Local qwen"].calls[0]["system"]
     assert "lesson writer" not in fake.by_name["Claude main"].calls[0]["system"]
+    # ... including the fixed lesson outline (change lesson-template), and only the writer.
+    assert "## " in fake.by_name["Local qwen"].calls[0]["system"]
+    assert "Key takeaways" in fake.by_name["Local qwen"].calls[0]["system"]
+    assert "Key takeaways" not in fake.by_name["Claude main"].calls[0]["system"]
     used = client.get(f"/api/ai-providers/{claude}").json()["used_by"]
     assert used == [
         {"agent_id": "assistant", "agent_name": "Learning assistant", "role": "primary"}

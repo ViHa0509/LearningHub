@@ -344,6 +344,50 @@ a { color: var(--accent); }
 .section-actions button:disabled { opacity: 0.6; cursor: default; }
 .pdf-note { margin: 4px 0 8px; font-size: 13px; }
 
+/* Lesson template (change lesson-template): the app draws the layout, the lesson is plain Markdown. */
+.lesson-body { display: flex; flex-direction: column; gap: 14px; }
+.lesson-meta { margin: 0; font-size: 12px; letter-spacing: 0.02em; }
+.lesson-intro > :first-child { margin-top: 0; }
+.lesson-intro p:first-child { font-size: 16px; color: var(--text); }
+.lesson-toc {
+  padding: 12px 16px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px;
+}
+.lesson-toc-title { margin: 0 0 6px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.markdown .lesson-toc ol { margin: 0; padding-left: 20px; columns: 2 220px; column-gap: 24px; }
+.lesson-toc li { break-inside: avoid; padding: 2px 0; font-size: 14px; }
+.lesson-toc a { color: var(--text); text-decoration: none; }
+.lesson-toc a:hover { color: var(--accent); text-decoration: underline; }
+.lesson-card {
+  padding: 16px 20px 18px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06); scroll-margin-top: 12px;
+}
+.lesson-card > :last-child { margin-bottom: 0; }
+.markdown .lesson-card h2 { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; font-size: 18px; }
+.lesson-sections { display: flex; flex-direction: column; gap: 14px; }
+.lesson-card h2[data-n]::before {
+  content: attr(data-n); display: inline-flex; flex: none; align-items: center; justify-content: center; width: 28px; height: 28px;
+  border-radius: 8px; background: var(--accent-soft); color: var(--accent); font-size: 14px; font-weight: 700;
+}
+.lesson-card.takeaways { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
+.lesson-card.takeaways h2[data-n]::before { background: var(--accent); color: var(--surface); }
+.lesson-card.takeaways li::marker { color: var(--accent); }
+.lesson-callout {
+  margin: 12px 0; padding: 10px 14px; border: 1px solid var(--border); border-left: 4px solid var(--callout, var(--accent));
+  border-radius: 8px; background: color-mix(in srgb, var(--callout, var(--accent)) 8%, var(--surface));
+}
+.lesson-callout > :last-child { margin-bottom: 0; }
+.lesson-callout-label { margin: 0 0 4px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--callout, var(--accent)); }
+.lesson-callout.tip { --callout: var(--secondary); }
+.lesson-callout.warning { --callout: var(--warn); }
+.lesson-callout.key { --callout: var(--accent); }
+.lesson-callout.note { --callout: var(--muted); }
+.lesson-table { overflow-x: auto; margin: 10px 0; border: 1px solid var(--border); border-radius: 8px; }
+.markdown .lesson-table table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.lesson-table th, .lesson-table td { padding: 7px 10px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+.lesson-table th { background: var(--surface-2); font-weight: 600; }
+.lesson-table tr:last-child td { border-bottom: 0; }
+.lesson-body .code-block { margin: 10px 0; }
+
 /*
  * Export PDF: while LessonPage prints, <html> carries .printing-lesson. The printed page holds only
  * the lesson (breadcrumb, title, description, rendered lesson, references with their URLs), always
@@ -380,7 +424,10 @@ a { color: var(--accent); }
   html.printing-lesson .lesson-editor,
   html.printing-lesson .reference-host,
   html.printing-lesson .reference-source,
-  html.printing-lesson .references-empty { display: none !important; }
+  html.printing-lesson .references-empty,
+  html.printing-lesson .lesson-toc,
+  html.printing-lesson .code-block-bar button { display: none !important; }
+  html.printing-lesson .lesson-card { break-inside: avoid-page; box-shadow: none; }
   html.printing-lesson .app-frame, html.printing-lesson .app-shell { display: block; height: auto; }
   html.printing-lesson .pane.center { overflow: visible; }
   html.printing-lesson .lesson-page { max-width: none; padding: 0; }

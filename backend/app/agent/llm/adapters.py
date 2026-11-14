@@ -273,6 +273,11 @@ class AnthropicChat(_Adapter):
         }
         if tools:
             kwargs["tools"] = to_anthropic_tools(tools)
+        # Prompt caching: the tools, system prompt and conversation so far are read from the
+        # cache on the next call (each tool step of a run, the next message within minutes).
+        # A prefix below the model's minimum is simply not cached. Off with "prompt_cache": false.
+        if self._config.get("prompt_cache", True) is not False:
+            kwargs["cache_control"] = {"type": "ephemeral"}
         return kwargs
 
     # The agent's Internet search switch works with this adapter (Anthropic's web search tool).

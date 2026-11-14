@@ -81,6 +81,13 @@ Plugin `ai-sdlc-kit` 0.4.0 (hooks: secret and command guards; gates from `.sdlc/
 - Main session (opus): specs, design, migrations, security (sandboxing, agent tools), blocked tasks, final review.
 - Pushing to `main` on GitHub is authorized for this repo (no PR tool here yet); never force-push.
 
+### Token use
+
+- Start Claude Code in `D:\Learning-hub`: the kit's agents and hooks load only from this repo's `.claude/settings.json`.
+- The main session plans and reviews; code goes to `implementer` (sonnet), lookups across files to `scout` (haiku), tests and screenshots to `qc-e2e` / `qc-ui` (sonnet). Do not do an implementer's task in the main session.
+- Run the full backend suite and the full e2e in the background; locally run the e2e files a change touches, CI runs the whole suite before deploying.
+- Agent output that has a fixed layout (lessons) is written as plain Markdown into a template the app renders; never ask a model to produce HTML or CSS layout.
+
 ## Definition of done
 
 - [ ] Every command marked as a check in Commands passes.
@@ -93,3 +100,4 @@ Plugin `ai-sdlc-kit` 0.4.0 (hooks: secret and command guards; gates from `.sdlc/
 
 <!-- One line per mistake an agent really made here: date - mistake - rule that prevents it.
      Add a line when the same mistake happens a second time. -->
+- 2026-11-14 - a whole session ran in the kit folder, so no kit agent loaded and every change was done on the main model (no verifier report) - start sessions in this repo (Token use).

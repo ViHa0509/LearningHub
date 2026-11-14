@@ -1,10 +1,10 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
-import Markdown from 'react-markdown'
 import { api, queryKeys, type Note, type RoadmapNode } from '../api'
 import { routeHash } from '../lib/route'
 import { tooLargeReason, useMaxUploadBytes } from '../lib/uploadLimit'
 import { Icon } from './Icon'
+import { LessonBody } from './LessonBody'
 import { LessonReferences } from './LessonReferences'
 
 interface Props {
@@ -292,10 +292,7 @@ function LessonContent({ domain, node, title, onDraft }: LessonContentProps) {
           </div>
         </div>
       ) : body ? (
-        <div className="markdown" data-testid="lesson-body">
-          {/* react-markdown never renders raw HTML from the text (no rehype-raw). */}
-          <Markdown>{body}</Markdown>
-        </div>
+        <LessonBody text={body} />
       ) : (
         lesson.data && (
           <div className="empty-lesson">
