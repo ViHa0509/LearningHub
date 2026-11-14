@@ -6,6 +6,7 @@ back into a ``Turn``. Clients are injected so tests never touch the network.
 
 import json
 from collections.abc import Callable, Sequence
+from functools import partial
 from typing import Any
 
 import anthropic
@@ -15,6 +16,26 @@ from app.agent.llm.errors import ProviderError, classify_anthropic, classify_ope
 from app.agent.messages import Message, ToolCall, ToolSpec, Turn
 
 ANTHROPIC_DEFAULT_MAX_TOKENS = 2048
+# Anthropic's own web search (a server tool: it runs at Anthropic, results come back as blocks).
+WEB_SEARCH_MAX_USES = 5
+# The dynamic-filtering version needs a recent model; older models take the basic one.
+_WEB_SEARCH_NEW = (
+    "claude-fable",
+    "claude-mythos",
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "claude-opus-4-6",
+    "claude-opus-4-7",
+    "claude-opus-4-8",
+    "claude-sonnet-4-6",
+)
+MAX_PAUSED_TURNS = 3
+
+
+def web_search_tool(model: str) -> dict[str, Any]:
+    version = "web_search_20260209" if model.startswith(_WEB_SEARCH_NEW) else "web_search_20250305"
+    return {"type": version, "name": "web_search", "max_uses": WEB_SEARCH_MAX_USES}
+
 
 # --- Anthropic ---------------------------------------------------------------
 
@@ -24,6 +45,9 @@ def to_anthropic_messages(messages: Sequence[Message]) -> list[dict[str, Any]]:
     for m in messages:
         if m.role == "user":
             out.append({"role": "user", "content": m.text})
+        elif m.role == "assistant" and m.raw:
+            # Server tool blocks (web search) go back exactly as the API returned them.
+            out.append({"role": "assistant", "content": [dict(b) for b in m.raw]})
         elif m.role == "assistant":
             content: list[dict[str, Any]] = []
             if m.text:
@@ -54,15 +78,57 @@ def to_anthropic_tools(tools: Sequence[ToolSpec]) -> list[dict[str, Any]]:
     ]
 
 
+def _block_dict(block: Any) -> dict[str, Any]:
+    """A response block as request JSON (SDK models dump themselves; test doubles are plain)."""
+    if hasattr(block, "model_dump"):
+        dumped: dict[str, Any] = block.model_dump(mode="json", exclude_none=True)
+        return dumped
+
+    def plain(value: Any) -> Any:
+        if isinstance(value, list):
+            return [plain(v) for v in value]
+        if hasattr(value, "__dict__"):
+            return {k: plain(v) for k, v in vars(value).items() if v is not None}
+        return value
+
+    result: dict[str, Any] = plain(block)
+    return result
+
+
 def from_anthropic(response: Any) -> Turn:
     texts: list[str] = []
     calls: list[ToolCall] = []
+    searches: list[str] = []
+    sources: list[tuple[str, str]] = []
+    server_blocks = False
     for block in response.content:
         if block.type == "text":
             texts.append(block.text)
         elif block.type == "tool_use":
             calls.append(ToolCall(id=block.id, name=block.name, input=dict(block.input or {})))
-    return Turn(text="\n".join(texts).strip(), tool_calls=tuple(calls))
+        elif block.type == "server_tool_use":
+            server_blocks = True
+            query = (getattr(block, "input", None) or {}).get("query")
+            if block.name == "web_search" and query:
+                searches.append(str(query))
+        elif block.type == "web_search_tool_result":
+            server_blocks = True
+            # A list of results on success; an error object otherwise (it does not raise).
+            if isinstance(block.content, list):
+                for found in block.content:
+                    url = getattr(found, "url", None)
+                    if url and all(url != u for _, u in sources):
+                        sources.append((str(getattr(found, "title", "") or url), str(url)))
+        elif block.type in ("thinking", "redacted_thinking"):
+            server_blocks = True  # kept in raw, so a later request can send it back unchanged
+    raw = tuple(_block_dict(b) for b in response.content) if server_blocks else ()
+    return Turn(
+        text="\n".join(texts).strip(),
+        tool_calls=tuple(calls),
+        searches=tuple(searches),
+        sources=tuple(sources),
+        raw=raw,
+    )
 
 
 def anthropic_params(config: dict[str, Any]) -> dict[str, Any]:
@@ -209,10 +275,42 @@ class AnthropicChat(_Adapter):
             kwargs["tools"] = to_anthropic_tools(tools)
         return kwargs
 
-    def complete(self, system: str, messages: Sequence[Message], tools: Sequence[ToolSpec]) -> Turn:
+    # The agent's Internet search switch works with this adapter (Anthropic's web search tool).
+    supports_web_search = True
+
+    def complete(
+        self,
+        system: str,
+        messages: Sequence[Message],
+        tools: Sequence[ToolSpec],
+        web_search: bool = False,
+    ) -> Turn:
         kwargs = self.request(system, messages, tools)
+        if web_search:
+            kwargs["tools"] = [*kwargs.get("tools", []), web_search_tool(self.model)]
         response = self._call(lambda: self._client.messages.create(**kwargs))
-        return from_anthropic(response)
+        turn = from_anthropic(response)
+        # A long search turn can pause; it goes on from the paused content, a few times at most.
+        searches, sources = list(turn.searches), list(turn.sources)
+        for _ in range(MAX_PAUSED_TURNS):
+            if getattr(response, "stop_reason", None) != "pause_turn":
+                break
+            paused = [_block_dict(b) for b in response.content]
+            kwargs = {
+                **kwargs,
+                "messages": [*kwargs["messages"], {"role": "assistant", "content": paused}],
+            }
+            response = self._call(partial(self._client.messages.create, **kwargs))
+            turn = from_anthropic(response)
+            searches += [q for q in turn.searches if q not in searches]
+            sources += [s for s in turn.sources if s not in sources]
+        return Turn(
+            text=turn.text,
+            tool_calls=turn.tool_calls,
+            searches=tuple(searches),
+            sources=tuple(sources),
+            raw=turn.raw,
+        )
 
 
 class OpenAICompatibleChat(_Adapter):

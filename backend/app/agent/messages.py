@@ -21,6 +21,9 @@ class Message:
     text: str = ""
     tool_calls: tuple[ToolCall, ...] = ()
     tool_call_id: str | None = None
+    # The provider's own content blocks of an assistant turn (Anthropic web search results),
+    # sent back as they were; an adapter that does not know them ignores them.
+    raw: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -29,6 +32,10 @@ class Turn:
 
     text: str
     tool_calls: tuple[ToolCall, ...] = field(default_factory=tuple)
+    # Web searches the provider ran itself while answering, and the pages it found.
+    searches: tuple[str, ...] = ()
+    sources: tuple[tuple[str, str], ...] = ()  # (title, url)
+    raw: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)

@@ -387,6 +387,8 @@ test.describe('phone only', () => {
     const vp = page.viewportSize()!
     for (const loc of [drawer.getByRole('textbox', { name: 'Message the agent' }), drawer.getByRole('button', { name: 'Send' })]) {
       await expect(loc).toBeVisible()
+      // The drawer slides in from the right: measure once it has settled.
+      await expect.poll(async () => { const s = await box(loc); return s.x + s.width }).toBeLessThanOrEqual(vp.width)
       const b = await box(loc)
       expect(b.y, 'top inside').toBeGreaterThanOrEqual(0)
       expect(b.y + b.height, `bottom ${b.y + b.height} within viewport height ${vp.height}`).toBeLessThanOrEqual(vp.height)

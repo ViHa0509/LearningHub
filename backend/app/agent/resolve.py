@@ -256,8 +256,20 @@ class AgentModel:
                 exc.category,
             ) from exc
 
-    def complete(self, system: str, messages: Sequence[Message], tools: Sequence[ToolSpec]) -> Turn:
-        return self._with_fallback(lambda m: m.complete(system, messages, tools), own_loop=False)
+    def complete(
+        self,
+        system: str,
+        messages: Sequence[Message],
+        tools: Sequence[ToolSpec],
+        web_search: bool = False,
+    ) -> Turn:
+        def call(model: ChatModel) -> Turn:
+            if web_search and getattr(model, "supports_web_search", False):
+                turn: Turn = model.complete(system, messages, tools, web_search=True)  # type: ignore[call-arg]
+                return turn
+            return model.complete(system, messages, tools)
+
+        return self._with_fallback(call, own_loop=False)
 
     def run(
         self,

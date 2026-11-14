@@ -101,15 +101,22 @@ describe('internet search per agent', () => {
     expect(put).toMatchObject({ method: 'PUT', body: { web_search: true } })
   })
 
-  // Scenario: Not a Claude Code provider
-  it('says it needs a Claude Code provider for other provider types', async () => {
+  // Scenario: Not a Claude Code or Anthropic provider
+  it('says it needs a Claude Code or Anthropic provider for other provider types', async () => {
     const state = installFakeApi()
     state.providers = [makeProvider('GPT', 'openai', 'gpt-5.5')]
     await renderAppReady('#/settings')
     const card = await screen.findByRole('article', { name: 'Learning assistant' })
-    expect(
-      await within(card).findByText('Internet search needs a Claude Code provider; it has no effect with the current one.'),
-    ).toBeInTheDocument()
+    expect(await within(card).findByText('Internet search needs a Claude Code or Anthropic provider; it has no effect with the current one.')).toBeInTheDocument()
+  })
+
+  it('offers Anthropic web search with an Anthropic provider', async () => {
+    const state = installFakeApi()
+    state.providers = [makeProvider('Claude main', 'anthropic', 'claude-opus-5-5')]
+    await renderAppReady('#/settings')
+    const card = await screen.findByRole('article', { name: 'Learning assistant' })
+    expect(await within(card).findByText(/Anthropic's web search/)).toBeInTheDocument()
+    expect(within(card).queryByText(/needs a Claude Code/)).not.toBeInTheDocument()
   })
 })
 

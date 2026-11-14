@@ -179,9 +179,11 @@ function AgentCard({ agent, providers }: { agent: AgentOut; providers: ProviderO
         Internet search
       </label>
       <p className="muted small" id={`${id}-web-search-note`}>
-        {agent.effective && agent.effective.provider_type !== 'claude-code'
-          ? 'Internet search needs a Claude Code provider; it has no effect with the current one.'
-          : 'Lets the agent search the web (Claude Code WebSearch: titles and links only) when your notes do not cover a question.'}
+        {agent.effective && agent.effective.provider_type === 'anthropic'
+          ? "Lets the agent search the web with Anthropic's web search when your notes do not cover a question (billed per search on your Anthropic key)."
+          : agent.effective && agent.effective.provider_type !== 'claude-code'
+            ? 'Internet search needs a Claude Code or Anthropic provider; it has no effect with the current one.'
+            : 'Lets the agent search the web (Claude Code WebSearch: titles and links only) when your notes do not cover a question.'}
       </p>
 
       <div className="provider-actions">

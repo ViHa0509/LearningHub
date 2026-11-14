@@ -175,7 +175,20 @@ def run_agent(
     max_steps = step_budget(effort, max_steps)
     if runs_own_loop(chat_model):
         return chat_model.run(system, conversation, tools, max_steps, web_search=web_search)
-    return tool_loop(chat_model, system, conversation, tools, max_steps)
+    return tool_loop(chat_model, system, conversation, tools, max_steps, web_search=web_search)
+
+
+MAX_SOURCES = 8
+
+
+def with_sources(reply: str, sources: Sequence[tuple[str, str]]) -> str:
+    """The answer with the web pages its searches found that it does not link yet (data, not
+    instructions: they are listed, never followed)."""
+    missing = [(title, url) for title, url in sources if url not in reply][:MAX_SOURCES]
+    if not missing:
+        return reply
+    lines = "\n".join(f"- [{title.replace(']', ')')}]({url})" for title, url in missing)
+    return f"{reply}\n\nSources:\n{lines}"
 
 
 def tool_loop(
@@ -185,17 +198,34 @@ def tool_loop(
     tools: AgentTools,
     max_steps: int,
     result: AgentResult | None = None,
+    web_search: bool = False,
 ) -> AgentResult:
     """Call the model and run the tools it asks for; steps are added to ``result`` as they
     happen, so a caller that catches a ProviderError keeps the steps already done."""
     messages = list(conversation)
     result = result if result is not None else AgentResult(reply="")
+    sources: list[tuple[str, str]] = []
     for _ in range(max_steps):
-        turn = chat_model.complete(system, messages, tools.specs())
+        # Only a model that can search the web is asked to (Anthropic's server tool).
+        if web_search:
+            turn = chat_model.complete(system, messages, tools.specs(), web_search=True)  # type: ignore[call-arg]
+        else:
+            turn = chat_model.complete(system, messages, tools.specs())
+        for query in turn.searches:
+            result.steps.append(
+                Step(
+                    tool="web_search",
+                    input={"query": query},
+                    summary=f"Searched the web for '{query}'",
+                )
+            )
+        sources += [s for s in turn.sources if s not in sources]
         if not turn.tool_calls:
-            result.reply = turn.text or "(The model gave an empty answer.)"
+            result.reply = with_sources(turn.text or "(The model gave an empty answer.)", sources)
             return result
-        messages.append(Message(role="assistant", text=turn.text, tool_calls=turn.tool_calls))
+        messages.append(
+            Message(role="assistant", text=turn.text, tool_calls=turn.tool_calls, raw=turn.raw)
+        )
         for call in turn.tool_calls:
             outcome = tools.run(call.name, call.input)
             result.steps.append(Step(tool=call.name, input=call.input, summary=outcome.summary))

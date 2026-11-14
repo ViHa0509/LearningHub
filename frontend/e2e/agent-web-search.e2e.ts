@@ -148,13 +148,13 @@ test.describe('Internet search per agent', () => {
     await shot(page, 'agent-web-search-trace')
   })
 
-  test('Not a Claude Code provider: the setting says it needs one', async ({ page, request }) => {
+  test('Not a Claude Code or Anthropic provider: the setting says it needs one', async ({ page, request }) => {
     const p = await makeProvider(request, 'OpenAI-like', 'local', 'fake-ok')
     await assignAssistant(request, p.id)
     await page.goto('/#/settings')
     const card = page.getByRole('article', { name: 'Learning assistant' })
     await expect(card.getByRole('checkbox', { name: 'Internet search' })).toBeVisible()
-    await expect(card).toContainText('Internet search needs a Claude Code provider; it has no effect with the current one.')
+    await expect(card).toContainText('Internet search needs a Claude Code or Anthropic provider; it has no effect with the current one.')
     await shot(page, 'settings-web-search-other-provider')
   })
 })
