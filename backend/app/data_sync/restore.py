@@ -55,6 +55,7 @@ from app.db import (
     Question,
     QuestionAnswer,
     QuestionBank,
+    QuestionBookmark,
     User,
 )
 from app.learning.topics import clean_topics
@@ -171,6 +172,8 @@ def _check_banks(banks: list[BankRow], present: set[str]) -> None:
         if any(q.image_key is not None and q.image_key not in present for q in bank.questions):
             raise refused
         if any(a.number not in known for a in bank.answers):
+            raise refused
+        if any(n not in known for n in bank.bookmarks):
             raise refused
         for attempt in bank.attempts:
             if any(n not in known for n in attempt.question_numbers):
@@ -402,10 +405,14 @@ def _restore_banks(session: Session, user_id: UUID, banks: list[BankRow]) -> Non
                 user_id=user_id,
                 question_id=ids[a.number],
                 last_correct=a.last_correct,
+                last_choice=a.last_choice,
                 times_wrong=a.times_wrong,
                 answered_at=a.answered_at,
             )
             for a in bank.answers
+        )
+        session.add_all(
+            QuestionBookmark(user_id=user_id, question_id=ids[n]) for n in set(bank.bookmarks)
         )
         session.add_all(
             ExamAttempt(

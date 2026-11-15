@@ -47,7 +47,7 @@ def clean_tables() -> None:
                 "news_items, agent_settings, users, oauth_accounts, sessions, auth_tokens, "
                 "app_settings, sync_keys, invitations, oauth_pending, sync_uploads, "
                 "chat_sessions, chat_messages, learning_fields, learning_areas, learning_topics, "
-                "question_banks, questions, question_answers, exam_attempts"
+                "question_banks, questions, question_answers, question_bookmarks, exam_attempts"
             )
         )
     engine.dispose()

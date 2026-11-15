@@ -91,15 +91,13 @@ describe('adding pictures to a bank', () => {
   it('shows a question without its picture as text only, and the picture once added', async () => {
     const state = setup({ names: ['a.png'] })
     const { user } = await renderAppReady('#/practice/driving-b')
-    await user.click(await screen.findByRole('button', { name: /Chapter 1/ }))
+    await user.click(await screen.findByRole('tab', { name: /Chapter 1/ }))
     expect(await screen.findByRole('heading', { name: /Question 1/ })).toBeInTheDocument()
     expect(screen.queryByRole('img', { name: /picture/ })).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Back to topics' }))
 
     await user.upload(await screen.findByLabelText('Picture files'), picture('a.png', 1000))
     expect(await content().findByText(/Added 1 picture\. 0 still missing\./)).toBeInTheDocument()
     expect(await screen.findByText(/No pictures missing/)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /Chapter 1/ }))
     expect(await screen.findByRole('img', { name: 'Question 1 picture' })).toHaveAttribute(
       'src',
       `/api/questions/${state.banks[0].questions[0].id}/image`,

@@ -322,7 +322,21 @@ class QuestionAnswer(Base):
     )
     last_correct: Mapped[bool] = mapped_column(Boolean)
     times_wrong: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # The option chosen last (1-based); None before 0018 and for a test question left blank.
+    last_choice: Mapped[int | None] = mapped_column(Integer, nullable=True)
     answered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class QuestionBookmark(Base):
+    """A question the user marked to come back to."""
+
+    __tablename__ = "question_bookmarks"
+
+    user_id: Mapped[uuid.UUID] = user_fk(primary_key=True)
+    question_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("questions.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class ExamAttempt(Base):

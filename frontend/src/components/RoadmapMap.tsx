@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import {
   Background,
   Controls,
@@ -12,10 +12,7 @@ import '@xyflow/react/dist/style.css'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   api,
-  ApiError,
   queryKeys,
-  type Bank,
-  type BankProblem,
   type DomainSummary,
   type ProposedTopics,
   type TopicInput,
@@ -26,6 +23,7 @@ import { ActionMenu } from './ActionMenu'
 import { useBanksLackingPictures } from '../lib/pictures'
 import { BankPictures } from './BankPictures'
 import { Icon } from './Icon'
+import { ImportBank } from './ImportBank'
 import { TopicEditor } from './TopicEditor'
 import { NODE_WIDTH, layoutRoadmap, type RoadmapNodeData } from '../lib/layout'
 import { DESKTOP_VIEWPORT, startViewport } from '../lib/startViewport'
@@ -101,7 +99,6 @@ export function RoadmapMap({
   const [areaMenu, setAreaMenu] = useState(false)
   const [areaError, setAreaError] = useState<string | null>(null)
   const refresh = useRefreshFields()
-  const client = useQueryClient()
   // Question banks: only areas of a learning field have them.
   const hasBanks = domain?.field_id != null
   const banks = useQuery({
@@ -111,32 +108,6 @@ export function RoadmapMap({
     retry: false,
   })
   const lacking = useBanksLackingPictures(banks.data)
-  const bankFile = useRef<HTMLInputElement>(null)
-  const [importing, setImporting] = useState(false)
-  const [imported, setImported] = useState<
-    { kind: 'ok'; bank: Bank } | { kind: 'error'; problems: BankProblem[]; message: string } | null
-  >(null)
-  const importBank = async (file: File) => {
-    setImporting(true)
-    setImported(null)
-    try {
-      const bank = await api.importBank(domainId, file)
-      setImported({ kind: 'ok', bank })
-      await client.invalidateQueries({ queryKey: queryKeys.banks(domainId) })
-    } catch (e) {
-      const detail = e instanceof ApiError ? (e.body as { detail?: unknown } | undefined)?.detail : undefined
-      const problems = Array.isArray(detail)
-        ? (detail as BankProblem[]).filter((p) => p && typeof p.msg === 'string')
-        : []
-      setImported({
-        kind: 'error',
-        problems,
-        message: e instanceof Error && problems.length === 0 ? e.message : 'The file was not imported.',
-      })
-    } finally {
-      setImporting(false)
-    }
-  }
   // A proposal for this area opens the editor once, then is taken (so coming back does not reopen it).
   const mine = proposal && proposal.area === domainId ? proposal : null
   useEffect(() => {
@@ -154,7 +125,6 @@ export function RoadmapMap({
     setAreaMode(null)
     setAreaMenu(false)
     setAreaError(null)
-    setImported(null)
   }
 
   const screenClass = useScreenClass()
@@ -247,56 +217,16 @@ export function RoadmapMap({
           </div>
         </div>
       )}
-      {hasBanks && ((banks.data?.length ?? 0) > 0 || editable) && (
+      {hasBanks && (
         <div className="practice-links">
-          {(banks.data?.length ?? 0) > 0 && (
-            <a className="button-link" href={`#/practice/${domainId}`}>
-              Practice
-            </a>
-          )}
-          {editable && (
-            <>
-              <input
-                ref={bankFile}
-                type="file"
-                accept=".json,.zip,application/json,application/zip"
-                aria-label="Question bank file"
-                hidden
-                onChange={(e) => {
-                  const file = e.target.files?.[0]
-                  // Cleared, so the same file can be picked again.
-                  e.target.value = ''
-                  if (file) void importBank(file)
-                }}
-              />
-              <button type="button" disabled={importing} onClick={() => bankFile.current?.click()}>
-                <Icon name="import" /> Import questions
-              </button>
-            </>
-          )}
+          <a className="button-link" href={`#/practice/${domainId}`}>
+            Practice
+          </a>
+          {editable && <ImportBank key={domainId} area={domainId} />}
         </div>
       )}
       {editable &&
         lacking.map((b) => <BankPictures key={b.id} bank={b} area={domainId} />)}
-      {imported?.kind === 'ok' && (
-        <p className="area-note" role="status">
-          Imported {imported.bank.title}: {imported.bank.question_count} questions.
-          {imported.bank.images_missing > 0 &&
-            ` ${imported.bank.images_missing} pictures are missing: use Add pictures below to upload them.`}
-        </p>
-      )}
-      {imported?.kind === 'error' && (
-        <div className="area-note error" role="alert">
-          <p>{imported.message}</p>
-          {imported.problems.length > 0 && (
-            <ul className="import-problems">
-              {imported.problems.map((p, i) => (
-                <li key={i}>{p.question === null ? p.msg : `Question ${p.question}: ${p.msg}`}</li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
       {editable && domain && areaMode === 'rename' && (
         <AreaDetailsForm
           title={domain.title}

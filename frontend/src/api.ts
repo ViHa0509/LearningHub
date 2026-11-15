@@ -502,6 +502,8 @@ export interface Bank {
   topics: BankTopic[]
   /** Questions that name a picture which has not been uploaded yet. */
   images_missing: number
+  /** The user's own bookmarks in this bank. */
+  bookmarked_count: number
   created_at: string
 }
 
@@ -515,6 +517,9 @@ export interface Question {
   critical: boolean
   has_image: boolean
   last_correct: boolean | null
+  /** The option chosen in the last answer (1-based), null when not answered. */
+  last_choice: number | null
+  bookmarked: boolean
 }
 
 export interface PictureUpload {
@@ -527,6 +532,7 @@ export interface QuestionFilters {
   topic?: string
   critical?: boolean
   wrong?: boolean
+  bookmarked?: boolean
 }
 
 export interface AnswerResult {
@@ -708,12 +714,15 @@ export const api = {
     if (filters.topic) params.set('topic', filters.topic)
     if (filters.critical) params.set('critical', 'true')
     if (filters.wrong) params.set('wrong', 'true')
+    if (filters.bookmarked) params.set('bookmarked', 'true')
     const search = params.toString()
     return request<Question[]>(`/api/banks/${bank}/questions${search ? `?${search}` : ''}`)
   },
   questionImageUrl: (id: string) => `/api/questions/${id}/image`,
   answerQuestion: (id: string, choice: number) =>
     request<AnswerResult>(`/api/questions/${id}/answer`, json('POST', { choice })),
+  setBookmark: (id: string, bookmarked: boolean) =>
+    request<{ bookmarked: boolean }>(`/api/questions/${id}/bookmark`, json('PUT', { bookmarked })),
   startExam: (bank: string) => request<Exam>(`/api/banks/${bank}/exams`, { method: 'POST' }),
   bankExams: (bank: string) => request<ExamSummary[]>(`/api/banks/${bank}/exams`),
   exam: (id: string) => request<Exam>(`/api/exams/${id}`),
@@ -899,6 +908,8 @@ export const queryKeys = {
   banks: (area: string) => ['banks', area] as const,
   /** Every question list of a bank (prefix of the filtered lists). */
   bankQuestions: (bank: string) => ['bank-questions', bank] as const,
+  /** One filtered list of a bank (the practice browser's set). */
+  bankSet: (bank: string, filters: QuestionFilters) => ['bank-questions', bank, filters] as const,
   exam: (id: string) => ['exam', id] as const,
   bankExams: (bank: string) => ['bank-exams', bank] as const,
   notes: ['notes'] as const,

@@ -31,6 +31,7 @@ class BankOut(BaseModel):
     critical_count: int
     topics: list[TopicCount]
     images_missing: int
+    bookmarked_count: int
     created_at: datetime
 
 
@@ -43,6 +44,8 @@ class QuestionOut(BaseModel):
     critical: bool
     has_image: bool
     last_correct: bool | None
+    last_choice: int | None = None
+    bookmarked: bool = False
 
 
 Choice = Annotated[int, Field(ge=1, le=6)]
@@ -56,6 +59,14 @@ class AnswerOut(BaseModel):
     correct: bool
     answer: int
     explanation: str | None
+
+
+class BookmarkIn(BaseModel):
+    bookmarked: bool
+
+
+class BookmarkOut(BaseModel):
+    bookmarked: bool
 
 
 class AnswersIn(BaseModel):

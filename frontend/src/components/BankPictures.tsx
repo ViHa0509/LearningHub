@@ -37,6 +37,8 @@ export function BankPictures({ bank, area }: { bank: Bank; area: string }) {
     }
     setProgress(null)
     setSummary(result)
+    // The question lists carry has_image: the browser must fetch them again.
+    void client.invalidateQueries({ queryKey: queryKeys.bankQuestions(bank.id) })
     await client.invalidateQueries({ queryKey: queryKeys.banks(area) })
   }
 

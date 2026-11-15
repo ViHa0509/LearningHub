@@ -627,3 +627,110 @@ def test_only_the_owner_adds_pictures(client: TestClient, second_client: TestCli
     assert has_image(client, bank["id"])[1] is False
     missing = "00000000-0000-0000-0000-000000000000"
     assert add(client, missing, ("q1.png", PNG)).status_code == 404
+
+
+# --- Saved answers and bookmarks (change practice-question-browser) ------------------------------
+
+NOWHERE = "00000000-0000-0000-0000-000000000000"
+
+
+def question_list(client: TestClient, bank: dict[str, Any], **query: str) -> list[dict[str, Any]]:
+    response = client.get(f"/api/banks/{bank['id']}/questions", params=query)
+    assert response.status_code == 200, response.text
+    items: list[dict[str, Any]] = response.json()
+    return items
+
+
+def by_number(client: TestClient, bank: dict[str, Any], number: int) -> dict[str, Any]:
+    return next(q for q in question_list(client, bank) if q["number"] == number)
+
+
+def bookmark(client: TestClient, question_id: str, on: bool) -> Any:
+    return client.put(f"/api/questions/{question_id}/bookmark", json={"bookmarked": on})
+
+
+def bookmarked_count(client: TestClient) -> int:
+    count: int = client.get(f"/api/areas/{SLUG}/banks").json()[0]["bookmarked_count"]
+    return count
+
+
+# Scenario: Come back to an answered question
+def test_the_chosen_option_comes_back_and_a_new_answer_replaces_it(client: TestClient) -> None:
+    driving(client)
+    bank = make_bank(client)
+    q4 = by_number(client, bank, 4)
+    assert q4["last_choice"] is None and q4["last_correct"] is None and q4["bookmarked"] is False
+    assert answer_of(4) == 1
+    assert client.post(f"/api/questions/{q4['id']}/answer", json={"choice": 2}).is_success
+    again = by_number(client, bank, 4)
+    assert (again["last_choice"], again["last_correct"]) == (2, False)
+    assert "answer" not in again and "explanation" not in again
+    # Scenario: Answer again
+    assert client.post(f"/api/questions/{q4['id']}/answer", json={"choice": 1}).is_success
+    now = by_number(client, bank, 4)
+    assert (now["last_choice"], now["last_correct"]) == (1, True)
+    assert question_list(client, bank, wrong="true") == []
+
+
+def test_a_submitted_test_stores_the_choice_of_each_answered_question(client: TestClient) -> None:
+    driving(client)
+    bank = make_bank(client)
+    exam = client.post(f"/api/banks/{bank['id']}/exams").json()
+    first, second = exam["questions"][0], exam["questions"][1]
+    given = {first["id"]: 3, second["id"]: 2}
+    assert client.post(f"/api/exams/{exam['id']}/submit", json={"answers": given}).is_success
+    stored = {q["id"]: q["last_choice"] for q in question_list(client, bank)}
+    assert stored[first["id"]] == 3 and stored[second["id"]] == 2
+    assert sorted(v for v in stored.values() if v is not None) == [2, 3]
+
+
+# Scenario: Bookmark and unbookmark
+def test_bookmark_toggle_filter_and_count(client: TestClient) -> None:
+    driving(client)
+    bank = make_bank(client)
+    q9 = by_number(client, bank, 9)
+    assert question_list(client, bank, bookmarked="true") == []
+    assert bookmarked_count(client) == 0
+    first = bookmark(client, q9["id"], True)
+    assert first.status_code == 200 and first.json() == {"bookmarked": True}
+    assert bookmark(client, q9["id"], True).json() == {"bookmarked": True}  # idempotent
+    marked = question_list(client, bank, bookmarked="true")
+    assert [q["number"] for q in marked] == [9] and marked[0]["bookmarked"] is True
+    assert bookmarked_count(client) == 1
+    assert question_list(client, bank, bookmarked="true", critical="true") == []
+    both = question_list(client, bank, bookmarked="true", topic="chuong-2")
+    assert [q["number"] for q in both] == [9]
+    assert bookmark(client, q9["id"], False).json() == {"bookmarked": False}
+    assert bookmark(client, q9["id"], False).status_code == 200  # absent is fine
+    assert question_list(client, bank, bookmarked="true") == []
+    assert bookmarked_count(client) == 0
+
+
+def test_bookmark_needs_the_app_header_and_a_valid_body(client: TestClient) -> None:
+    driving(client)
+    bank = make_bank(client)
+    url = f"/api/questions/{by_number(client, bank, 1)['id']}/bookmark"
+    bare = client.put(url, json={"bookmarked": True}, headers={"X-LearningHub": ""})
+    assert bare.status_code == 403
+    assert client.put(url, json={}).status_code == 422
+    assert bookmark(client, NOWHERE, True).status_code == 404
+
+
+# Scenario: Another user's bookmark
+def test_bookmarks_are_per_user_and_an_invisible_question_is_404(
+    client: TestClient, second_client: TestClient
+) -> None:
+    driving(client)
+    bank = make_bank(client)
+    q9 = by_number(client, bank, 9)
+    assert bookmark(second_client, q9["id"], True).status_code == 404  # unpublished
+    field_id = client.get("/api/fields").json()[1]["id"]
+    client.patch(f"/api/fields/{field_id}", json={"published": True})
+    assert bookmark(client, q9["id"], True).status_code == 200
+    assert question_list(second_client, bank, bookmarked="true") == []
+    assert second_client.get(f"/api/areas/{SLUG}/banks").json()[0]["bookmarked_count"] == 0
+    assert bookmark(second_client, q9["id"], True).status_code == 200
+    assert bookmark(second_client, q9["id"], False).status_code == 200
+    assert [q["number"] for q in question_list(client, bank, bookmarked="true")] == [9]
+    assert bookmarked_count(client) == 1
+    assert question_list(second_client, bank, bookmarked="true") == []

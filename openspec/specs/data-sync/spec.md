@@ -45,3 +45,11 @@ The Owner SHALL be able to send this server's data to another Learning Hub: on t
 #### Scenario: Key works only for uploads
 - **WHEN** a request to a data route such as `/api/notes` carries a valid sync key and no session
 - **THEN** it is answered 401
+
+### Requirement: Question banks in the backup
+The backup SHALL include the question banks of the user's areas with their images, and the user's answers and tests; restore replaces them when the archive has them and leaves them when it does not.
+
+#### Scenario: Round trip
+- **GIVEN** a bank with an image and one finished test
+- **WHEN** the user backs up and restores into an empty account
+- **THEN** the bank, its image and the test are back

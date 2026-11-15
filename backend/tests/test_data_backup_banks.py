@@ -36,6 +36,7 @@ def seed_bank(client: TestClient) -> dict[str, Any]:
     bank = upload(client, SLUG, make_zip(bank_doc(questions), {"q1.png": PNG})).json()
     first = client.get(f"/api/banks/{bank['id']}/questions").json()[0]
     client.post(f"/api/questions/{first['id']}/answer", json={"choice": 4})
+    client.put(f"/api/questions/{first['id']}/bookmark", json={"bookmarked": True})
     exam = start(client, bank)
     wrong = exam["questions"][1]["number"]
     assert submit(client, exam["id"], answers(exam, wrong=(wrong,))).status_code == 200
@@ -83,12 +84,22 @@ def shape(client: TestClient) -> dict[str, Any]:
         out[bank["title"]] = {
             "bank": {k: v for k, v in bank.items() if k != "id"},
             "questions": [
-                (q["number"], q["topic"], q["text"], q["options"], q["critical"], q["last_correct"])
+                (
+                    q["number"],
+                    q["topic"],
+                    q["text"],
+                    q["options"],
+                    q["critical"],
+                    q["last_correct"],
+                    q["last_choice"],
+                    q["bookmarked"],
+                )
                 for q in questions
             ],
             "images": images,
             "exams": exams,
             "wrong": [q["number"] for q in wrong],
+            "bookmarked_count": bank["bookmarked_count"],
         }
     return out
 
@@ -222,6 +233,18 @@ def broken_attempt(entries: dict[str, bytes]) -> None:
     entries[BANKS] = json.dumps(data).encode()
 
 
+def unknown_bookmark(entries: dict[str, bytes]) -> None:
+    data = json.loads(entries[BANKS])
+    data[0]["bookmarks"] = [1, 99]
+    entries[BANKS] = json.dumps(data).encode()
+
+
+def broken_choice(entries: dict[str, bytes]) -> None:
+    data = json.loads(entries[BANKS])
+    data[0]["answers"][0]["last_choice"] = 9
+    entries[BANKS] = json.dumps(data).encode()
+
+
 def broken_rules(entries: dict[str, bytes]) -> None:
     data = json.loads(entries[BANKS])
     data[0]["rules"] = {"questions": "ten"}
@@ -248,6 +271,8 @@ def test_an_invalid_banks_entry_is_refused_and_changes_nothing(client: TestClien
         broken_answer,
         broken_attempt,
         broken_rules,
+        unknown_bookmark,
+        broken_choice,
         duplicate_number,
         missing_image,
     ):
@@ -295,3 +320,47 @@ def test_an_old_archive_without_image_names_still_restores(client: TestClient) -
     assert restore(client, rewrite(backup, strip)).status_code == 200
     bank = client.get(f"/api/areas/{SLUG}/banks").json()[0]
     assert bank["images_missing"] == 0
+
+
+# Scenario: Round trip (the chosen option and the bookmark)
+def test_the_chosen_option_and_the_bookmark_are_in_the_archive_and_come_back(
+    client: TestClient,
+) -> None:
+    seed_bank(client)
+    archive = zipfile.ZipFile(io.BytesIO(download(client)))
+    data = json.loads(archive.read(BANKS))
+    assert data[0]["bookmarks"] == [1]
+    assert all(a["last_choice"] is not None for a in data[0]["answers"])
+    before = shape(client)
+    backup = download(client)
+    field_id = client.get("/api/fields").json()[1]["id"]
+    assert client.delete(f"/api/fields/{field_id}").status_code == 204
+    assert restore(client, backup).status_code == 200
+    bank = client.get(f"/api/areas/{SLUG}/banks").json()[0]
+    assert bank["bookmarked_count"] == 1
+    questions = client.get(f"/api/banks/{bank['id']}/questions").json()
+    assert [q["number"] for q in questions if q["bookmarked"]] == [1]
+    assert questions[0]["last_choice"] is not None
+    assert shape(client) == before
+
+
+def test_an_archive_from_before_the_choice_and_bookmarks_restores_without_them(
+    client: TestClient,
+) -> None:
+    seed_bank(client)
+
+    def older(entries: dict[str, bytes]) -> None:
+        data = json.loads(entries[BANKS])
+        for bank in data:
+            del bank["bookmarks"]
+            for answer in bank["answers"]:
+                del answer["last_choice"]
+        entries[BANKS] = json.dumps(data).encode()
+
+    response = restore(client, rewrite(download(client), older))
+    assert response.status_code == 200, response.text
+    bank = client.get(f"/api/areas/{SLUG}/banks").json()[0]
+    assert bank["bookmarked_count"] == 0
+    questions = client.get(f"/api/banks/{bank['id']}/questions").json()
+    assert all(q["last_choice"] is None and q["bookmarked"] is False for q in questions)
+    assert any(q["last_correct"] is not None for q in questions)

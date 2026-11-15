@@ -330,7 +330,9 @@ export interface FakeState {
   /** Question banks (practice-exams); a bank of an area the user cannot see answers 404. */
   banks: FakeBank[]
   /** Question id -> the user's practice record. */
-  practice: Record<string, { last_correct: boolean; times_wrong: number }>
+  practice: Record<string, { last_correct: boolean; times_wrong: number; last_choice?: number }>
+  /** Question ids the user bookmarked. */
+  bookmarks: Set<string>
   exams: FakeExam[]
   /** The file names of each POST /api/areas/{slug}/banks, in order. */
   bankImports: string[]
@@ -579,6 +581,7 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
     fields: [],
     banks: [],
     practice: {},
+    bookmarks: new Set(),
     exams: [],
     bankImports: [],
     pictureRequests: [],
@@ -1557,6 +1560,7 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
             critical_count: b.questions.filter((q) => q.critical).length,
             topics,
             images_missing: b.questions.filter((q) => q.image !== null && !q.hasImage).length,
+            bookmarked_count: b.questions.filter((q) => state.bookmarks.has(q.id)).length,
             created_at: '2026-11-14T09:00:00Z',
           }
         }
@@ -1569,6 +1573,8 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
           critical: q.critical,
           has_image: q.hasImage,
           last_correct: state.practice[q.id]?.last_correct ?? null,
+          last_choice: state.practice[q.id]?.last_choice ?? null,
+          bookmarked: state.bookmarks.has(q.id),
         })
         const visibleBank = (id: string) => {
           const b = state.banks.find((x) => x.id === id)
@@ -1585,7 +1591,7 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
         const examOut = (e: FakeExam) => {
           const bank = state.banks.find((b) => b.id === e.bank_id)!
           const byId = new Map(bank.questions.map((q) => [q.id, q]))
-          const questions = e.question_ids.map((qid) => ({ ...questionOut(byId.get(qid)!), last_correct: null }))
+          const questions = e.question_ids.map((qid) => ({ ...questionOut(byId.get(qid)!), last_correct: null, last_choice: null }))
           return {
             id: e.id,
             bank_id: e.bank_id,
@@ -1742,6 +1748,7 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
             bank.questions
               .filter((q) => (!topic || q.topic === topic) && (params.get('critical') !== 'true' || q.critical))
               .filter((q) => params.get('wrong') !== 'true' || state.practice[q.id]?.last_correct === false)
+              .filter((q) => params.get('bookmarked') !== 'true' || state.bookmarks.has(q.id))
               .sort((a, b) => a.number - b.number)
               .map(questionOut),
           )
@@ -1756,8 +1763,21 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
           }
           const correct = choice === found.question.answer
           const before = state.practice[m[1]]
-          state.practice[m[1]] = { last_correct: correct, times_wrong: (before?.times_wrong ?? 0) + (correct ? 0 : 1) }
+          state.practice[m[1]] = {
+            last_correct: correct,
+            times_wrong: (before?.times_wrong ?? 0) + (correct ? 0 : 1),
+            last_choice: choice,
+          }
           return respond({ correct, answer: found.question.answer, explanation: found.question.explanation })
+        }
+        m = url.match(/^\/api\/questions\/([^/]+)\/bookmark$/)
+        if (m && method === 'PUT') {
+          const found = findQuestion(m[1])
+          if (!found) return respond({ detail: 'question not found' }, 404)
+          const on = body?.bookmarked === true
+          if (on) state.bookmarks.add(m[1])
+          else state.bookmarks.delete(m[1])
+          return respond({ bookmarked: on })
         }
         m = url.match(/^\/api\/banks\/([^/]+)\/exams$/)
         if (m) {

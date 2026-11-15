@@ -13,10 +13,15 @@ interface Props {
   /** The correct option (1-based), once it may be shown. */
   correct?: number | null
   explanation?: string | null
+  /** The last saved answer: its option is marked right or wrong without showing the correct one. */
+  saved?: { choice: number; correct: boolean } | null
+  /** Shows the Bookmark toggle in the header when `onBookmark` is given. */
+  bookmarked?: boolean
+  onBookmark?: () => void
 }
 
 /** One question: number, plain text, picture, and its options as radio buttons. */
-export function QuestionCard({ question, label, total, choice, onChoose, locked, correct, explanation }: Props) {
+export function QuestionCard({ question, label, total, choice, onChoose, locked, correct, explanation, saved, bookmarked, onBookmark }: Props) {
   const textId = `question-text-${question.id}`
   return (
     <article className="question-card" aria-label={`Question ${label}`}>
@@ -26,6 +31,11 @@ export function QuestionCard({ question, label, total, choice, onChoose, locked,
           {total !== undefined && <span className="muted"> of {total}</span>}
         </h2>
         {question.critical && <span className="crit-badge">Critical</span>}
+        {onBookmark && (
+          <button type="button" className="bookmark-toggle" aria-pressed={bookmarked ?? false} onClick={onBookmark}>
+            Bookmark
+          </button>
+        )}
       </header>
       {/* Plain text only: React escapes it, and line breaks of the source are kept. */}
       <p id={textId} className="question-text">
@@ -40,6 +50,8 @@ export function QuestionCard({ question, label, total, choice, onChoose, locked,
           const classes = ['option']
           if (correct != null && n === correct) classes.push('right')
           else if (correct != null && choice === n) classes.push('wrong')
+          const savedHere = correct == null && saved != null && saved.choice === n
+          if (savedHere) classes.push(saved.correct ? 'right' : 'wrong')
           return (
             <label key={n} className={classes.join(' ')}>
               <input
@@ -52,7 +64,7 @@ export function QuestionCard({ question, label, total, choice, onChoose, locked,
               />
               <span className="option-text">{option}</span>
               {correct != null && n === correct && <span className="option-tag">Correct answer</span>}
-              {correct != null && n !== correct && choice === n && <span className="option-tag">Your answer</span>}
+              {((correct != null && n !== correct && choice === n) || savedHere) && <span className="option-tag">Your answer</span>}
             </label>
           )
         })}

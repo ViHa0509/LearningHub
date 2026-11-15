@@ -5,11 +5,8 @@ import { useDomains } from '../hooks'
 import { navigate } from '../lib/route'
 import { useBanksLackingPictures } from '../lib/pictures'
 import { BankPictures } from './BankPictures'
+import { ImportBank } from './ImportBank'
 import { QuestionCard } from './QuestionCard'
-
-type Mode = { title: string; questions: Question[] }
-
-const plural = (n: number) => `${n} ${n === 1 ? 'question' : 'questions'}`
 
 /** `#/practice/<area>`: pick a bank, practise a topic, the critical or the wrong questions, or start a test. */
 export function PracticePage({ area }: { area: string }) {
@@ -38,6 +35,11 @@ export function PracticePage({ area }: { area: string }) {
         </a>
         <h1>Practice</h1>
         <p className="muted">This area has no question banks yet.</p>
+        {owner && (
+          <div className="practice-links">
+            <ImportBank area={area} />
+          </div>
+        )}
       </section>
     )
   }
@@ -67,38 +69,40 @@ export function PracticePage({ area }: { area: string }) {
   )
 }
 
+/** The sets of the browser: a tab key and the filters the server needs for it. */
+type SetKey = 'all' | 'critical' | 'wrong' | 'bookmarked' | `topic:${string}`
+
+const filtersOf = (key: SetKey): QuestionFilters => {
+  if (key === 'all') return {}
+  if (key.startsWith('topic:')) return { topic: key.slice('topic:'.length) }
+  return { [key]: true }
+}
+
+/** Fisher-Yates: a new array in a random order. */
+function shuffled<T>(list: T[]): T[] {
+  const out = [...list]
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[out[i], out[j]] = [out[j], out[i]]
+  }
+  return out
+}
+
+function patchQuestion(client: ReturnType<typeof useQueryClient>, bank: string, id: string, patch: Partial<Question>) {
+  client.setQueriesData<Question[]>({ queryKey: queryKeys.bankQuestions(bank) }, (list) =>
+    Array.isArray(list) ? list.map((q) => (q.id === id ? { ...q, ...patch } : q)) : list,
+  )
+}
+
 function BankPractice({ bank }: { bank: Bank }) {
   const client = useQueryClient()
   const all = useQuery({
     queryKey: queryKeys.bankQuestions(bank.id),
     queryFn: () => api.bankQuestions(bank.id),
   })
-  const [mode, setMode] = useState<Mode | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
 
-  const open = async (title: string, filters: QuestionFilters) => {
-    setError(null)
-    try {
-      const questions = await api.bankQuestions(bank.id, filters)
-      if (questions.length === 0) setError('There are no questions here yet.')
-      else setMode({ title, questions })
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not load the questions.')
-    }
-  }
-  const back = () => {
-    setMode(null)
-    // Progress changed while practising: the counts below must follow.
-    void client.invalidateQueries({ queryKey: queryKeys.bankQuestions(bank.id) })
-  }
-
-  if (mode) return <QuestionFlow key={mode.title} mode={mode} onBack={back} />
-
-  const questions = all.data ?? []
-  const rightOf = (list: Question[]) => list.filter((q) => q.last_correct === true).length
-  const wrong = questions.filter((q) => q.last_correct === false).length
-  const critical = questions.filter((q) => q.critical)
   const start = async () => {
     setStarting(true)
     setError(null)
@@ -130,40 +134,194 @@ function BankPractice({ bank }: { bank: Bank }) {
       )}
       <h3>Practise</h3>
       {all.isError && <p className="error">Could not load the questions.</p>}
-      <ul className="topic-list" aria-label="Practice sets">
-        {bank.topics.map((t) => (
-          <li key={t.slug}>
-            <button type="button" onClick={() => void open(t.title, { topic: t.slug })}>
-              <span className="topic-name">{t.title}</span>
-              <span className="topic-meta muted">
-                {plural(t.count)}
-                {all.data && ` · ${rightOf(questions.filter((q) => q.topic === t.slug))} / ${t.count} right`}
-              </span>
-            </button>
-          </li>
-        ))}
-        <li>
-          <button
-            type="button"
-            disabled={bank.critical_count === 0}
-            onClick={() => void open('Critical questions', { critical: true })}
-          >
-            <span className="topic-name">Critical questions</span>
-            <span className="topic-meta muted">
-              {plural(bank.critical_count)}
-              {all.data && ` · ${rightOf(critical)} / ${bank.critical_count} right`}
-            </span>
-          </button>
-        </li>
-        <li>
-          <button type="button" disabled={!all.data || wrong === 0} onClick={() => void open('Got wrong', { wrong: true })}>
-            <span className="topic-name">Got wrong</span>
-            <span className="topic-meta muted">{all.data ? plural(wrong) : ''}</span>
-          </button>
-        </li>
-      </ul>
+      {all.data && <Browser bank={bank} questions={all.data} />}
       <History bank={bank} />
     </>
+  )
+}
+
+/** Set tabs, the number grid and one question card; `questions` is every question of the bank with the user's state. */
+function Browser({ bank, questions }: { bank: Bank; questions: Question[] }) {
+  const client = useQueryClient()
+  const [setKey, setSetKey] = useState<SetKey>('all')
+  // The ids of the set as they were when it opened (or after Shuffle): the list does not shift under the user.
+  const [frozen, setFrozen] = useState<{ key: SetKey; ids: string[] } | null>(null)
+  const [currentId, setCurrentId] = useState<string | null>(null)
+  const [choices, setChoices] = useState<Record<string, number>>({})
+  const [results, setResults] = useState<Record<string, AnswerResult>>({})
+  const [error, setError] = useState<string | null>(null)
+  const [checking, setChecking] = useState(false)
+
+  const setQuery = useQuery({
+    queryKey: queryKeys.bankSet(bank.id, filtersOf(setKey)),
+    queryFn: () => api.bankQuestions(bank.id, filtersOf(setKey)),
+    enabled: setKey !== 'all',
+    gcTime: 0,
+  })
+  const setIds = setKey === 'all' ? questions.map((q) => q.id) : setQuery.data?.map((q) => q.id)
+  if (setIds && frozen?.key !== setKey) setFrozen({ key: setKey, ids: setIds })
+
+  const byId = new Map(questions.map((q) => [q.id, q]))
+  const list = (frozen?.key === setKey ? frozen.ids : [])
+    .map((id) => byId.get(id))
+    .filter((q): q is Question => q !== undefined)
+  const index = Math.max(
+    0,
+    list.findIndex((q) => q.id === currentId),
+  )
+  const question = list[index]
+
+  const wrongCount = questions.filter((q) => q.last_correct === false).length
+  const tabs: { key: SetKey; title: string; count: number }[] = [
+    { key: 'all', title: 'All', count: bank.question_count },
+    ...bank.topics.map((t) => ({ key: `topic:${t.slug}` as SetKey, title: t.title, count: t.count })),
+    { key: 'critical', title: 'Critical', count: bank.critical_count },
+    { key: 'wrong', title: 'Got wrong', count: wrongCount },
+    { key: 'bookmarked', title: 'Bookmarked', count: bank.bookmarked_count },
+  ]
+  const choose = (key: SetKey) => {
+    setSetKey(key)
+    setCurrentId(null)
+    setError(null)
+  }
+  const shuffle = () => {
+    const ids = shuffled(list.map((q) => q.id))
+    setFrozen({ key: setKey, ids })
+    setCurrentId(ids[0] ?? null)
+  }
+  const go = (i: number) => setCurrentId(list[i]?.id ?? null)
+
+  const choice = question ? (choices[question.id] ?? question.last_choice) : null
+  const result = question ? results[question.id] : undefined
+
+  const check = async () => {
+    if (!question || choice === null) return
+    setChecking(true)
+    setError(null)
+    try {
+      const answer = await api.answerQuestion(question.id, choice)
+      setResults((r) => ({ ...r, [question.id]: answer }))
+      patchQuestion(client, bank.id, question.id, { last_correct: answer.correct, last_choice: choice })
+      void client.invalidateQueries({ queryKey: queryKeys.bankQuestions(bank.id) })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not check the answer.')
+    } finally {
+      setChecking(false)
+    }
+  }
+  const bookmark = async () => {
+    if (!question) return
+    const next = !question.bookmarked
+    setError(null)
+    patchQuestion(client, bank.id, question.id, { bookmarked: next })
+    try {
+      await api.setBookmark(question.id, next)
+    } catch (e) {
+      patchQuestion(client, bank.id, question.id, { bookmarked: !next })
+      setError(e instanceof Error ? e.message : 'Could not save the bookmark.')
+    } finally {
+      void client.invalidateQueries({ queryKey: queryKeys.banks(bank.area) })
+    }
+  }
+
+  const stateWords = (q: Question) =>
+    [q.last_correct === true ? 'right' : q.last_correct === false ? 'wrong' : null, q.critical ? 'critical' : null].filter(
+      Boolean,
+    )
+
+  return (
+    <div className="question-browser">
+      <div role="tablist" aria-label="Sets" className="set-tabs">
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            role="tab"
+            aria-selected={setKey === t.key}
+            disabled={t.count === 0 && setKey !== t.key}
+            onClick={() => choose(t.key)}
+          >
+            {t.title} <span className="muted">{t.count}</span>
+          </button>
+        ))}
+      </div>
+      {setQuery.isError && <p className="error">Could not load the questions.</p>}
+      {frozen?.key === setKey && list.length === 0 && <p className="muted">There are no questions here yet.</p>}
+      {question && (
+        <div className="browser-body">
+          <nav aria-label="Questions" className="question-grid">
+            {list.map((q) => {
+              const classes = [
+                q.last_correct === true ? 'right' : q.last_correct === false ? 'wrong' : '',
+                q.critical ? 'critical' : '',
+                q.id === question.id ? 'current' : '',
+              ].filter(Boolean)
+              return (
+                <button
+                  key={q.id}
+                  type="button"
+                  className={classes.join(' ') || undefined}
+                  aria-current={q.id === question.id ? 'true' : undefined}
+                  aria-label={[`Question ${q.number}`, ...stateWords(q)].join(', ')}
+                  onClick={() => setCurrentId(q.id)}
+                >
+                  {q.number}
+                </button>
+              )
+            })}
+          </nav>
+          <div className="browser-card">
+            <QuestionCard
+              key={question.id}
+              question={question}
+              label={question.number}
+              choice={choice}
+              onChoose={(c) => {
+                setChoices((m) => ({ ...m, [question.id]: c }))
+                // A new pick starts a new answer: the earlier verdict no longer fits the selection.
+                setResults((r) => {
+                  const { [question.id]: _gone, ...rest } = r
+                  return rest
+                })
+              }}
+              correct={result?.answer ?? null}
+              explanation={result?.explanation}
+              saved={
+                question.last_choice !== null && question.last_correct !== null
+                  ? { choice: question.last_choice, correct: question.last_correct }
+                  : null
+              }
+              bookmarked={question.bookmarked}
+              onBookmark={() => void bookmark()}
+            />
+            {result && (
+              <p role="status" className={result.correct ? 'verdict result-pass' : 'verdict result-fail'}>
+                {result.correct ? 'Right' : 'Wrong'}
+              </p>
+            )}
+            {error && (
+              <p className="error" role="alert">
+                {error}
+              </p>
+            )}
+            <div className="flow-nav">
+              <button type="button" disabled={index === 0} onClick={() => go(index - 1)}>
+                Previous
+              </button>
+              <button type="button" className="primary" disabled={choice === null || checking} onClick={() => void check()}>
+                Check
+              </button>
+              <button type="button" disabled={index === list.length - 1} onClick={() => go(index + 1)}>
+                Next
+              </button>
+              <button type="button" disabled={list.length < 2} onClick={shuffle}>
+                Shuffle
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -196,75 +354,5 @@ function History({ bank }: { bank: Bank }) {
         </ul>
       )}
     </>
-  )
-}
-
-/** One question at a time; Check records the answer and shows the right option and the explanation. */
-function QuestionFlow({ mode, onBack }: { mode: Mode; onBack: () => void }) {
-  const [index, setIndex] = useState(0)
-  const [choices, setChoices] = useState<Record<string, number>>({})
-  const [results, setResults] = useState<Record<string, AnswerResult>>({})
-  const [error, setError] = useState<string | null>(null)
-  const [checking, setChecking] = useState(false)
-  const question = mode.questions[index]
-  const result = results[question.id]
-  const choice = choices[question.id] ?? null
-
-  const check = async () => {
-    if (choice === null) return
-    setChecking(true)
-    setError(null)
-    try {
-      const answer = await api.answerQuestion(question.id, choice)
-      setResults((r) => ({ ...r, [question.id]: answer }))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not check the answer.')
-    } finally {
-      setChecking(false)
-    }
-  }
-
-  return (
-    <div className="question-flow">
-      <div className="flow-bar">
-        <button type="button" onClick={onBack}>
-          Back to topics
-        </button>
-        <span className="muted" aria-live="polite">
-          {mode.title}: {index + 1} of {mode.questions.length}
-        </span>
-      </div>
-      <QuestionCard
-        key={question.id}
-        question={question}
-        label={question.number}
-        choice={choice}
-        onChoose={(c) => setChoices((m) => ({ ...m, [question.id]: c }))}
-        locked={!!result}
-        correct={result?.answer ?? null}
-        explanation={result?.explanation}
-      />
-      {result && (
-        <p role="status" className={result.correct ? 'verdict result-pass' : 'verdict result-fail'}>
-          {result.correct ? 'Right' : 'Wrong'}
-        </p>
-      )}
-      {error && (
-        <p className="error" role="alert">
-          {error}
-        </p>
-      )}
-      <div className="flow-nav">
-        <button type="button" disabled={index === 0} onClick={() => setIndex(index - 1)}>
-          Previous
-        </button>
-        <button type="button" className="primary" disabled={choice === null || !!result || checking} onClick={() => void check()}>
-          Check
-        </button>
-        <button type="button" disabled={index === mode.questions.length - 1} onClick={() => setIndex(index + 1)}>
-          Next
-        </button>
-      </div>
-    </div>
   )
 }

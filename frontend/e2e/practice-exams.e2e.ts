@@ -366,7 +366,8 @@ test('Import a zip: 12 questions with two pictures that show in practice', async
   const { slug } = await makeArea(request)
   await page.goto(`/#/roadmap/${slug}`)
   await expect(page.getByRole('button', { name: 'Import questions' })).toBeVisible()
-  await expect(page.getByRole('link', { name: 'Practice' })).toHaveCount(0)
+  // Practice always shows for a field area, even without a bank.
+  await expect(page.getByRole('link', { name: 'Practice' })).toHaveAttribute('href', `#/practice/${slug}`)
   await page.getByLabel('Question bank file').setInputFiles(zipFile())
   await expect(page.getByRole('status').filter({ hasText: 'Imported Synthetic QC bank: 12 questions.' })).toBeVisible()
   await expect(page.getByText(/pictures are missing/)).toHaveCount(0)
@@ -379,13 +380,16 @@ test('Import a zip: 12 questions with two pictures that show in practice', async
   await page.getByRole('link', { name: 'Practice' }).click()
   await expect(page).toHaveURL(new RegExp(`#/practice/${slug}$`))
   await expect(page.getByRole('heading', { name: 'Synthetic QC bank' })).toBeVisible()
-  await expect(page.getByRole('button', { name: /^Topic one/ })).toContainText('3 questions')
-  await expect(page.getByRole('button', { name: /^Topic two/ })).toContainText('5 questions')
-  await expect(page.getByRole('button', { name: /^Topic three/ })).toContainText('4 questions')
-  await expect(page.getByRole('button', { name: /^Critical questions/ })).toContainText('2 questions')
+  const sets = page.getByRole('tablist', { name: 'Sets' })
+  await expect(sets.getByRole('tab')).toHaveCount(7)
+  await expect(sets.getByRole('tab', { name: /^All/ })).toContainText('12')
+  await expect(sets.getByRole('tab', { name: /^Topic one/ })).toContainText('3')
+  await expect(sets.getByRole('tab', { name: /^Topic two/ })).toContainText('5')
+  await expect(sets.getByRole('tab', { name: /^Topic three/ })).toContainText('4')
+  await expect(sets.getByRole('tab', { name: /^Critical/ })).toContainText('2')
 
   // Question 2 (topic one) has a picture.
-  await page.getByRole('button', { name: /^Topic one/ }).click()
+  await sets.getByRole('tab', { name: /^Topic one/ }).click()
   await page.getByRole('button', { name: 'Next', exact: true }).click()
   await expect(card(page).locator('h2')).toContainText('Question 2')
   const img = card(page).locator('img.question-image')
@@ -430,7 +434,7 @@ test('Questions first, pictures after: JSON import names 2 missing pictures, Add
 
   // The picture of question 9 shows in practice.
   await page.goto(`/#/practice/${slug}`)
-  await page.getByRole('button', { name: /^Topic three/ }).click()
+  await page.getByRole('tab', { name: /^Topic three/ }).click()
   await expect(card(page).locator('h2')).toContainText('Question 9')
   const img = card(page).locator('img.question-image')
   await expect.poll(() => img.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth)).toBe(160)
@@ -448,7 +452,9 @@ test('Invalid bank: refused naming the questions, nothing stored', async ({ page
   await expect(alert.locator('li', { hasText: /^Question 3:/ })).toBeVisible()
   await expect(alert.locator('li', { hasText: /^Question 5:/ })).toBeVisible()
   expect(await banksOf(request, slug)).toEqual([])
-  await expect(page.getByRole('link', { name: 'Practice' })).toHaveCount(0)
+  // Nothing was stored: Practice still shows and leads to the no-banks message.
+  await page.getByRole('link', { name: 'Practice' }).click()
+  await expect(page.getByText('This area has no question banks yet.')).toBeVisible()
 
   const res = await request.post(`${API}/api/areas/${slug}/banks`, { headers: H, multipart: { file: jsonFile(bad) } })
   expect(res.status()).toBe(422)
@@ -459,36 +465,261 @@ test('Invalid bank: refused naming the questions, nothing stored', async ({ page
 
 // ---- practice ----------------------------------------------------------------------------
 
-test('Practice a wrong answer: marked wrong, right option and explanation shown, then in Got wrong', async ({ page, request }) => {
+test('Practice a wrong answer: marked wrong, right option and explanation shown, grid turns wrong, then in Got wrong', async ({ page, request }) => {
   const { slug } = await makeArea(request)
   await importApi(request, slug)
   await page.goto(`/#/practice/${slug}`)
-  const gotWrong = page.getByRole('button', { name: /^Got wrong/ })
-  await expect(gotWrong).toBeDisabled()
+  const tab = (name: RegExp) => page.getByRole('tablist', { name: 'Sets' }).getByRole('tab', { name })
+  const grid = page.getByRole('navigation', { name: 'Questions' })
+  await expect(tab(/^Got wrong/)).toBeDisabled()
 
-  await page.getByRole('button', { name: /^Topic one/ }).click()
+  await tab(/^Topic one/).click()
+  await expect(grid.getByRole('button')).toHaveText(['1', '2', '3'])
   await expect(card(page).locator('h2')).toContainText('Question 1')
   await pick(page, wrongOption(1))
-  await page.getByRole('button', { name: 'Check' }).click()
+  await page.getByRole('button', { name: 'Check', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: 'Wrong' })).toBeVisible()
   const right = card(page).locator('.option.right')
   await expect(right).toContainText(`Alpha for item 1`)
   await expect(right).toContainText('Correct answer')
   await expect(card(page).locator('.option.wrong')).toContainText('Your answer')
   await expect(card(page).locator('.explanation')).toContainText('Made-up explanation 1.')
+  // The grid shows it at once.
+  await expect(grid.getByRole('button', { name: 'Question 1, wrong' })).toHaveClass(/wrong/)
 
   // A right answer on question 2 is not listed as wrong.
   await page.getByRole('button', { name: 'Next', exact: true }).click()
   await pick(page, rightOption(2))
-  await page.getByRole('button', { name: 'Check' }).click()
+  await page.getByRole('button', { name: 'Check', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: 'Right' })).toBeVisible()
+  await expect(grid.getByRole('button', { name: 'Question 2, right' })).toHaveClass(/right/)
 
-  await page.getByRole('button', { name: 'Back to topics' }).click()
-  await expect(gotWrong).toBeEnabled()
-  await expect(gotWrong).toContainText('1 question')
-  await gotWrong.click()
+  await expect(tab(/^Got wrong/)).toBeEnabled()
+  await expect(tab(/^Got wrong/)).toContainText('1')
+  await tab(/^Got wrong/).click()
+  await expect(grid.getByRole('button')).toHaveText(['1'])
   await expect(card(page).locator('h2')).toContainText('Question 1')
-  await expect(page.getByText('Got wrong: 1 of 1')).toBeVisible()
+  await shotBoth(page, 'practice-browser-got-wrong')
+})
+
+// ---- practice question browser (change practice-question-browser) -------------------------
+
+const sets = (page: Page) => page.getByRole('tablist', { name: 'Sets' })
+const setTab = (page: Page, name: RegExp) => sets(page).getByRole('tab', { name })
+const gridOf = (page: Page) => page.getByRole('navigation', { name: 'Questions' })
+const gridButton = (page: Page, n: number) => gridOf(page).getByRole('button', { name: new RegExp(`^Question ${n}(,|$)`) })
+
+async function questionsOf(request: APIRequestContext, bankId: string): Promise<ApiQuestion[]> {
+  const res = await request.get(`${API}/api/banks/${bankId}/questions`)
+  expect(res.status()).toBe(200)
+  return res.json()
+}
+
+async function answerApi(request: APIRequestContext, bankId: string, n: number, choice: number) {
+  const q = (await questionsOf(request, bankId)).find((x) => x.number === n)!
+  const res = await request.post(`${API}/api/questions/${q.id}/answer`, { headers: H, data: { choice } })
+  expect(res.status(), await res.text()).toBe(200)
+}
+
+test('Colours of the grid: right, wrong and the critical mark in every state', async ({ page, request }) => {
+  const { slug } = await makeArea(request)
+  const bank = await importApi(request, slug)
+  await answerApi(request, bank.id, 3, rightOption(3))
+  await answerApi(request, bank.id, 5, wrongOption(5))
+  await page.goto(`/#/practice/${slug}`)
+  await expect(setTab(page, /^All/)).toHaveAttribute('aria-selected', 'true')
+  await expect(gridOf(page).getByRole('button')).toHaveCount(12)
+  await expect(gridButton(page, 3)).toHaveAttribute('aria-label', 'Question 3, right')
+  await expect(gridButton(page, 3)).toHaveClass(/right/)
+  await expect(gridButton(page, 3)).not.toHaveClass(/critical/)
+  await expect(gridButton(page, 5)).toHaveAttribute('aria-label', 'Question 5, wrong')
+  await expect(gridButton(page, 5)).toHaveClass(/wrong/)
+  // Critical and not answered: plain with the critical mark.
+  await expect(gridButton(page, 8)).toHaveAttribute('aria-label', 'Question 8, critical')
+  await expect(gridButton(page, 8)).toHaveClass(/critical/)
+  await expect(gridButton(page, 8)).not.toHaveClass(/right|wrong/)
+  await expect(gridButton(page, 12)).toHaveClass(/critical/)
+  // Everything else is plain; the first question is the current one.
+  for (const n of [2, 4, 6, 7, 9, 10, 11]) {
+    await expect(gridButton(page, n)).toHaveAttribute('aria-label', `Question ${n}`)
+    await expect(gridButton(page, n)).not.toHaveClass(/right|wrong|critical/)
+  }
+  await expect(gridButton(page, 1)).toHaveClass(/current/)
+  // A critical question that is also answered keeps both.
+  await answerApi(request, bank.id, 8, wrongOption(8))
+  await page.reload()
+  await expect(gridButton(page, 8)).toHaveAttribute('aria-label', 'Question 8, wrong, critical')
+  await expect(gridButton(page, 8)).toHaveClass(/wrong/)
+  await expect(gridButton(page, 8)).toHaveClass(/critical/)
+  // Choosing a number opens that question.
+  await gridButton(page, 7).click()
+  await expect(card(page).locator('h2')).toContainText('Question 7')
+  await expect(gridButton(page, 7)).toHaveClass(/current/)
+  await shotBoth(page, 'practice-browser-grid')
+})
+
+test('Shuffle: every question once in a new order from its first question, grid keeps bank numbers', async ({ page, request }) => {
+  const { slug } = await makeArea(request)
+  await importApi(request, slug)
+  await page.goto(`/#/practice/${slug}`)
+  await setTab(page, /^Topic two/).click()
+  await expect(gridOf(page).getByRole('button')).toHaveText(['4', '5', '6', '7', '8'])
+  const seen = new Set<string>()
+  let changed = false
+  // A random order of 5 equals the original 1 time in 120; try a few times.
+  for (let attempt = 0; attempt < 5 && !changed; attempt++) {
+    await page.getByRole('button', { name: 'Shuffle' }).click()
+    const order = (await gridOf(page).getByRole('button').allInnerTexts()).map((t) => t.trim())
+    expect([...order].sort()).toEqual(['4', '5', '6', '7', '8'])
+    // It starts at its first question.
+    await expect(card(page).locator('h2')).toContainText(`Question ${order[0]}`)
+    await expect(gridOf(page).getByRole('button').first()).toHaveClass(/current/)
+    // Walking Next shows every question exactly once.
+    seen.clear()
+    for (let i = 0; i < order.length; i++) {
+      await expect(card(page).locator('h2')).toContainText(`Question ${order[i]}`)
+      seen.add(numberOf(await cardText(page)).toString())
+      if (i < order.length - 1) await page.getByRole('button', { name: 'Next', exact: true }).click()
+    }
+    expect([...seen].sort()).toEqual(['4', '5', '6', '7', '8'])
+    changed = order.join(',') !== '4,5,6,7,8'
+  }
+  expect(changed).toBe(true)
+})
+
+test('Saved answers: a wrong answer is kept, opens selected and marked after a reload, and a new right answer replaces it', async ({ page, request }) => {
+  const { slug } = await makeArea(request)
+  const bank = await importApi(request, slug)
+  await page.goto(`/#/practice/${slug}`)
+  await gridButton(page, 4).click()
+  await expect(card(page).locator('h2')).toContainText('Question 4')
+  const wrong = wrongOption(4)
+  await pick(page, wrong)
+  await page.getByRole('button', { name: 'Check', exact: true }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Wrong' })).toBeVisible()
+  await expect(gridButton(page, 4)).toHaveClass(/wrong/)
+  expect((await questionsOf(request, bank.id)).find((q) => q.number === 4)).toMatchObject({ last_correct: false })
+
+  // Come back later (a new load of the page): the chosen option is selected and marked wrong.
+  await page.reload()
+  await gridButton(page, 4).click()
+  await expect(card(page).locator('h2')).toContainText('Question 4')
+  const chosen = card(page).locator('.options label').nth(wrong - 1)
+  await expect(chosen.locator('input')).toBeChecked()
+  await expect(chosen).toHaveClass(/wrong/)
+  await expect(chosen).toContainText('Your answer')
+  await expect(page.getByRole('button', { name: 'Check', exact: true })).toBeEnabled()
+  await shotBoth(page, 'practice-browser-saved-answer')
+
+  // Also from another browser (a fresh context of the same user).
+  const other = await page.context().browser()!.newContext({ baseURL: APP, storageState: OWNER_STATE })
+  try {
+    const op = await other.newPage()
+    await op.goto(`/#/practice/${slug}`)
+    await gridButton(op, 4).click()
+    await expect(op.locator('.question-card .options label').nth(wrong - 1)).toHaveClass(/wrong/)
+    await expect(op.locator('.question-card .options label').nth(wrong - 1).locator('input')).toBeChecked()
+  } finally {
+    await other.close()
+  }
+
+  // Answer again with the right option: green, and gone from Got wrong.
+  await setTab(page, /^Got wrong/).click()
+  await expect(gridOf(page).getByRole('button')).toHaveText(['4'])
+  await pick(page, rightOption(4))
+  await page.getByRole('button', { name: 'Check', exact: true }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Right' })).toBeVisible()
+  await expect(gridButton(page, 4)).toHaveClass(/right/)
+  await expect(gridButton(page, 4)).not.toHaveClass(/wrong/)
+  // The open set stays as it was (the list does not shift), but its count drops to 0 and it cannot be opened again.
+  await expect(setTab(page, /^Got wrong/)).toContainText('0')
+  await setTab(page, /^All/).click()
+  await expect(setTab(page, /^Got wrong/)).toBeDisabled()
+  expect((await questionsOf(request, bank.id)).find((q) => q.number === 4)).toMatchObject({ last_correct: true })
+  await page.reload()
+  await expect(setTab(page, /^Got wrong/)).toBeDisabled()
+  await expect(gridButton(page, 4)).toHaveClass(/right/)
+})
+
+test('Bookmark and unbookmark: the Bookmarked set holds question 9 and is empty again after removing it', async ({ page, request }) => {
+  const { slug } = await makeArea(request)
+  await importApi(request, slug)
+  await page.goto(`/#/practice/${slug}`)
+  await expect(setTab(page, /^Bookmarked/)).toBeDisabled()
+  await gridButton(page, 9).click()
+  await expect(card(page).locator('h2')).toContainText('Question 9')
+  const toggle = card(page).getByRole('button', { name: 'Bookmark' })
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+  await expect(setTab(page, /^Bookmarked/)).toContainText('1')
+  await setTab(page, /^Bookmarked/).click()
+  await expect(gridOf(page).getByRole('button')).toHaveText(['9'])
+  await expect(card(page).locator('h2')).toContainText('Question 9')
+  await expect(card(page).getByRole('button', { name: 'Bookmark' })).toHaveAttribute('aria-pressed', 'true')
+  await shotBoth(page, 'practice-browser-bookmarked')
+  // It survives a reload.
+  await page.reload()
+  await expect(setTab(page, /^Bookmarked/)).toContainText('1')
+  await setTab(page, /^Bookmarked/).click()
+  await expect(gridOf(page).getByRole('button')).toHaveText(['9'])
+  // Removing the bookmark empties the set.
+  await card(page).getByRole('button', { name: 'Bookmark' }).click()
+  await expect(card(page).getByRole('button', { name: 'Bookmark' })).toHaveAttribute('aria-pressed', 'false')
+  await expect(setTab(page, /^Bookmarked/)).toContainText('0')
+  await page.reload()
+  await expect(setTab(page, /^Bookmarked/)).toBeDisabled()
+})
+
+test("Another user's bookmark: B's Bookmarked set is empty and B's bookmark leaves A's list alone", async ({ request, browser }) => {
+  const { fieldId, slug } = await makeArea(request)
+  const bank = await importApi(request, slug)
+  const context = await ensureMember(browser, request)
+  const m = context.request
+  const published = await request.patch(`${API}/api/fields/${fieldId}`, { headers: H, data: { published: true } })
+  expect(published.status(), await published.text()).toBe(200)
+  const bookmarked = async (r: APIRequestContext) =>
+    ((await (await r.get(`${API}/api/banks/${bank.id}/questions?bookmarked=true`)).json()) as ApiQuestion[]).map((q) => q.number)
+  const q9 = (await questionsOf(request, bank.id)).find((q) => q.number === 9)!
+  const q2 = (await questionsOf(request, bank.id)).find((q) => q.number === 2)!
+  expect((await request.put(`${API}/api/questions/${q9.id}/bookmark`, { headers: H, data: { bookmarked: true } })).status()).toBe(200)
+  expect(await bookmarked(request)).toEqual([9])
+  expect(await bookmarked(m)).toEqual([])
+  expect((await m.put(`${API}/api/questions/${q2.id}/bookmark`, { headers: H, data: { bookmarked: true } })).status()).toBe(200)
+  expect(await bookmarked(m)).toEqual([2])
+  expect(await bookmarked(request)).toEqual([9])
+})
+
+test('Area without a bank: the owner sees the message and Import questions, a member only the message', async ({ page, request, browser }) => {
+  const { fieldId, slug } = await makeArea(request)
+  await page.goto(`/#/roadmap/${slug}`)
+  await expect(page.getByRole('link', { name: 'Practice' })).toBeVisible()
+  await page.getByRole('link', { name: 'Practice' }).click()
+  await expect(page).toHaveURL(new RegExp(`#/practice/${slug}$`))
+  await expect(page.getByText('This area has no question banks yet.')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Import questions' })).toBeVisible()
+  await shotBoth(page, 'practice-browser-no-bank')
+
+  // The member sees the message of a published area without the import.
+  const context = await ensureMember(browser, request)
+  const published = await request.patch(`${API}/api/fields/${fieldId}`, { headers: H, data: { published: true } })
+  expect(published.status(), await published.text()).toBe(200)
+  const mp = await context.newPage()
+  try {
+    await mp.goto(`/#/roadmap/${slug}`)
+    await expect(mp.getByRole('link', { name: 'Practice' })).toBeVisible()
+    await mp.getByRole('link', { name: 'Practice' }).click()
+    await expect(mp.getByText('This area has no question banks yet.')).toBeVisible()
+    await expect(mp.getByRole('button', { name: 'Import questions' })).toHaveCount(0)
+    await expect(mp.getByLabel('Question bank file')).toHaveCount(0)
+  } finally {
+    await mp.close()
+  }
+
+  // The owner imports from the practice page: the bank shows up there.
+  await page.getByLabel('Question bank file').setInputFiles(zipFile())
+  await expect(page.getByRole('heading', { name: 'Synthetic QC bank' })).toBeVisible()
+  expect((await banksOf(request, slug))[0].question_count).toBe(12)
 })
 
 // ---- exam --------------------------------------------------------------------------------
@@ -681,8 +912,8 @@ test('Member: practises a bank of the admin\'s published area, cannot import or 
     await expect(mp.getByRole('button', { name: 'Import questions' })).toHaveCount(0)
     await mp.getByRole('link', { name: 'Practice' }).click()
     await expect(mp.getByRole('heading', { name: 'Synthetic QC bank' })).toBeVisible()
-    await expect(mp.getByRole('button', { name: /^Got wrong/ })).toBeDisabled()
-    await mp.getByRole('button', { name: /^Topic one/ }).click()
+    await expect(mp.getByRole('tab', { name: /^Got wrong/ })).toBeDisabled()
+    await mp.getByRole('tab', { name: /^Topic one/ }).click()
     await mp.locator('.question-card .options label').nth(rightOption(1) - 1).click()
     await mp.getByRole('button', { name: 'Check' }).click()
     await expect(mp.getByRole('status').filter({ hasText: 'Right' })).toBeVisible()
@@ -703,6 +934,24 @@ test('Member: practises a bank of the admin\'s published area, cannot import or 
 
 test.describe('phone', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true })
+
+  test('phone: the practice browser fits a phone with no sideways scroll', async ({ page, request }) => {
+    const { slug } = await makeArea(request)
+    await importApi(request, slug)
+    await page.goto(`/#/practice/${slug}`)
+    await expect(gridOf(page).getByRole('button')).toHaveCount(12)
+    const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+    expect(await overflow()).toBeLessThanOrEqual(1)
+    await gridButton(page, 2).click()
+    await expect(card(page).locator('img.question-image')).toBeVisible()
+    expect(await overflow()).toBeLessThanOrEqual(1)
+    // Grid above the card, at most about 40 % of the viewport high.
+    const grid = (await gridOf(page).boundingBox())!
+    const cardBox = (await card(page).boundingBox())!
+    expect(grid.y + grid.height).toBeLessThanOrEqual(cardBox.y + 1)
+    expect(grid.height).toBeLessThanOrEqual(844 * 0.42)
+    await shotBoth(page, 'practice-browser-phone')
+  })
 
   test('phone: the exam page fits a phone with no sideways scroll', async ({ page, request }) => {
     const { slug } = await makeArea(request)

@@ -33,6 +33,7 @@ from app.db import (
     Question,
     QuestionAnswer,
     QuestionBank,
+    QuestionBookmark,
 )
 from app.storage import FileStore
 
@@ -195,6 +196,7 @@ class BankAnswerRow(Row):
 
     number: int = Field(ge=1)
     last_correct: bool
+    last_choice: int | None = Field(default=None, ge=1, le=6)
     times_wrong: int = Field(ge=0)
     answered_at: datetime
 
@@ -221,6 +223,7 @@ class BankRow(Row):
     created_at: datetime
     questions: list[BankQuestionRow] = Field(max_length=2000)
     answers: list[BankAnswerRow] = Field(default_factory=list)
+    bookmarks: list[int] = Field(default_factory=list)
     attempts: list[BankAttemptRow] = Field(default_factory=list)
 
 
@@ -324,6 +327,7 @@ def _bank_rows(session: Session, user_id: uuid.UUID) -> list[BankRow]:
             BankAnswerRow(
                 number=number_of[a.question_id],
                 last_correct=a.last_correct,
+                last_choice=a.last_choice,
                 times_wrong=a.times_wrong,
                 answered_at=a.answered_at,
             )
@@ -334,6 +338,15 @@ def _bank_rows(session: Session, user_id: uuid.UUID) -> list[BankRow]:
                 )
             )
         ]
+        bookmarks = sorted(
+            number_of[qid]
+            for qid in session.scalars(
+                select(QuestionBookmark.question_id).where(
+                    QuestionBookmark.user_id == user_id,
+                    QuestionBookmark.question_id.in_(list(number_of)),
+                )
+            )
+        )
         attempts = [
             BankAttemptRow(
                 question_numbers=[id_of[i] for i in e.question_ids if i in id_of],
@@ -359,6 +372,7 @@ def _bank_rows(session: Session, user_id: uuid.UUID) -> list[BankRow]:
                 created_at=bank.created_at,
                 questions=[BankQuestionRow.model_validate(q) for q in questions],
                 answers=answers,
+                bookmarks=bookmarks,
                 attempts=attempts,
             )
         )

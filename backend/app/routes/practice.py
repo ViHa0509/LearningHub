@@ -25,6 +25,7 @@ from app.db import (
     Question,
     QuestionAnswer,
     QuestionBank,
+    QuestionBookmark,
     User,
     get_session,
 )
@@ -43,6 +44,8 @@ from app.practice.schemas import (
     AnswersIn,
     BankOut,
     BankRules,
+    BookmarkIn,
+    BookmarkOut,
     ExamOut,
     ExamResult,
     ExamSummary,
@@ -106,7 +109,7 @@ def _question_of(session: Session, user: User, raw_id: str) -> Question:
     return question
 
 
-def _bank_out(session: Session, bank: QuestionBank, area: LearningArea) -> BankOut:
+def _bank_out(session: Session, user: User, bank: QuestionBank, area: LearningArea) -> BankOut:
     counts = {
         slug: n
         for slug, n in session.execute(
@@ -140,6 +143,15 @@ def _bank_out(session: Session, bank: QuestionBank, area: LearningArea) -> BankO
         )
         or 0
     )
+    marks = (
+        session.scalar(
+            select(func.count())
+            .select_from(QuestionBookmark)
+            .join(Question, Question.id == QuestionBookmark.question_id)
+            .where(QuestionBookmark.user_id == user.id, Question.bank_id == bank.id)
+        )
+        or 0
+    )
     return BankOut(
         id=str(bank.id),
         area=area.slug,
@@ -149,24 +161,38 @@ def _bank_out(session: Session, bank: QuestionBank, area: LearningArea) -> BankO
         critical_count=critical,
         topics=[TopicCount(slug=s, title=titles.get(s, (s, 0))[0], count=counts[s]) for s in slugs],
         images_missing=missing,
+        bookmarked_count=marks,
         created_at=bank.created_at,
     )
 
 
-def _last_correct(session: Session, user: User, ids: list[uuid.UUID]) -> dict[uuid.UUID, bool]:
+def _marks(
+    session: Session, user: User, ids: list[uuid.UUID]
+) -> tuple[dict[uuid.UUID, tuple[bool, int | None]], set[uuid.UUID]]:
+    """The user's last answer (right or wrong, chosen option) and bookmarks among ``ids``."""
     if not ids:
-        return {}
-    return {
-        qid: correct
-        for qid, correct in session.execute(
-            select(QuestionAnswer.question_id, QuestionAnswer.last_correct).where(
-                QuestionAnswer.user_id == user.id, QuestionAnswer.question_id.in_(ids)
-            )
+        return {}, set()
+    last = {
+        qid: (correct, choice)
+        for qid, correct, choice in session.execute(
+            select(
+                QuestionAnswer.question_id, QuestionAnswer.last_correct, QuestionAnswer.last_choice
+            ).where(QuestionAnswer.user_id == user.id, QuestionAnswer.question_id.in_(ids))
         )
     }
+    marked = set(
+        session.scalars(
+            select(QuestionBookmark.question_id).where(
+                QuestionBookmark.user_id == user.id, QuestionBookmark.question_id.in_(ids)
+            )
+        )
+    )
+    return last, marked
 
 
-def _question_out(q: Question, last: bool | None) -> QuestionOut:
+def _question_out(
+    q: Question, last: tuple[bool, int | None] | None = None, bookmarked: bool = False
+) -> QuestionOut:
     return QuestionOut(
         id=str(q.id),
         number=q.number,
@@ -175,7 +201,9 @@ def _question_out(q: Question, last: bool | None) -> QuestionOut:
         options=list(q.options),
         critical=q.critical,
         has_image=q.image_key is not None,
-        last_correct=last,
+        last_correct=None if last is None else last[0],
+        last_choice=None if last is None else last[1],
+        bookmarked=bookmarked,
     )
 
 
@@ -194,7 +222,7 @@ def list_banks(
         .where(QuestionBank.area_id == area.id)
         .order_by(QuestionBank.created_at, QuestionBank.id)
     )
-    return [_bank_out(session, bank, area) for bank in banks]
+    return [_bank_out(session, user, bank, area) for bank in banks]
 
 
 @router.post(
@@ -262,7 +290,7 @@ def import_bank(
     session.add_all(rows)
     session.commit()
     session.refresh(bank)
-    return _bank_out(session, bank, area)
+    return _bank_out(session, user, bank, area)
 
 
 @router.delete("/api/banks/{bank_id}", status_code=204, dependencies=guarded)
@@ -356,6 +384,7 @@ def list_questions(
     topic: str | None = None,
     critical: bool | None = None,
     wrong: bool | None = None,
+    bookmarked: bool | None = None,
 ) -> list[QuestionOut]:
     bank, _, _ = _bank_of(session, user, bank_id)
     query = select(Question).where(Question.bank_id == bank.id).order_by(Question.number)
@@ -368,9 +397,14 @@ def list_questions(
             QuestionAnswer,
             (QuestionAnswer.question_id == Question.id) & (QuestionAnswer.user_id == user.id),
         ).where(QuestionAnswer.last_correct.is_(False))
+    if bookmarked:
+        query = query.join(
+            QuestionBookmark,
+            (QuestionBookmark.question_id == Question.id) & (QuestionBookmark.user_id == user.id),
+        )
     questions = list(session.scalars(query))
-    last = _last_correct(session, user, [q.id for q in questions])
-    return [_question_out(q, last.get(q.id)) for q in questions]
+    last, marked = _marks(session, user, [q.id for q in questions])
+    return [_question_out(q, last.get(q.id), q.id in marked) for q in questions]
 
 
 @router.get("/api/questions/{question_id}/image")
@@ -396,7 +430,12 @@ def question_image(
 
 
 def _record(
-    session: Session, user: User, question_id: uuid.UUID, correct: bool, now: datetime
+    session: Session,
+    user: User,
+    question_id: uuid.UUID,
+    correct: bool,
+    choice: int,
+    now: datetime,
 ) -> None:
     row = session.get(QuestionAnswer, (user.id, question_id))
     if row is None:
@@ -405,12 +444,14 @@ def _record(
                 user_id=user.id,
                 question_id=question_id,
                 last_correct=correct,
+                last_choice=choice,
                 times_wrong=0 if correct else 1,
                 answered_at=now,
             )
         )
         return
     row.last_correct = correct
+    row.last_choice = choice
     row.times_wrong += 0 if correct else 1
     row.answered_at = now
 
@@ -427,9 +468,25 @@ def answer_question(
     if payload.choice > len(question.options):
         raise HTTPException(status_code=422, detail="the choice is not one of the options")
     correct = payload.choice == question.answer
-    _record(session, user, question.id, correct, request.app.state.clock())
+    _record(session, user, question.id, correct, payload.choice, request.app.state.clock())
     session.commit()
     return AnswerOut(correct=correct, answer=question.answer, explanation=question.explanation)
+
+
+@router.put(
+    "/api/questions/{question_id}/bookmark", response_model=BookmarkOut, dependencies=guarded
+)
+def set_bookmark(
+    question_id: str, payload: BookmarkIn, session: SessionDep, user: CurrentUser
+) -> BookmarkOut:
+    question = _question_of(session, user, question_id)
+    row = session.get(QuestionBookmark, (user.id, question.id))
+    if payload.bookmarked and row is None:
+        session.add(QuestionBookmark(user_id=user.id, question_id=question.id))
+    elif not payload.bookmarked and row is not None:
+        session.delete(row)
+    session.commit()
+    return BookmarkOut(bookmarked=payload.bookmarked)
 
 
 # --- Mock tests -----------------------------------------------------------------------------
@@ -594,7 +651,7 @@ def submit_exam(
     for q in questions:
         choice = exam.answers.get(str(q.id))
         if choice is not None:
-            _record(session, user, q.id, choice == q.answer, now)
+            _record(session, user, q.id, choice == q.answer, choice, now)
     exam.score = scored.score
     exam.passed = scored.passed
     exam.failed_on_critical = scored.failed_on_critical
