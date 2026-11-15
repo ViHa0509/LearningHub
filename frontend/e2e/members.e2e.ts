@@ -155,6 +155,7 @@ test('the admin invites a member from Settings -> Users; the link shows with Cop
   await expect(own).toContainText('Admin')
   await expect(own.getByText('You', { exact: true })).toBeVisible()
   await expect(own.getByRole('button')).toHaveCount(0)
+  await expect(own.getByRole('button', { name: /^More actions for/ })).toHaveCount(0)
 
   const invite = page.getByRole('region', { name: 'Invite' })
   const send = invite.getByRole('button', { name: 'Send invitation' })
@@ -441,10 +442,20 @@ test('disabling the member shows them the login page and refuses their sign-in; 
   const row = usersRow(page, MEMBER.email)
   await expect(row).toContainText('Member')
   await expect(row).toContainText('Active')
+  // Row actions menu: one More actions button holds Disable and, last, Delete; the admin's row has none.
+  await row.getByRole('button', { name: `More actions for ${MEMBER.email}` }).click()
+  const menu = page.getByRole('menu', { name: `Actions for ${MEMBER.email}` })
+  await expect(menu.getByRole('menuitem')).toHaveText(['Disable', 'Delete'])
+  await expect(menu.getByRole('menuitem', { name: `Delete ${MEMBER.email}` })).toHaveClass(/danger/)
+  await shot(page, 'users-row-menu')
   page.once('dialog', (dialog) => void dialog.accept())
-  await row.getByRole('button', { name: `Disable ${MEMBER.email}` }).click()
+  await menu.getByRole('menuitem', { name: `Disable ${MEMBER.email}` }).click()
   await expect(row).toContainText('Disabled')
-  await expect(row.getByRole('button', { name: `Enable ${MEMBER.email}` })).toBeVisible()
+  await row.getByRole('button', { name: `More actions for ${MEMBER.email}` }).click()
+  await expect(page.getByRole('menuitem', { name: `Enable ${MEMBER.email}` })).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: `Disable ${MEMBER.email}` })).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('menu')).toHaveCount(0)
   await shot(page, 'users-disabled')
 
   // The member's next request is answered 401, and the app shows the login page.
@@ -464,7 +475,8 @@ test('disabling the member shows them the login page and refuses their sign-in; 
 
   // Enabled again: the member can sign in.
   page.once('dialog', (dialog) => void dialog.accept())
-  await row.getByRole('button', { name: `Enable ${MEMBER.email}` }).click()
+  await row.getByRole('button', { name: `More actions for ${MEMBER.email}` }).click()
+  await page.getByRole('menuitem', { name: `Enable ${MEMBER.email}` }).click()
   await expect(row).toContainText('Active')
   await login.getByRole('button', { name: 'Log in' }).click()
   await expect(member.getByRole('button', { name: `Account menu: ${MEMBER.name}` })).toBeVisible({ timeout: 30_000 })
@@ -531,7 +543,8 @@ test("deleting the member after typing their email removes them; the admin's dat
   expect(state.adminNote).not.toBeNull()
   await openUsers(page)
   const row = usersRow(page, MEMBER.email)
-  await row.getByRole('button', { name: `Delete ${MEMBER.email}` }).click()
+  await row.getByRole('button', { name: `More actions for ${MEMBER.email}` }).click()
+  await page.getByRole('menuitem', { name: `Delete ${MEMBER.email}` }).click()
   const box = page.getByRole('dialog', { name: `Delete ${MEMBER.email}` })
   const confirm = box.getByRole('button', { name: 'Delete user' })
   await expect(confirm).toBeDisabled()

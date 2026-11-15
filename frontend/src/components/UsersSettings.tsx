@@ -3,6 +3,8 @@ import { useState, type FormEvent } from 'react'
 import { api, queryKeys, type AdminUser, type Invitation } from '../api'
 import { authErrorMessage, useMe } from '../lib/auth'
 import { useUnsavedGuard } from '../lib/unsavedGuard'
+import { ActionMenu } from './ActionMenu'
+import { Icon } from './Icon'
 import { SettingsNav } from './SettingsNav'
 
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
@@ -192,6 +194,8 @@ function UsersTable({ users, failed, selfId }: { users: AdminUser[] | undefined;
   const client = useQueryClient()
   const [error, setError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<AdminUser | null>(null)
+  /** The id of the member whose actions menu is open (one at a time). */
+  const [menuFor, setMenuFor] = useState<string | null>(null)
 
   const refresh = () => client.invalidateQueries({ queryKey: queryKeys.adminUsers })
 
@@ -243,14 +247,56 @@ function UsersTable({ users, failed, selfId }: { users: AdminUser[] | undefined;
                       {own ? (
                         <span className="tag on">You</span>
                       ) : user.role === 'member' ? (
-                        <>
-                          <button type="button" onClick={() => void toggle(user)} aria-label={`${user.disabled ? 'Enable' : 'Disable'} ${user.email}`}>
-                            {user.disabled ? 'Enable' : 'Disable'}
-                          </button>{' '}
-                          <button type="button" onClick={() => setDeleting(user)} aria-label={`Delete ${user.email}`}>
-                            Delete
+                        <div className="users-actions">
+                          <button
+                            type="button"
+                            className="icon users-more"
+                            aria-label={`More actions for ${user.email}`}
+                            aria-haspopup="menu"
+                            aria-expanded={menuFor === user.id}
+                            onClick={() => setMenuFor(menuFor === user.id ? null : user.id)}
+                          >
+                            <Icon name="more-vertical" />
                           </button>
-                        </>
+                          {menuFor === user.id && (
+                            <ActionMenu
+                              label={`Actions for ${user.email}`}
+                              onClose={(restoreFocus) => {
+                                setMenuFor(null)
+                                if (restoreFocus)
+                                  document
+                                    .querySelector<HTMLElement>(`.users-more[aria-label="More actions for ${user.email}"]`)
+                                    ?.focus()
+                              }}
+                              triggerSelector=".users-more"
+                            >
+                              <button
+                                type="button"
+                                role="menuitem"
+                                aria-label={`${user.disabled ? 'Enable' : 'Disable'} ${user.email}`}
+                                onClick={() => {
+                                  setMenuFor(null)
+                                  void toggle(user)
+                                }}
+                              >
+                                {user.disabled ? 'Enable' : 'Disable'}
+                              </button>
+                              <div role="separator" className="menu-divider" />
+                              <button
+                                type="button"
+                                role="menuitem"
+                                className="danger"
+                                aria-label={`Delete ${user.email}`}
+                                onClick={() => {
+                                  setMenuFor(null)
+                                  setDeleting(user)
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </ActionMenu>
+                          )}
+                        </div>
                       ) : null}
                     </td>
                   </tr>

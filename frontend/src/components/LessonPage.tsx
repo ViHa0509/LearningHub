@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
 import { api, queryKeys, type Note, type RoadmapNode } from '../api'
+import { useDomains } from '../hooks'
 import { routeHash } from '../lib/route'
 import { tooLargeReason, useMaxUploadBytes } from '../lib/uploadLimit'
 import { Icon } from './Icon'
@@ -19,6 +20,7 @@ interface Props {
 
 export function LessonPage({ domain, node, notes, onDraft, onDraftFromReferences }: Props) {
   const roadmap = useQuery({ queryKey: queryKeys.roadmap(domain), queryFn: () => api.roadmap(domain) })
+  const domains = useDomains()
   const mapLink = routeHash({ page: 'roadmap', domain })
 
   if (roadmap.isPending) return <p className="page-status muted">Loading…</p>
@@ -103,12 +105,15 @@ export function LessonPage({ domain, node, notes, onDraft, onDraftFromReferences
         onDraftFromReferences={onDraftFromReferences}
       />
 
-      <p className="further-reading">
-        Further reading:{' '}
-        <a href={`https://roadmap.sh/${domain}`} target="_blank" rel="noreferrer noopener">
-          {roadmap.data.title} on roadmap.sh ↗
-        </a>
-      </p>
+      {/* Only the built-in roles have a roadmap.sh page; a learning field's area has none. */}
+      {domains.data?.find((d) => d.id === domain)?.field_id === null && (
+        <p className="further-reading">
+          Further reading:{' '}
+          <a href={`https://roadmap.sh/${domain}`} target="_blank" rel="noreferrer noopener">
+            {roadmap.data.title} on roadmap.sh ↗
+          </a>
+        </p>
+      )}
     </article>
   )
 }

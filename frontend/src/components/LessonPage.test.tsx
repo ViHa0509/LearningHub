@@ -1,7 +1,7 @@
 /** Spec: lesson-pages. */
 import { screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { installFakeApi, makeNote } from '../test/fakeApi'
+import { installFakeApi, makeField, makeNote } from '../test/fakeApi'
 import { renderApp } from '../test/render'
 
 const openLesson = (title: string) => screen.findByRole('article', { name: `Lesson: ${title}` })
@@ -61,7 +61,7 @@ describe('lesson page', () => {
     installFakeApi()
     renderApp('#/lesson/devops/docker')
     const lesson = await openLesson('Docker')
-    const link = within(lesson).getByRole('link', { name: /on roadmap\.sh/ })
+    const link = await within(lesson).findByRole('link', { name: /on roadmap\.sh/ })
     expect(link).toHaveAttribute('href', 'https://roadmap.sh/devops')
     expect(link).toHaveAttribute('target', '_blank')
     expect(link.getAttribute('rel')).toContain('noopener')
@@ -122,5 +122,17 @@ describe('lesson content', () => {
     expect(body.querySelector('script')).toBeNull()
     expect(body.querySelector('img')).toBeNull()
     expect((window as unknown as { __pwned?: boolean }).__pwned).toBeUndefined()
+  })
+
+  it('shows no roadmap.sh link on a lesson of a learning field area', async () => {
+    const state = installFakeApi()
+    state.fields.push(makeField('Cloud', [{ slug: 'aws', title: 'AWS', topics: [{ slug: 'iam', title: 'IAM' }] }]))
+    renderApp('#/lesson/aws/iam')
+    const lesson = await openLesson('IAM')
+    await within(lesson).findByRole('region', { name: 'Lesson' })
+    await waitFor(() => expect(state.calls.some((c) => c.url === '/api/domains')).toBe(true))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(within(lesson).queryByText(/Further reading/)).not.toBeInTheDocument()
+    expect(within(lesson).queryByRole('link', { name: /roadmap\.sh/ })).not.toBeInTheDocument()
   })
 })

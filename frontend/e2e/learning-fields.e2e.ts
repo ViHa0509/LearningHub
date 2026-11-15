@@ -296,6 +296,31 @@ test('Save topics: the editor saves IAM and EC2, the map shows both and each has
   await expect(page.getByRole('heading', { name: 'EC2', level: 1 })).toBeVisible()
   await page.goto(`/#/lesson/${slug}/iam`)
   await expect(page.getByRole('heading', { name: 'IAM', level: 1 })).toBeVisible()
+  // roadmap.sh does not cover a learning field: no Further reading line on its lesson page.
+  await expect(page.getByText('Further reading')).toHaveCount(0)
+  await expect(page.getByRole('link', { name: /roadmap\.sh/ })).toHaveCount(0)
+})
+
+test('Further reading: a built-in role links to roadmap.sh, a field area does not', async ({ page, request }) => {
+  await page.goto('/#/lesson/devops/docker')
+  await expect(page.getByRole('article', { name: 'Lesson: Docker' })).toBeVisible()
+  await expect(page.getByText('Further reading')).toBeVisible()
+  const link = page.getByRole('link', { name: /on roadmap\.sh/ })
+  await expect(link).toHaveAttribute('href', 'https://roadmap.sh/devops')
+  await expect(link).toHaveAttribute('target', '_blank')
+
+  const field = await makeField(request, cloudTitle(14))
+  const slug = slugOf('further')
+  await makeArea(request, field.id, slug, 'Further')
+  const put = await request.put(`${API}/api/areas/${slug}/topics`, {
+    headers: H,
+    data: { topics: [{ slug: 'basics', title: 'Basics', description: null, parent: null }] },
+  })
+  expect(put.status(), await put.text()).toBe(200)
+  await page.goto(`/#/lesson/${slug}/basics`)
+  await expect(page.getByRole('heading', { name: 'Basics', level: 1 })).toBeVisible()
+  await expect(page.getByText('Further reading')).toHaveCount(0)
+  await expect(page.getByRole('link', { name: /roadmap\.sh/ })).toHaveCount(0)
 })
 
 test('Invalid topics: a duplicate slug shows what is wrong and saves nothing; a missing parent is refused by the API', async ({

@@ -38,6 +38,8 @@ const openUsers = async () => {
   const page = await screen.findByRole('region', { name: 'Users' })
   return { ...rendered, page }
 }
+const openRowMenu = async (user: { click: (el: Element) => Promise<void> }, page: HTMLElement) =>
+  user.click(await within(page).findByRole('button', { name: 'More actions for ana@example.test' }))
 const calls = (state: FakeState, method: string, prefix: string) =>
   state.calls.filter((c) => c.method === method && c.url.startsWith(prefix))
 
@@ -88,8 +90,28 @@ describe('users page', () => {
     expect(within(own).getByText('You')).toBeInTheDocument()
     expect(within(own).queryByRole('button')).not.toBeInTheDocument()
     const ana = within(table).getByRole('row', { name: /ana@example.test/ })
-    expect(within(ana).getByRole('button', { name: 'Disable ana@example.test' })).toBeInTheDocument()
-    expect(within(ana).getByRole('button', { name: 'Delete ana@example.test' })).toBeInTheDocument()
+    expect(within(ana).getByRole('button', { name: 'More actions for ana@example.test' })).toBeInTheDocument()
+  })
+
+  it('offers Disable and Delete in a row menu, none on the own row, and Disable asks first', async () => {
+    const state = adminState()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const { user, page } = await openUsers()
+    const own = await within(page).findByRole('row', { name: new RegExp(OWNER.email) })
+    expect(within(own).queryByRole('button', { name: /More actions/ })).not.toBeInTheDocument()
+    const ana = within(page).getByRole('row', { name: /ana@example.test/ })
+    expect(within(ana).queryByRole('menuitem')).not.toBeInTheDocument()
+    expect(within(ana).queryByRole('button', { name: 'Disable ana@example.test' })).not.toBeInTheDocument()
+    const more = within(ana).getByRole('button', { name: 'More actions for ana@example.test' })
+    expect(more).toHaveAttribute('aria-expanded', 'false')
+    await user.click(more)
+    expect(more).toHaveAttribute('aria-expanded', 'true')
+    const menu = within(ana).getByRole('menu')
+    expect(within(menu).getByRole('menuitem', { name: 'Delete ana@example.test' })).toBeInTheDocument()
+    await user.click(within(menu).getByRole('menuitem', { name: 'Disable ana@example.test' }))
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('ana@example.test'))
+    expect(state.admin.users[1].disabled).toBe(false)
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
   it('keeps the table in its own scroll area so a narrow page does not scroll sideways', async () => {
@@ -205,12 +227,14 @@ describe('users page', () => {
     const state = adminState()
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     const { user, page } = await openUsers()
-    await user.click(await within(page).findByRole('button', { name: 'Disable ana@example.test' }))
+    await openRowMenu(user, page)
+    await user.click(screen.getByRole('menuitem', { name: 'Disable ana@example.test' }))
     await waitFor(() => expect(state.admin.users[1].disabled).toBe(true))
     expect(calls(state, 'PUT', '/api/admin/users/u2/disabled')[0].body).toEqual({ disabled: true })
     const row = await within(page).findByRole('row', { name: /ana@example.test/ })
     expect(await within(row).findByText('Disabled')).toBeInTheDocument()
-    await user.click(within(row).getByRole('button', { name: 'Enable ana@example.test' }))
+    await openRowMenu(user, page)
+    await user.click(screen.getByRole('menuitem', { name: 'Enable ana@example.test' }))
     await waitFor(() => expect(state.admin.users[1].disabled).toBe(false))
   })
 
@@ -218,14 +242,16 @@ describe('users page', () => {
     const state = adminState()
     vi.spyOn(window, 'confirm').mockReturnValue(false)
     const { user, page } = await openUsers()
-    await user.click(await within(page).findByRole('button', { name: 'Disable ana@example.test' }))
+    await openRowMenu(user, page)
+    await user.click(screen.getByRole('menuitem', { name: 'Disable ana@example.test' }))
     expect(state.admin.users[1].disabled).toBe(false)
   })
 
   it('deletes a member only after their email is typed', async () => {
     const state = adminState()
     const { user, page } = await openUsers()
-    await user.click(await within(page).findByRole('button', { name: 'Delete ana@example.test' }))
+    await openRowMenu(user, page)
+    await user.click(screen.getByRole('menuitem', { name: 'Delete ana@example.test' }))
     const box = screen.getByRole('dialog', { name: 'Delete ana@example.test' })
     const confirmButton = within(box).getByRole('button', { name: 'Delete user' })
     expect(confirmButton).toBeDisabled()
@@ -242,7 +268,8 @@ describe('users page', () => {
   it('cancels the delete box', async () => {
     const state = adminState()
     const { user, page } = await openUsers()
-    await user.click(await within(page).findByRole('button', { name: 'Delete ana@example.test' }))
+    await openRowMenu(user, page)
+    await user.click(screen.getByRole('menuitem', { name: 'Delete ana@example.test' }))
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(state.admin.users).toHaveLength(2)
