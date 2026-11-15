@@ -477,6 +477,109 @@ export interface InvitationInfo {
   expires_at: string
 }
 
+export interface BankRules {
+  questions: number
+  minutes: number
+  pass_mark: number
+  critical_fails: boolean
+  min_critical: number
+  per_topic: Record<string, number>
+}
+
+export interface BankTopic {
+  slug: string
+  title: string
+  count: number
+}
+
+export interface Bank {
+  id: string
+  area: string
+  title: string
+  rules: BankRules
+  question_count: number
+  critical_count: number
+  topics: BankTopic[]
+  /** Questions that name a picture which has not been uploaded yet. */
+  images_missing: number
+  created_at: string
+}
+
+/** A question as the browser sees it: never the correct option. */
+export interface Question {
+  id: string
+  number: number
+  topic: string
+  text: string
+  options: string[]
+  critical: boolean
+  has_image: boolean
+  last_correct: boolean | null
+}
+
+export interface PictureUpload {
+  added: string[]
+  unknown: string[]
+  missing: number
+}
+
+export interface QuestionFilters {
+  topic?: string
+  critical?: boolean
+  wrong?: boolean
+}
+
+export interface AnswerResult {
+  correct: boolean
+  /** The correct option, 1-based. */
+  answer: number
+  explanation: string | null
+}
+
+export interface ExamReviewItem {
+  question_id: string
+  number: number
+  choice: number | null
+  answer: number
+  correct: boolean
+  explanation: string | null
+}
+
+export interface ExamResult {
+  score: number
+  total: number
+  passed: boolean
+  /** Numbers of the critical questions answered wrong, when the rules make them fail the test. */
+  failed_on_critical: number[]
+  review: ExamReviewItem[]
+}
+
+export interface Exam {
+  id: string
+  bank_id: string
+  started_at: string
+  deadline: string
+  submitted_at: string | null
+  questions: Question[]
+  answers: Record<string, number>
+  result: ExamResult | null
+}
+
+export interface ExamSummary {
+  id: string
+  started_at: string
+  submitted_at: string | null
+  score: number | null
+  total: number
+  passed: boolean | null
+}
+
+/** One problem found in a bank file; `question` is null for a problem of the file itself. */
+export interface BankProblem {
+  question: number | null
+  msg: string
+}
+
 export class ApiError extends Error {
   status: number
   /** Field errors of a 422 answer (`detail[].field`), with any `config.` prefix removed. */
@@ -587,6 +690,37 @@ export const api = {
   deleteArea: (slug: string) => request<void>(`/api/areas/${slug}`, { method: 'DELETE' }),
   saveTopics: (slug: string, topics: TopicInput[]) =>
     request<Roadmap>(`/api/areas/${slug}/topics`, json('PUT', { topics })),
+  banks: (area: string) => request<Bank[]>(`/api/areas/${area}/banks`),
+  /** Imports a question bank (.json or .zip). A 422 carries the problems in `ApiError.body.detail`. */
+  importBank: (area: string, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return request<Bank>(`/api/areas/${area}/banks`, { method: 'POST', body: form })
+  },
+  /** Adds pictures (image files and/or zips) to a bank; one request must stay under the host's body limit. */
+  addBankPictures: (bank: string, files: File[]) => {
+    const form = new FormData()
+    for (const file of files) form.append('files', file)
+    return request<PictureUpload>(`/api/banks/${bank}/images`, { method: 'POST', body: form })
+  },
+  bankQuestions: (bank: string, filters: QuestionFilters = {}) => {
+    const params = new URLSearchParams()
+    if (filters.topic) params.set('topic', filters.topic)
+    if (filters.critical) params.set('critical', 'true')
+    if (filters.wrong) params.set('wrong', 'true')
+    const search = params.toString()
+    return request<Question[]>(`/api/banks/${bank}/questions${search ? `?${search}` : ''}`)
+  },
+  questionImageUrl: (id: string) => `/api/questions/${id}/image`,
+  answerQuestion: (id: string, choice: number) =>
+    request<AnswerResult>(`/api/questions/${id}/answer`, json('POST', { choice })),
+  startExam: (bank: string) => request<Exam>(`/api/banks/${bank}/exams`, { method: 'POST' }),
+  bankExams: (bank: string) => request<ExamSummary[]>(`/api/banks/${bank}/exams`),
+  exam: (id: string) => request<Exam>(`/api/exams/${id}`),
+  saveExamAnswers: (id: string, answers: Record<string, number>) =>
+    request<unknown>(`/api/exams/${id}/answers`, json('PUT', { answers })),
+  submitExam: (id: string, answers: Record<string, number>) =>
+    request<Exam>(`/api/exams/${id}/submit`, json('POST', { answers })),
   notes: () => request<Note[]>('/api/notes'),
   archivedNotes: () => request<Note[]>('/api/notes?archived=true'),
   /** Imports files in one request. */
@@ -762,6 +896,11 @@ export const queryKeys = {
   fields: ['fields'] as const,
   roadmap: (domain: string) => ['roadmap', domain] as const,
   counts: (domain: string) => ['counts', domain] as const,
+  banks: (area: string) => ['banks', area] as const,
+  /** Every question list of a bank (prefix of the filtered lists). */
+  bankQuestions: (bank: string) => ['bank-questions', bank] as const,
+  exam: (id: string) => ['exam', id] as const,
+  bankExams: (bank: string) => ['bank-exams', bank] as const,
   notes: ['notes'] as const,
   archivedNotes: ['notes', 'archived'] as const,
   lesson: (domain: string, node: string) => ['lesson', domain, node] as const,

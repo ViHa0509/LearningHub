@@ -13,6 +13,10 @@ export type Route =
   /** Settings > Data & sync (backup, restore, sync). */
   | { page: 'data-settings' }
   | { page: 'news' }
+  /** Practice questions of an area (`#/practice/<area slug>`). */
+  | { page: 'practice'; area: string }
+  /** A mock test (`#/exam/<exam id>`): taking it, or its result. */
+  | { page: 'exam'; id: string }
   /** The provider configuration page; id is `new` for a configuration not saved yet. */
   | { page: 'provider'; id: string }
 
@@ -29,6 +33,8 @@ export function parseRoute(hash: string): Route {
   if (parts[0] === 'settings' && parts[1] === 'users' && parts.length === 2) return { page: 'users-settings' }
   if (parts[0] === 'settings' && parts[1] === 'data' && parts.length === 2) return { page: 'data-settings' }
   if (parts[0] === 'news' && parts.length === 1) return { page: 'news' }
+  if (parts[0] === 'practice' && parts.length === 2) return { page: 'practice', area: parts[1] }
+  if (parts[0] === 'exam' && parts.length === 2) return { page: 'exam', id: parts[1] }
   if (parts[0] === 'settings' && parts[1] === 'providers' && parts.length === 3) {
     return { page: 'provider', id: parts[2] }
   }
@@ -55,6 +61,10 @@ export function routeHash(route: Route): string {
       return '#/settings/data'
     case 'news':
       return '#/news'
+    case 'practice':
+      return `#/practice/${route.area}`
+    case 'exam':
+      return `#/exam/${route.id}`
     case 'provider':
       return `#/settings/providers/${route.id}`
   }

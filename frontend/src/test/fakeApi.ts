@@ -1,5 +1,7 @@
 import { vi } from 'vitest'
 import type {
+  Bank,
+  BankRules,
   AgentStep,
   ChatSessionDetail,
   AdminUser,
@@ -239,9 +241,101 @@ export function makeField(title: string, areas: Partial<FakeArea>[] = [], extra:
   }
 }
 
+/** A question of a fake bank, with the answer the fake keeps to itself until a test is submitted. */
+export interface FakeQuestion {
+  id: string
+  number: number
+  topic: string
+  text: string
+  options: string[]
+  /** 1-based. */
+  answer: number
+  critical: boolean
+  /** The picture is attached and served. */
+  hasImage: boolean
+  /** The picture file the question names (attached or not); null for no picture. */
+  image: string | null
+  explanation: string | null
+}
+
+export interface FakeBank {
+  id: string
+  area: string
+  title: string
+  rules: BankRules
+  questions: FakeQuestion[]
+}
+
+/** A test of the fake API; `mine: false` belongs to another user (answers 404). */
+export interface FakeExam {
+  id: string
+  bank_id: string
+  mine: boolean
+  question_ids: string[]
+  answers: Record<string, number>
+  started_at: string
+  deadline: string
+  submitted_at: string | null
+  score: number | null
+  passed: boolean | null
+  failed_on_critical: number[]
+}
+
+let bankSeq = 0
+
+export const DEFAULT_RULES: BankRules = {
+  questions: 4,
+  minutes: 20,
+  pass_mark: 3,
+  critical_fails: true,
+  min_critical: 1,
+  per_topic: {},
+}
+
+/**
+ * A bank for an area. Questions are given as partial objects; defaults: topic `t1`, two options,
+ * answer 1, not critical, no picture. Numbers follow the order given.
+ */
+export function makeBank(
+  area: string,
+  title: string,
+  questions: Partial<Omit<FakeQuestion, 'id' | 'number'>>[],
+  rules: Partial<BankRules> = {},
+): FakeBank {
+  bankSeq += 1
+  const id = `bank-${bankSeq}`
+  return {
+    id,
+    area,
+    title,
+    rules: { ...DEFAULT_RULES, ...rules },
+    questions: questions.map((q, i) => ({
+      id: `${id}-q${i + 1}`,
+      number: i + 1,
+      topic: q.topic ?? 't1',
+      text: q.text ?? `Question text ${i + 1}`,
+      options: q.options ?? ['Option A', 'Option B'],
+      answer: q.answer ?? 1,
+      critical: q.critical ?? false,
+      hasImage: q.hasImage ?? false,
+      image: q.image ?? (q.hasImage ? `q${i + 1}.png` : null),
+      explanation: q.explanation ?? null,
+    })),
+  }
+}
+
 export interface FakeState {
   /** Learning fields (the IT field is virtual and always first in GET /api/fields). */
   fields: FakeField[]
+  /** Question banks (practice-exams); a bank of an area the user cannot see answers 404. */
+  banks: FakeBank[]
+  /** Question id -> the user's practice record. */
+  practice: Record<string, { last_correct: boolean; times_wrong: number }>
+  exams: FakeExam[]
+  /** The file names of each POST /api/areas/{slug}/banks, in order. */
+  bankImports: string[]
+  /** The file names of each POST /api/banks/{id}/images, in order. */
+  pictureRequests: string[][]
   notes: Note[]
   /** Stored chats, newest activity first; every answered chat request is saved here. */
   chatSessions: ChatSessionDetail[]
@@ -467,6 +561,15 @@ const ref = (p: ProviderOut | undefined): ProviderRef | null =>
       }
     : null
 
+/** The text of an uploaded file (jsdom's File has no text()). */
+const readText = (file: Blob) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsText(file)
+  })
+
 const HEADER_REQUIRED = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
 /** Installs a fetch stub that behaves like the backend API over in-memory state. */
@@ -474,6 +577,11 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
   providerSeq = 0
   const state: FakeState = {
     fields: [],
+    banks: [],
+    practice: {},
+    exams: [],
+    bankImports: [],
+    pictureRequests: [],
     notes: [...notes],
     chatSessions: [],
     sources: {},
@@ -1425,6 +1533,308 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
           session.title = title
           const { messages: _messages, ...summary } = session
           return respond(summary)
+        }
+      }
+      // ---- practice exams (api.md of practice-exams) ----
+      {
+        const areaField = (slug: string) => state.fields.find((f) => f.areas.some((a) => a.slug === slug))
+        const visibleArea = (slug: string) => {
+          const f = areaField(slug)
+          return f && (f.mine || f.published) ? f : undefined
+        }
+        const bankOut = (b: FakeBank): Bank => {
+          const topics = (state.fields.flatMap((f) => f.areas).find((a) => a.slug === b.area)?.topics ?? []).map((t) => ({
+            slug: t.slug,
+            title: t.title,
+            count: b.questions.filter((q) => q.topic === t.slug).length,
+          }))
+          return {
+            id: b.id,
+            area: b.area,
+            title: b.title,
+            rules: b.rules,
+            question_count: b.questions.length,
+            critical_count: b.questions.filter((q) => q.critical).length,
+            topics,
+            images_missing: b.questions.filter((q) => q.image !== null && !q.hasImage).length,
+            created_at: '2026-11-14T09:00:00Z',
+          }
+        }
+        const questionOut = (q: FakeQuestion) => ({
+          id: q.id,
+          number: q.number,
+          topic: q.topic,
+          text: q.text,
+          options: q.options,
+          critical: q.critical,
+          has_image: q.hasImage,
+          last_correct: state.practice[q.id]?.last_correct ?? null,
+        })
+        const visibleBank = (id: string) => {
+          const b = state.banks.find((x) => x.id === id)
+          return b && visibleArea(b.area) ? b : undefined
+        }
+        const findQuestion = (id: string) => {
+          for (const b of state.banks) {
+            const q = b.questions.find((x) => x.id === id)
+            if (q && visibleArea(b.area)) return { bank: b, question: q }
+          }
+          return undefined
+        }
+        const examOf = (id: string) => state.exams.find((e) => e.id === id && e.mine)
+        const examOut = (e: FakeExam) => {
+          const bank = state.banks.find((b) => b.id === e.bank_id)!
+          const byId = new Map(bank.questions.map((q) => [q.id, q]))
+          const questions = e.question_ids.map((qid) => ({ ...questionOut(byId.get(qid)!), last_correct: null }))
+          return {
+            id: e.id,
+            bank_id: e.bank_id,
+            started_at: e.started_at,
+            deadline: e.deadline,
+            submitted_at: e.submitted_at,
+            questions,
+            answers: e.answers,
+            // The correct options leave the fake only here, once the test is submitted.
+            result:
+              e.submitted_at !== null
+                ? {
+                    score: e.score,
+                    total: e.question_ids.length,
+                    passed: e.passed,
+                    failed_on_critical: e.failed_on_critical,
+                    review: e.question_ids.map((qid) => {
+                      const q = byId.get(qid)!
+                      const choice = e.answers[qid] ?? null
+                      return {
+                        question_id: qid,
+                        number: q.number,
+                        choice,
+                        answer: q.answer,
+                        correct: choice === q.answer,
+                        explanation: q.explanation,
+                      }
+                    }),
+                  }
+                : null,
+          }
+        }
+        /**
+         * The fake draws in a fixed order (no shuffle): the first `min_critical` critical questions,
+         * then `per_topic` counts of the non-critical ones of each topic, then the remaining
+         * non-critical ones by number, up to `questions`.
+         */
+        const draw = (bank: FakeBank) => {
+          const { questions: count, min_critical, per_topic } = bank.rules
+          const picked: FakeQuestion[] = []
+          const take = (list: FakeQuestion[], n: number) => {
+            for (const q of list) {
+              if (n <= 0 || picked.length >= count) break
+              if (!picked.includes(q)) {
+                picked.push(q)
+                n -= 1
+              }
+            }
+          }
+          take(
+            bank.questions.filter((q) => q.critical),
+            min_critical,
+          )
+          for (const [topic, n] of Object.entries(per_topic)) {
+            take(
+              bank.questions.filter((q) => !q.critical && q.topic === topic),
+              n,
+            )
+          }
+          take(
+            bank.questions.filter((q) => !q.critical),
+            count,
+          )
+          return picked.map((q) => q.id)
+        }
+        const GRACE_MS = 30_000
+
+        let m = url.match(/^\/api\/areas\/([^/]+)\/banks$/)
+        if (m) {
+          const field = visibleArea(m[1])
+          if (!field) return respond({ detail: 'area not found' }, 404)
+          if (method === 'GET') return respond(state.banks.filter((b) => b.area === m![1]).map(bankOut))
+          if (method === 'POST') {
+            if (!field.mine) return respond({ detail: 'only the owner can import questions' }, 403)
+            const file = init?.body instanceof FormData ? init.body.get('file') : null
+            if (!(file instanceof File)) return respond({ detail: [{ question: null, msg: 'file is required' }] }, 422)
+            state.bankImports.push(file.name)
+            let parsed: {
+              title?: string
+              rules?: BankRules
+              questions?: {
+                number: number
+                topic: string
+                text: string
+                options: string[]
+                answer: number
+                critical?: boolean
+                image?: string
+                explanation?: string
+              }[]
+            }
+            try {
+              parsed = JSON.parse(await readText(file))
+            } catch {
+              return respond({ detail: [{ question: null, msg: 'the file is not valid JSON' }] }, 422)
+            }
+            const topicSlugs = new Set(field.areas.find((a) => a.slug === m![1])!.topics.map((t) => t.slug))
+            const problems: { question: number | null; msg: string }[] = []
+            for (const q of parsed.questions ?? []) {
+              if (!topicSlugs.has(q.topic)) {
+                problems.push({ question: q.number, msg: `topic ${q.topic} is not a topic of this area` })
+              }
+              if (!Number.isInteger(q.answer) || q.answer < 1 || q.answer > q.options.length) {
+                problems.push({ question: q.number, msg: `answer ${q.answer} is not one of the ${q.options.length} options` })
+              }
+            }
+            if (problems.length > 0) return respond({ detail: problems.slice(0, 50) }, 422)
+            const bank = makeBank(
+              m[1],
+              parsed.title ?? 'Untitled',
+              (parsed.questions ?? []).map((q) => ({
+                topic: q.topic,
+                text: q.text,
+                options: q.options,
+                answer: q.answer,
+                critical: q.critical ?? false,
+                // A JSON import names its pictures; they are added later (or come in a zip).
+                image: q.image ?? null,
+                explanation: q.explanation ?? null,
+              })),
+              parsed.rules,
+            )
+            state.banks.push(bank)
+            return respond(bankOut(bank), 201)
+          }
+        }
+        m = url.match(/^\/api\/banks\/([^/]+)\/images$/)
+        if (m && method === 'POST') {
+          const bank = visibleBank(m[1])
+          if (!bank) return respond({ detail: 'bank not found' }, 404)
+          if (!visibleArea(bank.area)?.mine) return respond({ detail: 'only the owner can add pictures' }, 403)
+          const files = init?.body instanceof FormData ? init.body.getAll('files').filter((f): f is File => f instanceof File) : []
+          state.pictureRequests.push(files.map((f) => f.name))
+          if (files.reduce((n, f) => n + f.size, 0) > 4 * 1024 * 1024) {
+            return respond({ detail: 'the request is too large (4 MB at most)' }, 413)
+          }
+          const added: string[] = []
+          const unknown: string[] = []
+          for (const f of files) {
+            const hit = bank.questions.filter((q) => q.image === f.name)
+            for (const q of hit) q.hasImage = true
+            if (hit.length > 0) added.push(f.name)
+            else unknown.push(f.name)
+          }
+          return respond({ added, unknown, missing: bank.questions.filter((q) => q.image !== null && !q.hasImage).length })
+        }
+        m = url.match(/^\/api\/banks\/([^/?]+)\/questions(?:\?(.*))?$/)
+        if (m && method === 'GET') {
+          const bank = visibleBank(m[1])
+          if (!bank) return respond({ detail: 'bank not found' }, 404)
+          const params = new URLSearchParams(m[2] ?? '')
+          const topic = params.get('topic')
+          return respond(
+            bank.questions
+              .filter((q) => (!topic || q.topic === topic) && (params.get('critical') !== 'true' || q.critical))
+              .filter((q) => params.get('wrong') !== 'true' || state.practice[q.id]?.last_correct === false)
+              .sort((a, b) => a.number - b.number)
+              .map(questionOut),
+          )
+        }
+        m = url.match(/^\/api\/questions\/([^/]+)\/answer$/)
+        if (m && method === 'POST') {
+          const found = findQuestion(m[1])
+          if (!found) return respond({ detail: 'question not found' }, 404)
+          const choice = Number(body?.choice)
+          if (!Number.isInteger(choice) || choice < 1 || choice > found.question.options.length) {
+            return respond({ detail: [{ msg: 'choice is not one of the options' }] }, 422)
+          }
+          const correct = choice === found.question.answer
+          const before = state.practice[m[1]]
+          state.practice[m[1]] = { last_correct: correct, times_wrong: (before?.times_wrong ?? 0) + (correct ? 0 : 1) }
+          return respond({ correct, answer: found.question.answer, explanation: found.question.explanation })
+        }
+        m = url.match(/^\/api\/banks\/([^/]+)\/exams$/)
+        if (m) {
+          const bank = visibleBank(m[1])
+          if (!bank) return respond({ detail: 'bank not found' }, 404)
+          if (method === 'POST') {
+            const now = Date.now()
+            const exam: FakeExam = {
+              id: `exam-${state.exams.length + 1}`,
+              bank_id: bank.id,
+              mine: true,
+              question_ids: draw(bank),
+              answers: {},
+              started_at: new Date(now).toISOString(),
+              deadline: new Date(now + bank.rules.minutes * 60_000).toISOString(),
+              submitted_at: null,
+              score: null,
+              passed: null,
+              failed_on_critical: [],
+            }
+            state.exams.unshift(exam)
+            return respond(examOut(exam), 201)
+          }
+          if (method === 'GET') {
+            return respond(
+              state.exams
+                .filter((e) => e.mine && e.bank_id === bank.id)
+                .map((e) => ({
+                  id: e.id,
+                  started_at: e.started_at,
+                  submitted_at: e.submitted_at,
+                  score: e.score,
+                  total: e.question_ids.length,
+                  passed: e.passed,
+                })),
+            )
+          }
+        }
+        m = url.match(/^\/api\/exams\/([^/]+)$/)
+        if (m && method === 'GET') {
+          const exam = examOf(m[1])
+          return exam ? respond(examOut(exam)) : respond({ detail: 'test not found' }, 404)
+        }
+        m = url.match(/^\/api\/exams\/([^/]+)\/(answers|submit)$/)
+        if (m) {
+          const exam = examOf(m[1])
+          if (!exam) return respond({ detail: 'test not found' }, 404)
+          const sent = (body?.answers ?? {}) as Record<string, number>
+          if (m[2] === 'answers' && method === 'PUT') {
+            if (exam.submitted_at) return respond({ detail: 'the test is finished' }, 409)
+            exam.answers = { ...exam.answers, ...sent }
+            return respond({ saved: Object.keys(exam.answers).length })
+          }
+          if (m[2] === 'submit' && method === 'POST') {
+            if (exam.submitted_at) return respond({ detail: 'the test is finished' }, 409)
+            const bank = state.banks.find((b) => b.id === exam.bank_id)!
+            // After deadline + grace the stored answers count and later ones are ignored.
+            if (Date.now() <= new Date(exam.deadline).getTime() + GRACE_MS) exam.answers = { ...exam.answers, ...sent }
+            const byId = new Map(bank.questions.map((q) => [q.id, q]))
+            const wrong = exam.question_ids.map((id) => byId.get(id)!).filter((q) => exam.answers[q.id] !== q.answer)
+            exam.score = exam.question_ids.length - wrong.length
+            exam.failed_on_critical = bank.rules.critical_fails ? wrong.filter((q) => q.critical).map((q) => q.number) : []
+            exam.passed = exam.score >= bank.rules.pass_mark && exam.failed_on_critical.length === 0
+            exam.submitted_at = new Date().toISOString()
+            for (const id of exam.question_ids) {
+              const right = exam.answers[id] === byId.get(id)!.answer
+              const before = state.practice[id]
+              state.practice[id] = { last_correct: right, times_wrong: (before?.times_wrong ?? 0) + (right ? 0 : 1) }
+            }
+            return respond(examOut(exam))
+          }
+        }
+        m = url.match(/^\/api\/questions\/([^/]+)\/image$/)
+        if (m) {
+          const found = findQuestion(m[1])
+          if (!found?.question.hasImage) return respond({ detail: 'no image' }, 404)
+          return Promise.resolve(new Response('png', { status: 200, headers: { 'Content-Type': 'image/png' } }))
         }
       }
       if (url === '/api/notes' && method === 'GET') return respond(state.notes.filter((n) => !n.archived_at))

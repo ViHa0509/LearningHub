@@ -1,0 +1,179 @@
+{
+  "title": "Synthetic QC bank",
+  "rules": {
+    "questions": 10,
+    "minutes": 2,
+    "pass_mark": 8,
+    "critical_fails": true,
+    "min_critical": 1,
+    "per_topic": {
+      "t1": 3
+    }
+  },
+  "questions": [
+    {
+      "number": 1,
+      "topic": "t1",
+      "text": "Fixture question 1: which option is the made-up right one?",
+      "options": [
+        "Alpha for item 1",
+        "Bravo for item 1",
+        "Charlie for item 1"
+      ],
+      "answer": 1,
+      "critical": false,
+      "explanation": "Made-up explanation 1."
+    },
+    {
+      "number": 2,
+      "topic": "t1",
+      "text": "Fixture question 2: which option is the made-up right one?",
+      "options": [
+        "Alpha for item 2",
+        "Bravo for item 2",
+        "Charlie for item 2",
+        "Delta for item 2"
+      ],
+      "answer": 2,
+      "critical": false,
+      "explanation": "Made-up explanation 2.",
+      "image": "sign-a.png"
+    },
+    {
+      "number": 3,
+      "topic": "t1",
+      "text": "Fixture question 3: which option is the made-up right one?",
+      "options": [
+        "Alpha for item 3",
+        "Bravo for item 3",
+        "Charlie for item 3"
+      ],
+      "answer": 3,
+      "critical": false,
+      "explanation": "Made-up explanation 3."
+    },
+    {
+      "number": 4,
+      "topic": "t2",
+      "text": "Fixture question 4: which option is the made-up right one?",
+      "options": [
+        "Alpha for item 4",
+        "Bravo for item 4",
+        "Charlie for item 4",
+        "Delta for item 4"
+      ],
+      "answer": 1,
+      "critical": false,
+      "explanation": "Made-up explanation 4."
+    },
+    {
+      "number": 5,
+      "topic": "t2",
+      "text": "Fixture question 5: which option is the made-up right one?",
+      "options": [
+        "Alpha for item 5",
+        "Bravo for item 5",
+        "Charlie for item 5"
+      ],
+      "answer": 2,
+      "critical": false,
+      "explanation": "Made-up explanation 5."
+    },
+    {
+      "number": 6,
+      "topic": "t2",
+      "text": "Fixture question 6: which option is the made-up right one?",
+      "options": [
+        "Alpha for item 6",
+        "Bravo for item 6",
+        "Charlie for item 6",
+        "Delta for item 6"
+      ],
+      "answer": 3,
+      "critical": false,
+      "explanation": "Made-up explanation 6."
+    },
+    {
+      "number": 7,
+      "topic": "t2",
+      "text": "Fixture question 7: which option is the made-up right one?",
+      "options": [
+        "Alpha for item 7",
+        "Bravo for item 7",
+        "Charlie for item 7"
+      ],
+      "answer": 1,
+      "critical": false,
+      "explanation": "Made-up explanation 7."
+    },
+    {
+      "number": 8,
+      "topic": "t2",
+      "text": "Fixture question 8: which option is the made-up right one?",
+      "options": [
+        "Alpha for item 8",
+        "Bravo for item 8",
+        "Charlie for item 8",
+        "Delta for item 8"
+      ],
+      "answer": 2,
+      "critical": true,
+      "explanation": "Made-up explanation 8."
+    },
+    {
+      "number": 9,
+      "topic": "t3",
+      "text": "Fixture question 9: which option is the made-up right one?",
+      "options": [
+        "Alpha for item 9",
+        "Bravo for item 9",
+        "Charlie for item 9"
+      ],
+      "answer": 3,
+      "critical": false,
+      "explanation": "Made-up explanation 9.",
+      "image": "sign-b.png"
+    },
+    {
+      "number": 10,
+      "topic": "t3",
+      "text": "Fixture question 10: which option is the made-up right one?",
+      "options": [
+        "Alpha for item 10",
+        "Bravo for item 10",
+        "Charlie for item 10",
+        "Delta for item 10"
+      ],
+      "answer": 1,
+      "critical": false,
+      "explanation": "Made-up explanation 10."
+    },
+    {
+      "number": 11,
+      "topic": "t3",
+      "text": "Fixture question 11: which option is the made-up right one?",
+      "options": [
+        "Alpha for item 11",
+        "Bravo for item 11",
+        "Charlie for item 11"
+      ],
+      "answer": 2,
+      "critical": false,
+      "explanation": "Made-up explanation 11."
+    },
+    {
+      "number": 12,
+      "topic": "t3",
+      "text": "Fixture question 12: which option is the made-up right one?",
+      "options": [
+        "Alpha for item 12",
+        "Bravo for item 12",
+        "Charlie for item 12",
+        "Delta for item 12"
+      ],
+      "answer": 3,
+      "critical": true,
+      "explanation": "Made-up explanation 12."
+    }
+  ]
+}

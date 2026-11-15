@@ -27,7 +27,9 @@ import { ImportDialog } from './ImportDialog'
 import { LearnedList } from './LearnedList'
 import { LessonPage } from './LessonPage'
 import { NewsPage } from './NewsPage'
+import { ExamPage } from './ExamPage'
 import { NoteView } from './NoteView'
+import { PracticePage } from './PracticePage'
 import { AGENT_PANEL_ID, LEARNED_OPENER_ID, LEARNED_PANEL_ID, PanelFrame } from './PanelFrame'
 import { RoadmapMap } from './RoadmapMap'
 import { ProviderPage } from './ProviderPage'
@@ -213,6 +215,10 @@ function MainApp({ theme, onThemeChange, health, user }: MainProps) {
         }
       />
     )
+  } else if (route.page === 'practice') {
+    center = <PracticePage key={route.area} area={route.area} />
+  } else if (route.page === 'exam') {
+    center = <ExamPage key={route.id} id={route.id} />
   } else if (route.page === 'news') {
     // The chat sees the News page as home: the agent has no news context.
     center = <NewsPage onAskAgent={(text) => askAgent(text, undefined, true)} />
