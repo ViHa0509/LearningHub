@@ -83,7 +83,7 @@ test('imported note opens from the list in a sandbox', async ({ page }) => {
   await list.getByRole('button', { name: 'Redis eviction policies', exact: true }).click()
   await expect(page).toHaveURL(/#\/note\//)
   const note = page.getByRole('article', { name: 'Note: Redis eviction policies' })
-  await expect(note.getByRole('textbox', { name: 'Note title' })).toHaveValue('Redis eviction policies')
+  await expect(note.getByRole('heading', { name: 'Redis eviction policies' })).toBeVisible()
   await expect(list.getByRole('button', { name: 'Open Redis eviction policies' })).toHaveCount(0)
 
   const frame = page.frameLocator('iframe[title="Original page: Redis eviction policies"]')

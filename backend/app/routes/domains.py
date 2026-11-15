@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.auth.current import CurrentUser
-from app.db import Note, get_session
+from app.db import Lesson, Note, get_session
 from app.learning.catalog import UserCatalog
 from app.roadmaps import Domain, RoadmapCatalog
 from app.schemas import DomainSummary, NodeCounts, NodeOut, RoadmapOut
@@ -85,7 +85,7 @@ def read_counts(
     session: Annotated[Session, Depends(get_session)],
     user: CurrentUser,
 ) -> NodeCounts:
-    """Number of notes per node of one domain; nodes without notes are left out."""
+    """Notes per node of one domain (empty nodes left out) and the nodes with a lesson."""
     domain = require_domain(catalog, domain_id)
     known = {n.full_id: n.id for n in domain.nodes}
     rows = session.execute(
@@ -93,4 +93,11 @@ def read_counts(
         .where(Note.user_id == user.id, Note.node_id.in_(list(known)), Note.archived_at.is_(None))
         .group_by(Note.node_id)
     )
-    return NodeCounts(domain=domain.id, counts={known[node]: count for node, count in rows if node})
+    lesson_nodes = session.scalars(
+        select(Lesson.node_id).where(Lesson.user_id == user.id, Lesson.node_id.in_(list(known)))
+    )
+    return NodeCounts(
+        domain=domain.id,
+        counts={known[node]: count for node, count in rows if node},
+        lessons=sorted({known[node] for node in lesson_nodes}),
+    )

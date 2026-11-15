@@ -138,10 +138,20 @@ def with_attachments(
 
 
 def system_prompt(
-    page: Page, catalog: RoadmapCatalog, instructions: str = "", effort: Effort = "medium"
+    page: Page,
+    catalog: RoadmapCatalog,
+    instructions: str = "",
+    effort: Effort = "medium",
+    area_instructions: str = "",
 ) -> str:
     domains = ", ".join(f"{d.id} ({d.title})" for d in catalog.domains())
     extra = f"\nYour role: {instructions.strip()}\n" if instructions.strip() else ""
+    if area_instructions.strip():
+        extra += (
+            "\nInstructions of the user for this area "
+            "(follow them unless they conflict with the rules above):\n"
+            f"{area_instructions.strip()}\n"
+        )
     if EFFORT_LINES[effort]:
         extra += f"\n{EFFORT_LINES[effort]}\n"
     return SYSTEM_PROMPT.format(
@@ -165,13 +175,14 @@ def run_agent(
     effort: Effort = "medium",
     attachments: Sequence[Attachment] = (),
     web_search: bool = False,
+    area_instructions: str = "",
 ) -> AgentResult:
     """Raises ProviderError when the provider fails; tool problems go back to the model.
 
     A model that runs its own agent loop (Claude Code) gets the whole request, with the
     agent's Internet search switch; the app's own tool loop has no web search.
     """
-    system = system_prompt(page, catalog, instructions, effort)
+    system = system_prompt(page, catalog, instructions, effort, area_instructions)
     conversation = with_attachments(conversation, attachments)
     max_steps = step_budget(effort, max_steps)
     if runs_own_loop(chat_model):

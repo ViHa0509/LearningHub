@@ -55,6 +55,14 @@ export function useAgents() {
   return useQuery({ queryKey: queryKeys.agents, queryFn: api.agents })
 }
 
+export function useAgentTools() {
+  return useQuery({ queryKey: queryKeys.agentTools, queryFn: api.agentTools })
+}
+
+export function useAreaAgents() {
+  return useQuery({ queryKey: queryKeys.areaAgents, queryFn: api.areaAgents })
+}
+
 /** A node's references (links synced from roadmap.sh). */
 export function useNodeResources(domain: string, node: string) {
   return useQuery({ queryKey: queryKeys.resources(domain, node), queryFn: () => api.resources(domain, node) })

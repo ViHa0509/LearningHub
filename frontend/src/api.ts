@@ -53,6 +53,8 @@ export interface Roadmap {
 export interface NodeCounts {
   domain: string
   counts: Record<string, number>
+  /** Short node ids (the part after `domain/`) that have a lesson of the current user. */
+  lessons: string[]
 }
 
 export interface Note {
@@ -204,6 +206,23 @@ export interface AgentOut {
   effective_reason: 'override' | 'primary' | 'assistant' | 'default' | 'none'
   /** Internet search (Claude Code WebSearch) for this agent. */
   web_search: boolean
+}
+
+/** One app tool an agent may use; `agents` lists the agent ids that have it. */
+export interface AgentTool {
+  name: string
+  description: string
+  agents: string[]
+}
+
+/** The user's extra instructions and tool choice for one area; `tools` null means every tool. */
+export interface AreaAgentSettings {
+  domain_id: string
+  title: string
+  field_title: string | null
+  editable: boolean
+  instructions: string
+  tools: string[] | null
 }
 
 /** One reference link of a roadmap node, synced from roadmap.sh. */
@@ -779,6 +798,10 @@ export const api = {
     request<AgentOut>(`/api/agents/${id}/provider`, json('PUT', body)),
   saveAgentSettings: (id: string, body: { web_search: boolean }) =>
     request<AgentOut>(`/api/agents/${id}/settings`, json('PUT', body)),
+  agentTools: () => request<AgentTool[]>('/api/agents/tools'),
+  areaAgents: () => request<AreaAgentSettings[]>('/api/agents/areas'),
+  saveAreaAgents: (domain: string, body: { instructions: string; tools: string[] | null }) =>
+    request<AreaAgentSettings>(`/api/agents/areas/${domain}`, json('PUT', body)),
   chat: (body: ChatRequest) => request<ChatReply>('/api/agent/chat', json('POST', body)),
   chatSessions: () => request<{ sessions: ChatSessionSummary[]; total: number }>('/api/agent/sessions'),
   chatSession: (id: string) => request<ChatSessionDetail>(`/api/agent/sessions/${id}`),
@@ -919,6 +942,8 @@ export const queryKeys = {
   provider: (id: string) => ['ai-providers', id] as const,
   providerTypes: ['ai-provider-types'] as const,
   agents: ['agents'] as const,
+  agentTools: ['agent-tools'] as const,
+  areaAgents: ['area-agents'] as const,
   /** The list of stored chats (prefix of `chatSession`). */
   chatSessions: ['chat-sessions'] as const,
   chatSession: (id: string) => ['chat-sessions', id] as const,

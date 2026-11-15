@@ -7,6 +7,12 @@ import { Icon } from './Icon'
 import { DISCARD_PROMPT, NoteEditor } from './NoteEditor'
 import { NodePicker } from './NodePicker'
 
+const UNDO_MS = 8000
+
+type Undo =
+  | { kind: 'title'; previous: string; current: string }
+  | { kind: 'link'; previous: string | null; current: string | null }
+
 interface Props {
   note: Note
   roadmaps: Roadmap[]
@@ -17,6 +23,10 @@ interface Props {
 
 export function NoteView({ note, roadmaps, onClose, onChanged, onDeleted }: Props) {
   const [title, setTitle] = useState(note.title)
+  const [renaming, setRenaming] = useState(false)
+  const [undo, setUndo] = useState<Undo | null>(null)
+  const undoTimer = useRef<number | undefined>(undefined)
+  const titleInput = useRef<HTMLInputElement>(null)
   const [error, setError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -39,14 +49,32 @@ export function NoteView({ note, roadmaps, onClose, onChanged, onDeleted }: Prop
     action()
   }
 
-  const run = async (action: () => Promise<unknown>) => {
+  const run = async (action: () => Promise<unknown>): Promise<boolean> => {
     setError(null)
     try {
       await action()
       await onChanged()
+      return true
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong')
+      return false
     }
+  }
+
+  const showUndo = (next: Undo | null) => {
+    window.clearTimeout(undoTimer.current)
+    setUndo(next)
+    if (next) undoTimer.current = window.setTimeout(() => setUndo(null), UNDO_MS)
+  }
+  useEffect(() => () => window.clearTimeout(undoTimer.current), [])
+
+  const nodeTitle = (id: string | null) => {
+    if (!id) return 'Unlinked'
+    for (const roadmap of roadmaps) {
+      const node = roadmap.nodes.find((n) => n.full_id === id)
+      if (node) return node.title
+    }
+    return id
   }
 
   // A saved link change (or another note) resets the pending pick (state adjusted during render).
@@ -58,11 +86,44 @@ export function NoteView({ note, roadmaps, onClose, onChanged, onDeleted }: Prop
 
   const linkDirty = pickedNode !== savedNode
 
-  const titleDirty = title !== note.title
   const canSaveTitle = title.trim() !== '' && title.trim() !== note.title
 
-  const rename = () => {
-    if (canSaveTitle) void run(() => api.rename(note.id, title.trim()))
+  const startRename = () => {
+    setTitle(note.title)
+    setRenaming(true)
+  }
+  const cancelRename = () => {
+    setRenaming(false)
+    setTitle(note.title)
+  }
+
+  useEffect(() => {
+    if (!renaming) return
+    titleInput.current?.focus()
+    titleInput.current?.select()
+  }, [renaming])
+
+  const rename = async () => {
+    if (!canSaveTitle) return
+    const previous = note.title
+    const next = title.trim()
+    if (await run(() => api.rename(note.id, next))) {
+      setRenaming(false)
+      showUndo({ kind: 'title', previous, current: next })
+    }
+  }
+
+  const saveLink = async () => {
+    const previous = savedNode
+    const next = pickedNode
+    if (await run(() => api.link(note.id, next))) showUndo({ kind: 'link', previous, current: next })
+  }
+
+  const undoChange = async () => {
+    if (!undo) return
+    const last = undo
+    showUndo(null)
+    await run(() => (last.kind === 'title' ? api.rename(note.id, last.previous) : api.link(note.id, last.previous)))
   }
 
   // Unsaved page edits: any navigation away (Back, the list, links) asks first.
@@ -91,25 +152,37 @@ export function NoteView({ note, roadmaps, onClose, onChanged, onDeleted }: Prop
           ← Back
         </button>
         <div className="note-fields">
-          <input
-            className="title-input"
-            aria-label="Note title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') rename()
-              if (e.key === 'Escape') setTitle(note.title)
-            }}
-          />
-          {titleDirty && (
-            <span className="title-actions">
-              <button type="button" className="primary" aria-label="Save title" disabled={!canSaveTitle} onClick={rename}>
-                Save
+          {renaming ? (
+            <>
+              <input
+                ref={titleInput}
+                className="title-input"
+                aria-label="Note title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void rename()
+                  if (e.key === 'Escape') cancelRename()
+                }}
+              />
+              <span className="title-actions">
+                <button type="button" className="primary" aria-label="Save title" disabled={!canSaveTitle} onClick={() => void rename()}>
+                  Save
+                </button>
+                <button type="button" aria-label="Cancel title change" onClick={cancelRename}>
+                  Cancel
+                </button>
+              </span>
+            </>
+          ) : (
+            <>
+              <h1 className="note-title" title={note.title}>
+                {note.title}
+              </h1>
+              <button type="button" className="icon icon-only" aria-label="Rename" title="Rename" onClick={startRename}>
+                <Icon name="edit" />
               </button>
-              <button type="button" aria-label="Cancel title change" onClick={() => setTitle(note.title)}>
-                Cancel
-              </button>
-            </span>
+            </>
           )}
           <label className="link-field" onKeyDown={(e) => e.key === 'Escape' && setPickedNode(savedNode)}>
             <span className="muted">Linked to</span>
@@ -117,7 +190,7 @@ export function NoteView({ note, roadmaps, onClose, onChanged, onDeleted }: Prop
           </label>
           {linkDirty && (
             <span className="title-actions">
-              <button type="button" className="primary" aria-label="Save link" onClick={() => void run(() => api.link(note.id, pickedNode))}>
+              <button type="button" className="primary" aria-label="Save link" onClick={() => void saveLink()}>
                 Save link
               </button>
               <button type="button" aria-label="Cancel link change" onClick={() => setPickedNode(savedNode)}>
@@ -152,6 +225,10 @@ export function NoteView({ note, roadmaps, onClose, onChanged, onDeleted }: Prop
           </button>
           {menuOpen && (
             <ActionMenu label="Note actions" onClose={closeMenu} triggerSelector=".note-page-more">
+              <button type="button" role="menuitem" onClick={() => choose(startRename)}>
+                <Icon name="edit" />
+                Rename
+              </button>
               {!editing && (
                 <button type="button" role="menuitem" onClick={() => choose(() => setEditing(true))}>
                   <Icon name="edit" />
@@ -199,6 +276,18 @@ export function NoteView({ note, roadmaps, onClose, onChanged, onDeleted }: Prop
           )}
         </div>
       </header>
+      {undo && (
+        <p className="undo-line" role="status">
+          {undo.kind === 'title'
+            ? `Renamed to ‘${undo.current}’.`
+            : undo.current
+              ? `Linked to ${nodeTitle(undo.current)}.`
+              : 'Unlinked.'}{' '}
+          <button type="button" className="link" onClick={() => void undoChange()}>
+            Undo
+          </button>
+        </p>
+      )}
       {confirming && (
         <p className="note-confirm" role="alertdialog" aria-label="Confirm delete">
           Delete this note and its original file?

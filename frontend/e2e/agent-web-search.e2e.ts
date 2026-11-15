@@ -86,7 +86,7 @@ test.describe('Internet search per agent', () => {
     const p = await makeProvider(request, 'Claude web', 'claude-code', 'sonnet')
     await assignAssistant(request, p.id)
 
-    await page.goto('/#/settings')
+    await page.goto('/#/settings/agents')
     const card = page.getByRole('article', { name: 'Learning assistant' })
     await expect(card.getByRole('checkbox', { name: 'Internet search' })).not.toBeChecked()
     await expect(card).not.toContainText('needs a Claude Code provider')
@@ -102,7 +102,7 @@ test.describe('Internet search per agent', () => {
   test('Setting needs Save and the app header', async ({ page, request }) => {
     const p = await makeProvider(request, 'Claude web', 'claude-code', 'sonnet')
     await assignAssistant(request, p.id)
-    await page.goto('/#/settings')
+    await page.goto('/#/settings/agents')
     const card = page.getByRole('article', { name: 'Learning assistant' })
     const box = card.getByRole('checkbox', { name: 'Internet search' })
     await box.check()
@@ -123,7 +123,7 @@ test.describe('Internet search per agent', () => {
   }) => {
     const p = await makeProvider(request, 'Claude web', 'claude-code', 'sonnet')
     await assignAssistant(request, p.id)
-    await page.goto('/#/settings')
+    await page.goto('/#/settings/agents')
     const card = page.getByRole('article', { name: 'Learning assistant' })
     await expect(card).toContainText('Lets the agent search the web')
     await card.getByRole('checkbox', { name: 'Internet search' }).check()
@@ -151,7 +151,7 @@ test.describe('Internet search per agent', () => {
   test('Not a Claude Code or Anthropic provider: the setting says it needs one', async ({ page, request }) => {
     const p = await makeProvider(request, 'OpenAI-like', 'local', 'fake-ok')
     await assignAssistant(request, p.id)
-    await page.goto('/#/settings')
+    await page.goto('/#/settings/agents')
     const card = page.getByRole('article', { name: 'Learning assistant' })
     await expect(card.getByRole('checkbox', { name: 'Internet search' })).toBeVisible()
     await expect(card).toContainText('Internet search needs a Claude Code or Anthropic provider; it has no effect with the current one.')

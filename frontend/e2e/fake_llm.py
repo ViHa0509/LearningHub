@@ -6,7 +6,9 @@ with an OpenAI-style error body, fake-slow answers after 5 seconds.
 fake-ok answers "OK from fake", except when the last user message contains a trigger:
 [[markdown]] answers with a Markdown table, a code block and an HTML tag; [[history]] answers
 with the number of user messages received and the first one; [[learn:<title>]] makes the assistant call save_learned_note and then report
-"LEARN saved <title>" or "LEARN refused <title>"; [[echo]] answers
+"LEARN saved <title>" or "LEARN refused <title>"; [[echo-system]] <marker> answers
+"SYSTEM has=yes|no" by whether the system prompt holds the marker, [[echo-tools]] answers "TOOLS a,b,c"
+with the tool names offered to the model; [[echo]] answers
 with one line per fact about what the model received (system prompt and last user message),
 so the UI tests can observe effort lines and attachment wrapping without a real provider.
 
@@ -177,6 +179,14 @@ def _answer(payload: dict) -> str:
     if "[[history]]" in last:
         # How much of the conversation the model received (chat-history: continue a session).
         return f"HISTORY user-messages={len(users)} first={users[0][:60]}"
+    if "[[echo-tools]]" in last:
+        # The tool names this request offered the model (area tool choices).
+        names = sorted({(t.get("function") or {}).get("name") or "" for t in payload.get("tools") or []})
+        return "TOOLS " + ",".join(n for n in names if n)
+    found = re.search(r"\[\[echo-system\]\]\s*(\S+)", last)
+    if found:
+        # Whether the system prompt holds the given marker (area instructions).
+        return f"SYSTEM has={'yes' if found.group(1) in system else 'no'}"
     if "[[echo]]" in last:
         facts = {
             "effort-low": "Answer briefly" in system,

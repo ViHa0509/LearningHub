@@ -254,7 +254,11 @@ def test_own_area_takes_notes_counts_and_resources(client: TestClient) -> None:
     aws(client)
     note_id = import_note(client)
     assert client.patch(f"/api/notes/{note_id}", json={"node_id": "aws/iam"}).status_code == 200
-    assert client.get("/api/domains/aws/counts").json() == {"domain": "aws", "counts": {"iam": 1}}
+    assert client.get("/api/domains/aws/counts").json() == {
+        "domain": "aws",
+        "counts": {"iam": 1},
+        "lessons": [],
+    }
     summary = {d["id"]: d for d in client.get("/api/domains").json()}["aws"]
     assert summary["learned_nodes"] == 1
     assert client.get("/api/resources/aws/iam").json()["items"] == []

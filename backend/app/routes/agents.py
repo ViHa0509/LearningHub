@@ -10,9 +10,13 @@ from sqlalchemy.orm import Session
 
 from app.agent.agents import AGENTS, AgentDef
 from app.agent.resolve import assignments, effective, web_search_enabled
+from app.agent.tools import ASSISTANT_SPECS, OUTLINE_SPECS, SPECS
 from app.auth.current import CurrentUser
-from app.db import AgentProvider, AgentSetting, AIProvider, get_session
+from app.db import AgentProvider, AgentSetting, AIProvider, AreaAgentSetting, get_session
+from app.learning.catalog import UserCatalog
+from app.roadmaps import Domain
 from app.routes.guard import require_app_header
+from app.schemas import AgentToolOut, AreaAgentIn, AreaAgentOut
 
 router = APIRouter(prefix="/api/agents", tags=["agents"])
 
@@ -74,6 +78,17 @@ def agent_out(session: Session, user_id: uuid.UUID, agent: AgentDef) -> AgentOut
     )
 
 
+def area_out(domain: Domain, row: AreaAgentSetting | None) -> AreaAgentOut:
+    return AreaAgentOut(
+        domain_id=domain.id,
+        title=domain.title,
+        field_title=domain.field_title,
+        editable=domain.editable,
+        instructions=row.instructions if row else "",
+        tools=list(row.tools) if row and row.tools is not None else None,
+    )
+
+
 def get_agent(agent_id: str) -> AgentDef:
     agent = AGENTS.get(agent_id)
     if agent is None:
@@ -86,6 +101,80 @@ def list_agents(
     session: Annotated[Session, Depends(get_session)], user: CurrentUser
 ) -> list[AgentOut]:
     return [agent_out(session, user.id, agent) for agent in AGENTS.values()]
+
+
+def tool_catalog() -> list[AgentToolOut]:
+    """Every app tool with the agents that get it (order as in the specs)."""
+    groups = (
+        (SPECS, ["assistant", "lesson-writer", "outline"]),
+        (ASSISTANT_SPECS, ["assistant"]),
+        (OUTLINE_SPECS, ["outline"]),
+    )
+    return [
+        AgentToolOut(
+            name=spec.name,
+            description=spec.description.split(". ")[0],
+            agents=list(agents),
+        )
+        for specs, agents in groups
+        for spec in specs
+    ]
+
+
+@router.get("/tools", response_model=list[AgentToolOut])
+def list_tools(user: CurrentUser) -> list[AgentToolOut]:
+    return tool_catalog()
+
+
+@router.get("/areas", response_model=list[AreaAgentOut])
+def list_areas(
+    catalog: UserCatalog, session: Annotated[Session, Depends(get_session)], user: CurrentUser
+) -> list[AreaAgentOut]:
+    rows = {
+        row.domain_id: row
+        for row in session.scalars(
+            select(AreaAgentSetting).where(AreaAgentSetting.user_id == user.id)
+        )
+    }
+    return [area_out(domain, rows.get(domain.id)) for domain in catalog.domains()]
+
+
+@router.put(
+    "/areas/{domain_id}",
+    response_model=AreaAgentOut,
+    dependencies=[Depends(require_app_header)],
+)
+def save_area(
+    domain_id: str,
+    payload: AreaAgentIn,
+    catalog: UserCatalog,
+    session: Annotated[Session, Depends(get_session)],
+    user: CurrentUser,
+) -> AreaAgentOut:
+    """Save the extra instructions and tools of one area; the defaults delete the row."""
+    domain = catalog.domain(domain_id)
+    if domain is None:
+        raise HTTPException(status_code=404, detail=f"unknown domain '{domain_id}'")
+    tools: list[str] | None = None
+    if payload.tools is not None:
+        known = {tool.name for tool in tool_catalog()}
+        for name in payload.tools:
+            if name not in known:
+                raise HTTPException(status_code=422, detail=f"unknown tool: {name}")
+        tools = sorted(set(payload.tools))
+    row = session.get(AreaAgentSetting, (user.id, domain.id))
+    if not payload.instructions and tools is None:
+        if row is not None:
+            session.delete(row)
+            session.commit()
+        return area_out(domain, None)
+    if row is None:
+        row = AreaAgentSetting(user_id=user.id, domain_id=domain.id)
+        session.add(row)
+    row.instructions = payload.instructions
+    row.tools = tools
+    session.commit()
+    return area_out(domain, row)
 
 
 @router.get("/{agent_id}/provider", response_model=AgentOut)

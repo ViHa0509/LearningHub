@@ -1,6 +1,6 @@
 /** Spec: learning-views - Read a note; knowledge-import - Show the original page safely. */
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Note } from '../api'
 import { installFakeApi, makeNote } from '../test/fakeApi'
 import { renderApp } from '../test/render'
@@ -31,6 +31,15 @@ async function choose(user: User, article: HTMLElement, name: string) {
   const menu = await openMenu(user, article)
   await user.click(within(menu).getByRole('menuitem', { name }))
 }
+
+/** Opens the title field through the Rename button. */
+async function startRename(user: User, article: HTMLElement) {
+  await user.click(within(article).getByRole('button', { name: 'Rename' }))
+  return within(article).getByRole('textbox', { name: 'Note title' }) as HTMLInputElement
+}
+
+const titlePatches = (state: { calls: { method: string; url: string; body?: unknown }[] }) =>
+  state.calls.filter((c) => c.method === 'PATCH' && (c.body as { title?: string }).title !== undefined)
 
 async function startEditing(user: User, article: HTMLElement) {
   await choose(user, article, 'Edit page')
@@ -73,43 +82,191 @@ describe('note view', () => {
     expect(frame).toHaveAttribute('sandbox', 'allow-scripts')
     expect(frame.getAttribute('sandbox')).not.toContain('allow-same-origin')
     expect(frame).toHaveAttribute('src', `/api/notes/${note.id}/original`)
-    expect(within(article).getByRole('textbox', { name: 'Note title' })).toHaveValue('Redis eviction')
+    expect(within(article).getByRole('heading', { name: 'Redis eviction' })).toBeInTheDocument()
     expect(within(article).getByRole('combobox', { name: 'Linked to' })).toHaveValue('backend/caching')
+  })
+
+  // Scenario: Rename a note
+  it('shows the title as a heading with no title field until Rename', async () => {
+    const { article } = await openNote('Redis eviction')
+    expect(within(article).getByRole('heading', { name: 'Redis eviction' })).toHaveClass('note-title')
+    expect(within(article).queryByRole('textbox', { name: 'Note title' })).not.toBeInTheDocument()
+    expect(within(article).queryByRole('button', { name: 'Save title' })).not.toBeInTheDocument()
+  })
+
+  it('opens the title field focused with its text selected from the Rename button', async () => {
+    const { user, article } = await openNote('Redis eviction')
+    const input = await startRename(user, article)
+    expect(input).toHaveValue('Redis eviction')
+    expect(input).toHaveFocus()
+    expect(input.selectionStart).toBe(0)
+    expect(input.selectionEnd).toBe('Redis eviction'.length)
+    expect(within(article).queryByRole('heading', { name: 'Redis eviction' })).not.toBeInTheDocument()
+  })
+
+  it('opens the title field from the Rename item of the More actions menu, listed first', async () => {
+    const { user, article } = await openNote('Redis eviction')
+    const menu = await openMenu(user, article)
+    expect(within(menu).getAllByRole('menuitem')[0]).toHaveTextContent('Rename')
+    await user.click(within(menu).getByRole('menuitem', { name: 'Rename' }))
+    const input = within(article).getByRole('textbox', { name: 'Note title' }) as HTMLInputElement
+    expect(input).toHaveFocus()
+    expect(input.selectionEnd).toBe('Redis eviction'.length)
   })
 
   it('renames the note', async () => {
     const { user, article, state, note } = await openNote('Redis eviction')
-    const input = within(article).getByRole('textbox', { name: 'Note title' })
+    const input = await startRename(user, article)
     await user.clear(input)
     await user.type(input, 'Redis: eviction and TTL{Enter}')
-    // Enter saves too; the Save button is the visible way.
     expect(state.calls).toContainEqual({
       method: 'PATCH',
       url: `/api/notes/${note.id}`,
       body: { title: 'Redis: eviction and TTL' },
     })
+    await waitFor(() => expect(within(article).queryByRole('textbox', { name: 'Note title' })).not.toBeInTheDocument())
+    expect(await within(article).findByRole('heading', { name: 'Redis: eviction and TTL' })).toBeInTheDocument()
   })
 
-  it('shows Save and Cancel only after the title changes, and never saves on blur', async () => {
+  it('keeps Save title disabled until the trimmed title is non-empty and different, and never saves on blur', async () => {
     const { user, article, state, note } = await openNote('Redis eviction')
-    expect(within(article).queryByRole('button', { name: 'Save title' })).not.toBeInTheDocument()
-    const input = within(article).getByRole('textbox', { name: 'Note title' })
-    await user.type(input, ' v2')
+    const input = await startRename(user, article)
+    const save = within(article).getByRole('button', { name: 'Save title' })
+    expect(save).toBeDisabled()
+    await user.type(input, '{End}  ')
+    expect(save).toBeDisabled()
+    await user.clear(input)
+    expect(save).toBeDisabled()
+    await user.type(input, 'Redis eviction v2')
+    expect(save).toBeEnabled()
     await user.click(within(article).getByRole('combobox', { name: 'Linked to' }))
-    expect(state.calls.some((c) => c.method === 'PATCH' && (c.body as { title?: string }).title)).toBe(false)
+    expect(titlePatches(state)).toEqual([])
+    expect(within(article).getByRole('textbox', { name: 'Note title' })).toBeInTheDocument()
 
-    await user.click(within(article).getByRole('button', { name: 'Save title' }))
+    await user.click(save)
     expect(state.calls).toContainEqual({ method: 'PATCH', url: `/api/notes/${note.id}`, body: { title: 'Redis eviction v2' } })
     await waitFor(() => expect(within(article).queryByRole('button', { name: 'Save title' })).not.toBeInTheDocument())
   })
 
-  it('cancels a title change', async () => {
+  it('does not save on Enter while Save title is disabled', async () => {
     const { user, article, state } = await openNote('Redis eviction')
-    const input = within(article).getByRole('textbox', { name: 'Note title' })
+    await startRename(user, article)
+    await user.keyboard('{Enter}')
+    expect(titlePatches(state)).toEqual([])
+    expect(within(article).getByRole('textbox', { name: 'Note title' })).toBeInTheDocument()
+  })
+
+  it('cancels a title change with the Cancel button', async () => {
+    const { user, article, state } = await openNote('Redis eviction')
+    const input = await startRename(user, article)
     await user.type(input, ' v2')
     await user.click(within(article).getByRole('button', { name: 'Cancel title change' }))
-    expect(input).toHaveValue('Redis eviction')
+    expect(within(article).queryByRole('textbox', { name: 'Note title' })).not.toBeInTheDocument()
+    expect(within(article).getByRole('heading', { name: 'Redis eviction' })).toBeInTheDocument()
     expect(state.calls.some((c) => c.method === 'PATCH')).toBe(false)
+  })
+
+  it('cancels a title change with Escape', async () => {
+    const { user, article, state } = await openNote('Redis eviction')
+    const input = await startRename(user, article)
+    await user.type(input, ' v2{Escape}')
+    expect(within(article).queryByRole('textbox', { name: 'Note title' })).not.toBeInTheDocument()
+    expect(within(article).getByRole('heading', { name: 'Redis eviction' })).toBeInTheDocument()
+    expect(state.calls.some((c) => c.method === 'PATCH')).toBe(false)
+  })
+
+  // Scenario: Undo a rename
+  it('offers Undo after a rename and Undo sends the previous title, with no second undo', async () => {
+    const { user, article, state, note } = await openNote('Redis eviction')
+    const input = await startRename(user, article)
+    await user.clear(input)
+    await user.type(input, 'Redis TTL{Enter}')
+    const line = await within(article).findByText(/Renamed to ‘Redis TTL’\./)
+    expect(line.closest('.undo-line')).toHaveAttribute('role', 'status')
+    await user.click(within(article).getByRole('button', { name: 'Undo' }))
+    await waitFor(() =>
+      expect(state.calls).toContainEqual({ method: 'PATCH', url: `/api/notes/${note.id}`, body: { title: 'Redis eviction' } }),
+    )
+    await waitFor(() => expect(within(article).queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument())
+    expect(await within(article).findByRole('heading', { name: 'Redis eviction' })).toBeInTheDocument()
+    expect(within(article).queryByText(/Renamed to/)).not.toBeInTheDocument()
+  })
+
+  // Scenario: Undo a link change
+  it('offers Undo after Save link and Undo sends the previous node', async () => {
+    const { user, article, state } = await openNote('Redis eviction')
+    await user.selectOptions(within(article).getByRole('combobox', { name: 'Linked to' }), 'devops/docker')
+    await user.click(within(article).getByRole('button', { name: 'Save link' }))
+    expect(await within(article).findByText(/Linked to Docker\./)).toBeInTheDocument()
+    await user.click(within(article).getByRole('button', { name: 'Undo' }))
+    await waitFor(() =>
+      expect(state.calls.filter((c) => c.method === 'PATCH').map((c) => c.body)).toEqual([
+        { node_id: 'devops/docker' },
+        { node_id: 'backend/caching' },
+      ]),
+    )
+    await waitFor(() => expect(within(article).queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument())
+  })
+
+  it('offers Undo after unlinking and Undo sends the previous node', async () => {
+    const { user, article, state } = await openNote('Redis eviction')
+    await user.selectOptions(within(article).getByRole('combobox', { name: 'Linked to' }), '')
+    await user.click(within(article).getByRole('button', { name: 'Save link' }))
+    expect(await within(article).findByText(/Unlinked\./)).toBeInTheDocument()
+    await user.click(within(article).getByRole('button', { name: 'Undo' }))
+    await waitFor(() =>
+      expect(state.calls.filter((c) => c.method === 'PATCH').map((c) => c.body)).toEqual([
+        { node_id: null },
+        { node_id: 'backend/caching' },
+      ]),
+    )
+  })
+
+  it('undoes a link on an unlinked note by sending null', async () => {
+    const { user, article, state } = await openNote('Redis eviction', null)
+    await user.selectOptions(within(article).getByRole('combobox', { name: 'Linked to' }), 'backend/caching')
+    await user.click(within(article).getByRole('button', { name: 'Save link' }))
+    expect(await within(article).findByText(/Linked to Caching\./)).toBeInTheDocument()
+    await user.click(within(article).getByRole('button', { name: 'Undo' }))
+    await waitFor(() =>
+      expect(state.calls.filter((c) => c.method === 'PATCH').map((c) => c.body)).toEqual([
+        { node_id: 'backend/caching' },
+        { node_id: null },
+      ]),
+    )
+  })
+
+  describe('undo line timing', () => {
+    afterEach(() => vi.useRealTimers())
+
+    it('disappears after 8 seconds', async () => {
+      // Fake clock that still ticks, so user-event and the fake API keep working.
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      const { user, article } = await openNote('Redis eviction')
+      const input = await startRename(user, article)
+      await user.type(input, ' v2{Enter}')
+      expect(await within(article).findByText(/Renamed to/)).toBeInTheDocument()
+      act(() => {
+        vi.advanceTimersByTime(7900)
+      })
+      expect(within(article).getByText(/Renamed to/)).toBeInTheDocument()
+      act(() => {
+        vi.advanceTimersByTime(200)
+      })
+      expect(within(article).queryByText(/Renamed to/)).not.toBeInTheDocument()
+    })
+
+    it('is replaced by the line of the next action', async () => {
+      const { user, article } = await openNote('Redis eviction')
+      const input = await startRename(user, article)
+      await user.type(input, ' v2{Enter}')
+      expect(await within(article).findByText(/Renamed to/)).toBeInTheDocument()
+      await user.selectOptions(within(article).getByRole('combobox', { name: 'Linked to' }), 'devops/docker')
+      await user.click(within(article).getByRole('button', { name: 'Save link' }))
+      expect(await within(article).findByText(/Linked to Docker\./)).toBeInTheDocument()
+      expect(within(article).queryByText(/Renamed to/)).not.toBeInTheDocument()
+      expect(within(article).getAllByRole('button', { name: 'Undo' })).toHaveLength(1)
+    })
   })
 
   it('edits the text in place and saves only the changed block', async () => {
@@ -310,7 +467,7 @@ describe('note view', () => {
   })
 
   // Scenario: More actions menu
-  it('offers Edit page, Export PDF, Archive and Delete only in the More actions menu', async () => {
+  it('offers Rename, Edit page, Export PDF, Archive and Delete in the More actions menu', async () => {
     const { article, user } = await openNote('Redis eviction')
     const header = article.querySelector('header')!
     for (const name of ['Edit page', 'Export PDF', 'Archive', 'Delete']) {
@@ -323,6 +480,7 @@ describe('note view', () => {
     const menu = await openMenu(user, article)
     expect(more).toHaveAttribute('aria-expanded', 'true')
     expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
+      'Rename',
       'Edit page',
       'Export PDF',
       'Archive',
@@ -359,15 +517,15 @@ describe('note view', () => {
   it('closes the menu on a click outside it', async () => {
     const { article, user } = await openNote('Redis eviction')
     await openMenu(user, article)
-    await user.click(within(article).getByRole('textbox', { name: 'Note title' }))
+    await user.click(within(article).getByRole('heading', { name: 'Redis eviction' }))
     expect(within(article).queryByRole('menu')).not.toBeInTheDocument()
   })
 
   // Scenario: Menu while editing the page
-  it('offers only Archive and Delete while the page editor is open', async () => {
+  it('offers only Rename, Archive and Delete while the page editor is open', async () => {
     const { article, user } = await openNote('Redis eviction')
     await startEditing(user, article)
     const menu = await openMenu(user, article)
-    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Archive', 'Delete'])
+    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Rename', 'Archive', 'Delete'])
   })
 })

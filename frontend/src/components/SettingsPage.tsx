@@ -1,7 +1,6 @@
-import { useState } from 'react'
-import { api, type AgentOut, type ProviderOut } from '../api'
-import { useAgents, useProviders, useProviderTypes, useRefreshProviders } from '../hooks'
-import { providerLabel, typeLabel } from '../lib/providers'
+import type { ProviderOut } from '../api'
+import { useProviders, useProviderTypes } from '../hooks'
+import { typeLabel } from '../lib/providers'
 import { SettingsNav } from './SettingsNav'
 import { StatusBadge } from './StatusBadge'
 
@@ -38,7 +37,6 @@ export function SettingsPage() {
           />
         ))}
       </div>
-      {providers.data && <AgentsSection providers={providers.data} />}
     </section>
   )
 }
@@ -68,135 +66,6 @@ function ProviderCard({ provider, typeName, needsKey }: { provider: ProviderOut;
           ? 'Not used by any agent'
           : `Used by ${provider.used_by.map((u) => `${u.agent_name} (${u.role})`).join(', ')}`}
       </p>
-    </article>
-  )
-}
-
-function AgentsSection({ providers }: { providers: ProviderOut[] }) {
-  const agents = useAgents()
-  return (
-    <section className="agents-section" aria-label="Agents">
-      <h2>Agents</h2>
-      <p className="muted">
-        Choose which provider each agent uses. The fallback takes over when the primary is rate limited, times
-        out or is unavailable.
-      </p>
-      {agents.isError && <p className="error">Could not load the agents.</p>}
-      <div className="provider-cards">
-        {agents.data?.map((a) => (
-          <AgentCard key={a.id} agent={a} providers={providers} />
-        ))}
-      </div>
-    </section>
-  )
-}
-
-function AgentCard({ agent, providers }: { agent: AgentOut; providers: ProviderOut[] }) {
-  const refresh = useRefreshProviders()
-  const [primary, setPrimary] = useState(agent.primary?.id ?? '')
-  const [fallback, setFallback] = useState(agent.fallback?.id ?? '')
-  const [webSearch, setWebSearch] = useState(agent.web_search)
-  const [busy, setBusy] = useState(false)
-  const [saved, setSaved] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const save = async () => {
-    setBusy(true)
-    setError(null)
-    setSaved(false)
-    try {
-      await api.assignAgent(agent.id, {
-        primary_provider_id: primary || null,
-        fallback_provider_id: fallback || null,
-      })
-      if (webSearch !== agent.web_search) await api.saveAgentSettings(agent.id, { web_search: webSearch })
-      setSaved(true)
-      await refresh()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Saving failed')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const id = `agent-${agent.id}`
-  const primaryChoices = providers.filter((p) => p.is_active || p.id === primary)
-  const fallbackChoices = providers.filter((p) => p.id !== primary)
-  const inactive = (p: ProviderOut) => (p.is_active ? '' : ' (inactive)')
-
-  return (
-    <article className="provider-card" aria-label={agent.name}>
-      <header className="provider-header">
-        <h3 className="agent-name">{agent.name}</h3>
-      </header>
-      <p className="muted small">{agent.description}</p>
-
-      <label className="field" htmlFor={`${id}-primary`}>
-        Primary provider
-      </label>
-      <select id={`${id}-primary`} value={primary} onChange={(e) => setPrimary(e.target.value)}>
-        <option value="">
-          {agent.id === 'assistant' ? 'Default: first active provider' : 'Same as the Learning assistant'}
-        </option>
-        {primaryChoices.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.name}
-            {inactive(p)}
-          </option>
-        ))}
-      </select>
-
-      <label className="field" htmlFor={`${id}-fallback`}>
-        Fallback provider
-      </label>
-      <select id={`${id}-fallback`} value={fallback} onChange={(e) => setFallback(e.target.value)}>
-        <option value="">None</option>
-        {fallbackChoices.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.name}
-            {inactive(p)}
-          </option>
-        ))}
-      </select>
-
-      <p className="agent-effective">
-        {agent.effective ? (
-          <>
-            <span className="muted">Uses </span>
-            <strong>{providerLabel(agent.effective)}</strong>
-            {agent.effective_reason === 'assistant' && (
-              <span className="muted"> (same as the Learning assistant)</span>
-            )}{' '}
-            <StatusBadge status={agent.effective.last_test_status} />
-          </>
-        ) : (
-          <span className="muted">No active provider, so this agent cannot answer.</span>
-        )}
-      </p>
-
-      <label className="check-field">
-        <input type="checkbox" checked={webSearch} onChange={(e) => setWebSearch(e.target.checked)} />
-        Internet search
-      </label>
-      <p className="muted small" id={`${id}-web-search-note`}>
-        {agent.effective && agent.effective.provider_type === 'anthropic'
-          ? "Lets the agent search the web with Anthropic's web search when your notes do not cover a question (billed per search on your Anthropic key)."
-          : agent.effective && agent.effective.provider_type !== 'claude-code'
-            ? 'Internet search needs a Claude Code or Anthropic provider; it has no effect with the current one.'
-            : 'Lets the agent search the web (Claude Code WebSearch: titles and links only) when your notes do not cover a question.'}
-      </p>
-
-      <div className="provider-actions">
-        <button type="button" className="primary" onClick={() => void save()} disabled={busy}>
-          Save
-        </button>
-        {saved && <span className="muted">Saved.</span>}
-      </div>
-      {error && (
-        <p className="error" role="alert">
-          {error}
-        </p>
-      )}
     </article>
   )
 }

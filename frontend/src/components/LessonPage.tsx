@@ -146,6 +146,7 @@ function LessonContent({ domain, node, title, onDraft }: LessonContentProps) {
     try {
       const saved = await api.saveLesson(domain, node, draft)
       client.setQueryData(queryKeys.lesson(domain, node), saved)
+      void client.invalidateQueries({ queryKey: ['counts'] })
       setDraft(null)
       setPdfNote(null)
     } catch (e) {

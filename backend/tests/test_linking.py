@@ -96,7 +96,11 @@ def test_counts_for_a_domain(client: TestClient) -> None:
     link(client, new_note(client, "d"), "devops/docker")
     response = client.get("/api/domains/backend/counts")
     assert response.status_code == 200
-    assert response.json() == {"domain": "backend", "counts": {"caching": 2, "auth": 1}}
+    assert response.json() == {
+        "domain": "backend",
+        "counts": {"caching": 2, "auth": 1},
+        "lessons": [],
+    }
 
 
 def test_counts_unknown_domain_is_404(client: TestClient) -> None:
@@ -131,3 +135,27 @@ def test_link_to_removed_node_is_kept_and_flagged(
         assert [n["id"] for n in unsorted] == [note]
         assert after.get("/api/domains/backend/counts").json()["counts"] == {}
     restarted.state.engine.dispose()
+
+
+# Scenario: Lesson markers in the counts answer
+def test_counts_list_nodes_with_a_lesson(client: TestClient) -> None:
+    link(client, new_note(client, "a"), "backend/caching")
+    url = "/api/lessons/backend/auth"
+    assert client.put(url, json={"body": "# Auth", "source": "user"}).status_code == 200
+    answer = client.get("/api/domains/backend/counts").json()
+    assert answer["lessons"] == ["auth"]
+    assert answer["counts"] == {"caching": 1}
+
+
+def test_counts_lessons_are_per_user(client: TestClient, second_client: TestClient) -> None:
+    client.put("/api/lessons/backend/auth", json={"body": "Mine", "source": "user"})
+    second_client.put("/api/lessons/backend/caching", json={"body": "Theirs", "source": "user"})
+    assert client.get("/api/domains/backend/counts").json()["lessons"] == ["auth"]
+    assert second_client.get("/api/domains/backend/counts").json()["lessons"] == ["caching"]
+
+
+def test_clearing_a_lesson_removes_its_marker(client: TestClient) -> None:
+    url = "/api/lessons/backend/auth"
+    client.put(url, json={"body": "# Auth", "source": "user"})
+    client.put(url, json={"body": "  ", "source": "user"})
+    assert client.get("/api/domains/backend/counts").json()["lessons"] == []

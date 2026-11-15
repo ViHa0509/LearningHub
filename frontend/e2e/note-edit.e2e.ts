@@ -103,7 +103,7 @@ async function openRename(page: Page, title: string) {
 async function openNotePage(page: Page, note: ApiNote) {
   await page.goto(`/#/note/${note.id}`)
   const article = page.getByRole('article', { name: `Note: ${note.title}` })
-  await expect(article.getByRole('textbox', { name: 'Note title' })).toHaveValue(note.title)
+  await expect(article.getByRole('heading', { name: note.title })).toBeVisible()
   return article
 }
 
@@ -176,9 +176,14 @@ test('Rename on the note page: Save and Cancel appear on change, blur does not s
   const article = await openNotePage(page, note)
   const field = article.getByRole('textbox', { name: 'Note title' })
 
-  // No buttons before an edit.
-  await expect(article.getByRole('button', { name: 'Save title' })).toHaveCount(0)
-  await expect(article.getByRole('button', { name: 'Cancel title change' })).toHaveCount(0)
+  // The title is a heading until Rename is chosen.
+  await expect(field).toHaveCount(0)
+  await article.getByRole('button', { name: 'Rename' }).click()
+  await expect(field).toBeFocused()
+
+  // Save stays disabled until something changed.
+  await expect(article.getByRole('button', { name: 'Save title' })).toBeDisabled()
+  await expect(article.getByRole('button', { name: 'Cancel title change' })).toBeVisible()
 
   // Editing shows them; leaving the field does not save.
   const changed = `${note.title} blurred`
@@ -192,27 +197,106 @@ test('Rename on the note page: Save and Cancel appear on change, blur does not s
   expect((await listNotes(request)).find((n) => n.id === note.id)?.title).toBe(note.title)
   await expect(listOf(page).getByRole('button', { name: note.title, exact: true })).toBeVisible()
 
-  // Cancel restores the saved title and hides the buttons.
+  // Cancel closes the field and shows the saved title again.
   await article.getByRole('button', { name: 'Cancel title change' }).click()
-  await expect(field).toHaveValue(note.title)
+  await expect(field).toHaveCount(0)
+  await expect(article.getByRole('heading', { name: note.title })).toBeVisible()
   await expect(article.getByRole('button', { name: 'Save title' })).toHaveCount(0)
+
+  // Reopen, type, leave: still nothing saved.
+  await article.getByRole('button', { name: 'Rename' }).click()
 
   // Reload after a blurred edit: the title is unchanged.
   await field.fill(changed)
   await field.blur()
   await page.reload()
-  await expect(page.getByRole('textbox', { name: 'Note title' })).toHaveValue(note.title)
+  await expect(page.getByRole('heading', { name: note.title })).toBeVisible()
+  await expect(page.getByRole('textbox', { name: 'Note title' })).toHaveCount(0)
 
   // Save title persists after reload.
   const saved = `${PREFIX} Saved title ${Date.now().toString(36)}`
+  await page.getByRole('button', { name: 'Rename' }).click()
   await page.getByRole('textbox', { name: 'Note title' }).fill(saved)
   await page.getByRole('button', { name: 'Save title' }).click()
   await expect(page.getByRole('article', { name: `Note: ${saved}` })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Save title' })).toHaveCount(0)
   await page.reload()
-  await expect(page.getByRole('textbox', { name: 'Note title' })).toHaveValue(saved)
+  await expect(page.getByRole('heading', { name: saved })).toBeVisible()
   expect((await listNotes(request)).find((n) => n.id === note.id)?.title).toBe(saved)
   expect(errors).toEqual([])
+})
+
+test('The title is not a text field until Rename is chosen', async ({ page, request }) => {
+  const { note } = await createNote(request, 'headingonly')
+  const article = await openNotePage(page, note)
+  await expect(article.getByRole('heading', { name: note.title })).toBeVisible()
+  await expect(article.getByRole('textbox', { name: 'Note title' })).toHaveCount(0)
+})
+
+for (const via of ['button', 'menu'] as const) {
+  test(`Rename on the note page through the ${via}: Escape keeps the title, Save stores it`, async ({ page, request }) => {
+    const { note } = await createNote(request, `rename-${via}`)
+    const article = await openNotePage(page, note)
+    const field = article.getByRole('textbox', { name: 'Note title' })
+    const start = async () => {
+      if (via === 'button') {
+        await article.getByRole('button', { name: 'Rename' }).click()
+      } else {
+        await article.getByRole('button', { name: 'More actions' }).click()
+        await article.getByRole('menuitem', { name: 'Rename' }).click()
+      }
+      await expect(field).toBeFocused()
+    }
+    const apiTitle = async () => (await listNotes(request)).find((n) => n.id === note.id)?.title
+
+    await start()
+    await expect(article.getByRole('button', { name: 'Save title' })).toBeDisabled()
+    await field.fill(`${note.title} escaped`)
+    await page.keyboard.press('Escape')
+    await expect(field).toHaveCount(0)
+    await expect(article.getByRole('heading', { name: note.title })).toBeVisible()
+    expect(await apiTitle()).toBe(note.title)
+
+    await start()
+    const saved = `${PREFIX} Renamed ${via} ${Date.now().toString(36)}`
+    await field.fill(saved)
+    await article.getByRole('button', { name: 'Save title' }).click()
+    await expect(page.getByRole('heading', { name: saved })).toBeVisible()
+    await expect(field).toHaveCount(0)
+    expect(await apiTitle()).toBe(saved)
+    await expect(listOf(page).getByRole('button', { name: saved, exact: true })).toBeVisible()
+  })
+}
+
+test('Undo a rename puts the previous title back', async ({ page, request }) => {
+  const { note } = await createNote(request, 'undorename')
+  const article = await openNotePage(page, note)
+  await article.getByRole('button', { name: 'Rename' }).click()
+  const renamed = `${PREFIX} Renamed to this ${Date.now().toString(36)}`
+  await article.getByRole('textbox', { name: 'Note title' }).fill(renamed)
+  await article.getByRole('button', { name: 'Save title' }).click()
+  const line = page.getByRole('status').filter({ hasText: 'Renamed to' })
+  await expect(line).toContainText(`Renamed to \u2018${renamed}\u2019.`)
+  await shot(page, 'note-rename-undo')
+  await line.getByRole('button', { name: 'Undo' }).click()
+  await expect(page.getByRole('heading', { name: note.title })).toBeVisible()
+  expect((await listNotes(request)).find((n) => n.id === note.id)?.title).toBe(note.title)
+  await expect(page.locator('.undo-line')).toHaveCount(0)
+})
+
+test('Undo a link change makes the note unsorted again', async ({ page, request }) => {
+  const { note } = await createNote(request, 'undolink')
+  const cleared = await request.patch(`${API}/notes/${note.id}`, { headers: H, data: { node_id: null } })
+  expect(cleared.ok()).toBeTruthy()
+  const article = await openNotePage(page, note)
+  await article.getByRole('combobox', { name: 'Linked to' }).selectOption('backend/redis')
+  await article.getByRole('button', { name: 'Save link' }).click()
+  const line = page.locator('.undo-line')
+  await expect(line).toContainText('Linked to')
+  expect((await listNotes(request)).find((n) => n.id === note.id)?.node_id).toBe('backend/redis')
+  await line.getByRole('button', { name: 'Undo' }).click()
+  await expect.poll(async () => (await listNotes(request)).find((n) => n.id === note.id)?.node_id).toBeNull()
+  await expect(line).toHaveCount(0)
 })
 
 const editingSelector = (title: string) => `iframe[title="Editing: ${title}"]`
@@ -351,7 +435,7 @@ test('Edit page: the page itself becomes editable in a sandboxed frame, Save wri
 
   // Title and link unchanged; content persists after reload.
   await page.reload()
-  await expect(page.getByRole('textbox', { name: 'Note title' })).toHaveValue(note.title)
+  await expect(page.getByRole('heading', { name: note.title })).toBeVisible()
   await expect(page.getByRole('combobox', { name: 'Linked to' })).toHaveValue('backend/redis')
   await expect(originalFrame(page, note.title).locator('#marker')).toHaveText('volatile-lru evicts keys with a TTL')
   await expect(originalFrame(page, note.title).locator('h1')).toHaveText(note.title)

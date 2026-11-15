@@ -5,6 +5,7 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.agent.agents import AGENTS
@@ -21,8 +22,9 @@ from app.agent.ratelimit import RateLimiter
 from app.agent.resolve import ResolveError, resolve_chain, web_search_enabled
 from app.agent.tools import AgentTools
 from app.auth.current import CurrentUser
-from app.db import get_session
+from app.db import AreaAgentSetting, Note, User, get_session
 from app.learning.catalog import UserCatalog
+from app.roadmaps import RoadmapCatalog
 from app.routes.guard import box_of, factory_of, require_app_header
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
@@ -109,6 +111,23 @@ class ChatOut(BaseModel):
     proposed_topics: ProposedTopics | None = None
 
 
+def area_of_page(catalog: RoadmapCatalog, session: Session, user: User, page: Page) -> str | None:
+    """The area (domain id) a page belongs to; the home page belongs to none."""
+    if page.kind in ("roadmap", "lesson"):
+        return page.domain
+    if page.kind == "note" and page.note_id:
+        try:
+            note_id = uuid.UUID(page.note_id)
+        except ValueError:
+            return None
+        node_id = session.scalar(
+            select(Note.node_id).where(Note.id == note_id, Note.user_id == user.id)
+        )
+        if node_id and catalog.has_node(node_id):
+            return node_id.split("/", 1)[0]
+    return None
+
+
 @router.post("/chat", response_model=ChatOut, dependencies=[Depends(require_app_header)])
 def chat(
     payload: ChatIn,
@@ -164,6 +183,10 @@ def chat(
 
     conversation = stored + [Message(role=m.role, text=m.content) for m in payload.messages]
     page = Page(**payload.page.model_dump())
+    area = area_of_page(catalog, session, user, page)
+    area_row = session.get(AreaAgentSetting, (user.id, area)) if area is not None else None
+    area_instructions = area_row.instructions if area_row else ""
+    allowed = set(area_row.tools) if area_row and area_row.tools is not None else None
     try:
         result = run_agent(
             chat_model,
@@ -174,6 +197,7 @@ def chat(
                 user_id=user.id,
                 agent_id=agent.id,
                 store=request.app.state.store,
+                allowed=allowed,
             ),
             catalog,
             page,
@@ -182,6 +206,7 @@ def chat(
             payload.effort,
             [Attachment(name=a.name, text=a.text) for a in payload.attachments],
             web_search=web_search_enabled(session, user.id, agent.id),
+            area_instructions=area_instructions,
         )
     except ProviderError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc

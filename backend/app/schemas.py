@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class DomainSummary(BaseModel):
@@ -35,6 +35,7 @@ class RoadmapOut(BaseModel):
 class NodeCounts(BaseModel):
     domain: str
     counts: dict[str, int]
+    lessons: list[str] = []
 
 
 class NoteOut(BaseModel):
@@ -167,3 +168,30 @@ class NewsListOut(BaseModel):
     sources: list[NewsSourceOut]
     last_refresh_at: datetime | None
     stale: bool
+
+
+class AgentToolOut(BaseModel):
+    name: str
+    description: str
+    agents: list[str]
+
+
+class AreaAgentOut(BaseModel):
+    domain_id: str
+    title: str
+    field_title: str | None
+    editable: bool
+    instructions: str
+    tools: list[str] | None
+
+
+class AreaAgentIn(BaseModel):
+    instructions: str
+    tools: list[str] | None = None
+
+    @field_validator("instructions")
+    @classmethod
+    def instructions_fit(cls, value: str) -> str:
+        if len(value) > 4000:
+            raise ValueError("instructions must be at most 4000 characters")
+        return value

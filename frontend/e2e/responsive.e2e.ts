@@ -180,6 +180,7 @@ const PAGES: PageCase[] = [
     ready: (p) => expect(p.getByText(/Responsive item 1/).first()).toBeVisible({ timeout: 15_000 }),
   },
   { name: 'settings', hash: () => '#/settings', ready: (p) => expect(p.getByRole('navigation', { name: 'Settings sections' })).toBeVisible() },
+  { name: 'settings-agents', hash: () => '#/settings/agents', ready: (p) => expect(p.getByRole('region', { name: 'Areas' })).toBeVisible({ timeout: 15_000 }) },
   { name: 'settings-users', hash: () => '#/settings/users', ready: (p) => expect(p.getByRole('table')).toBeVisible({ timeout: 15_000 }) },
   { name: 'settings-signin', hash: () => '#/settings/sign-in', ready: (p) => expect(p.getByRole('navigation', { name: 'Settings sections' })).toBeVisible() },
   { name: 'settings-data', hash: () => '#/settings/data', ready: (p) => expect(p.getByRole('navigation', { name: 'Settings sections' })).toBeVisible() },
@@ -424,7 +425,7 @@ test.describe('phone only', () => {
     expect((await box(pageMore)).height, 'note page More actions height').toBeGreaterThanOrEqual(40)
     await pageMore.tap()
     const pageMenu = article.getByRole('menu', { name: 'Note actions' })
-    await expect(pageMenu.getByRole('menuitem')).toHaveText(['Edit page', 'Export PDF', 'Archive', 'Delete'])
+    await expect(pageMenu.getByRole('menuitem')).toHaveText(['Rename', 'Edit page', 'Export PDF', 'Archive', 'Delete'])
     const menuBox = await box(pageMenu)
     expect(menuBox.x, 'menu left edge').toBeGreaterThanOrEqual(0)
     expect(menuBox.x + menuBox.width, 'menu right edge').toBeLessThanOrEqual(page.viewportSize()!.width)

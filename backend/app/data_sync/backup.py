@@ -22,6 +22,7 @@ from app.db import (
     AgentProvider,
     AgentSetting,
     AIProvider,
+    AreaAgentSetting,
     ChatMessage,
     ChatSession,
     ExamAttempt,
@@ -53,6 +54,7 @@ OPTIONAL_FILES = {
     "chat_sessions": "data/chat_sessions.json",
     "learning_fields": "data/learning_fields.json",
     "question_banks": "data/question_banks.json",
+    "area_agent_settings": "data/area_agent_settings.json",
 }
 # An answer has no request limit; this bounds what a restore accepts for one message.
 MAX_MESSAGE_CHARS = 1_000_000
@@ -113,6 +115,13 @@ class AgentProviderRow(Row):
 class AgentSettingRow(Row):
     agent_id: str
     web_search: bool
+    updated_at: datetime
+
+
+class AreaAgentSettingRow(Row):
+    domain_id: str = Field(max_length=200)
+    instructions: str = Field(max_length=100_000)
+    tools: list[Annotated[str, Field(max_length=100)]] | None = Field(default=None, max_length=50)
     updated_at: datetime
 
 
@@ -415,6 +424,13 @@ def build_backup(
             .order_by(AgentSetting.agent_id)
         )
     )
+    area_settings = list(
+        session.scalars(
+            select(AreaAgentSetting)
+            .where(AreaAgentSetting.user_id == user_id)
+            .order_by(AreaAgentSetting.domain_id)
+        )
+    )
     chats = list(
         session.scalars(
             select(ChatSession)
@@ -474,6 +490,7 @@ def build_backup(
             "providers": len(providers),
             "agent_providers": len(assignments),
             "agent_settings": len(switches),
+            "area_agent_settings": len(area_settings),
             "chat_sessions": len(chat_rows),
             "chat_messages": sum(len(c.messages) for c in chat_rows),
             "learning_fields": len(field_rows),
@@ -505,6 +522,9 @@ def build_backup(
         }
         for name, payload in dumps.items():
             archive.writestr(DATA_FILES[name], payload)
+        archive.writestr(
+            OPTIONAL_FILES["area_agent_settings"], _dump(area_settings, AreaAgentSettingRow)
+        )
         archive.writestr(
             OPTIONAL_FILES["chat_sessions"],
             json.dumps(

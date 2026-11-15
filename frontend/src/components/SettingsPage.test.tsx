@@ -82,132 +82,15 @@ describe('providers list', () => {
   })
 })
 
-describe('internet search per agent', () => {
-  // Scenario: Setting needs Save
-  it('is off by default and saved only with the card Save', async () => {
-    const state = installFakeApi()
-    state.providers = [makeProvider('Claude sub', 'claude-code', 'sonnet')]
-    const { user } = await renderAppReady('#/settings')
-    const card = await screen.findByRole('article', { name: 'Learning assistant' })
-    const box = within(card).getByRole('checkbox', { name: 'Internet search' })
-    expect(box).not.toBeChecked()
-    expect(within(card).getByText(/Lets the agent search the web/)).toBeInTheDocument()
-
-    await user.click(box)
-    expect(state.webSearch.assistant).toBeUndefined()
-    await user.click(within(card).getByRole('button', { name: 'Save' }))
-    await waitFor(() => expect(state.webSearch.assistant).toBe(true))
-    const put = state.calls.find((c) => c.url === '/api/agents/assistant/settings')
-    expect(put).toMatchObject({ method: 'PUT', body: { web_search: true } })
-  })
-
-  // Scenario: Not a Claude Code or Anthropic provider
-  it('says it needs a Claude Code or Anthropic provider for other provider types', async () => {
-    const state = installFakeApi()
-    state.providers = [makeProvider('GPT', 'openai', 'gpt-5.5')]
-    await renderAppReady('#/settings')
-    const card = await screen.findByRole('article', { name: 'Learning assistant' })
-    expect(await within(card).findByText('Internet search needs a Claude Code or Anthropic provider; it has no effect with the current one.')).toBeInTheDocument()
-  })
-
-  it('offers Anthropic web search with an Anthropic provider', async () => {
-    const state = installFakeApi()
-    state.providers = [makeProvider('Claude main', 'anthropic', 'claude-opus-5-5')]
-    await renderAppReady('#/settings')
-    const card = await screen.findByRole('article', { name: 'Learning assistant' })
-    expect(await within(card).findByText(/Anthropic's web search/)).toBeInTheDocument()
-    expect(within(card).queryByText(/needs a Claude Code/)).not.toBeInTheDocument()
-  })
-})
-
-describe('agents section', () => {
-  it('assigns different providers to the two agents', async () => {
+describe('providers page', () => {
+  // Scenario: Agents page in Settings (the providers page shows the providers only)
+  it('no longer shows the agent cards', async () => {
     const state = installFakeApi()
     state.providers = twoProviders()
-    const { user } = await renderAppReady('#/settings')
-    const assistant = await card('Learning assistant')
-    const writer = await card('Lesson writer')
-    expect(within(assistant).getByLabelText('Primary provider')).toHaveValue('')
-    expect(within(assistant).getByRole('option', { name: 'Default: first active provider' })).toBeInTheDocument()
-    expect(within(assistant).getByLabelText('Fallback provider')).toHaveValue('')
-    expect(within(assistant).getByRole('option', { name: 'None' })).toBeInTheDocument()
-    expect(assistant).toHaveTextContent('Uses Claude main · claude-sonnet-5-5')
-
-    await user.selectOptions(within(assistant).getByLabelText('Primary provider'), 'Claude main')
-    await user.selectOptions(within(assistant).getByLabelText('Fallback provider'), 'Local qwen')
-    await user.click(within(assistant).getByRole('button', { name: 'Save' }))
-    await waitFor(() => expect(state.assignments.assistant).toEqual({ primary: 'p1', fallback: 'p2' }))
-    expect(state.calls.find((c) => c.url === '/api/agents/assistant/provider')?.body).toEqual({
-      primary_provider_id: 'p1',
-      fallback_provider_id: 'p2',
-    })
-
-    await user.selectOptions(within(writer).getByLabelText('Primary provider'), 'Local qwen')
-    await user.click(within(writer).getByRole('button', { name: 'Save' }))
-    await waitFor(() => expect(state.assignments['lesson-writer']).toEqual({ primary: 'p2', fallback: null }))
-    // The writer card now names its provider, and the list says who uses each provider.
-    await waitFor(() => expect(writer).toHaveTextContent('Uses Local qwen · qwen3'))
-    await waitFor(async () => expect(await card('Claude main')).toHaveTextContent('Learning assistant (primary)'))
-  })
-
-  it('does not offer the primary as the fallback, and clears an assignment', async () => {
-    const state = installFakeApi()
-    state.providers = twoProviders()
-    state.assignments.assistant = { primary: 'p1', fallback: 'p2' }
-    const { user } = await renderAppReady('#/settings')
-    const assistant = await card('Learning assistant')
-    const fallback = within(assistant).getByLabelText('Fallback provider')
-    await waitFor(() => expect(fallback).toHaveValue('p2'))
-    expect(within(fallback).queryByRole('option', { name: 'Claude main' })).toBeNull()
-    await user.selectOptions(fallback, 'None')
-    await user.click(within(assistant).getByRole('button', { name: 'Save' }))
-    await waitFor(() => expect(state.assignments.assistant).toEqual({ primary: 'p1', fallback: null }))
-  })
-
-  it('offers only active providers as primary and shows the status badge', async () => {
-    const state = installFakeApi()
-    state.providers = [
-      makeProvider('Claude main', 'anthropic', 'claude-sonnet-5-5', {
-        last_test: { status: 'rate_limited', message: 'slow down', latency_ms: 10, at: '2026-11-07T10:00:00Z' },
-      }),
-      makeProvider('Local qwen', 'local', 'qwen3', { is_active: false }),
-    ]
     await renderAppReady('#/settings')
-    const assistant = await card('Learning assistant')
-    const primary = await within(assistant).findByLabelText('Primary provider')
-    expect(within(primary).getAllByRole('option').map((o) => o.textContent)).toEqual([
-      'Default: first active provider',
-      'Claude main',
-    ])
-    expect(within(assistant).getByText('Rate limited')).toBeInTheDocument()
-  })
-
-  // Scenario: Unassigned agent follows the assistant
-  it("shows that an agent without an assignment uses the assistant's provider", async () => {
-    const state = installFakeApi()
-    state.providers = [
-      makeProvider('Claude main', 'anthropic', 'claude-sonnet-5-5'),
-      makeProvider('Claude sub', 'claude-code', 'sonnet'),
-    ]
-    state.assignments.assistant = { primary: 'p2', fallback: 'p1' }
-    await renderAppReady('#/settings')
-    const writer = await card('Lesson writer')
-    await waitFor(() => expect(writer).toHaveTextContent('Uses Claude sub · sonnet (same as the Learning assistant)'))
-    const assistant = await card('Learning assistant')
-    expect(assistant).toHaveTextContent('Uses Claude sub · sonnet')
-    expect(assistant).not.toHaveTextContent('same as the Learning assistant')
-  })
-
-  // Scenario: Own assignment wins
-  it('does not say "same as the Learning assistant" for an agent with its own provider', async () => {
-    const state = installFakeApi()
-    state.providers = [makeProvider('Claude sub', 'claude-code', 'sonnet'), makeProvider('Local qwen', 'local', 'qwen3')]
-    state.assignments.assistant = { primary: 'p1', fallback: null }
-    state.assignments['lesson-writer'] = { primary: 'p2', fallback: null }
-    await renderAppReady('#/settings')
-    const writer = await card('Lesson writer')
-    await waitFor(() => expect(writer).toHaveTextContent('Uses Local qwen · qwen3'))
-    expect(writer).not.toHaveTextContent('same as the Learning assistant')
+    await card('Claude main')
+    expect(screen.queryByRole('article', { name: 'Learning assistant' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('article', { name: 'Lesson writer' })).not.toBeInTheDocument()
   })
 })
 

@@ -12,6 +12,8 @@ export type Route =
   | { page: 'users-settings' }
   /** Settings > Data & sync (backup, restore, sync). */
   | { page: 'data-settings' }
+  /** Settings > Agents (providers per agent, instructions and tools per area). */
+  | { page: 'agents-settings' }
   | { page: 'news' }
   /** Practice questions of an area (`#/practice/<area slug>`). */
   | { page: 'practice'; area: string }
@@ -32,6 +34,7 @@ export function parseRoute(hash: string): Route {
   if (parts[0] === 'settings' && parts[1] === 'sign-in' && parts.length === 2) return { page: 'sign-in-settings' }
   if (parts[0] === 'settings' && parts[1] === 'users' && parts.length === 2) return { page: 'users-settings' }
   if (parts[0] === 'settings' && parts[1] === 'data' && parts.length === 2) return { page: 'data-settings' }
+  if (parts[0] === 'settings' && parts[1] === 'agents' && parts.length === 2) return { page: 'agents-settings' }
   if (parts[0] === 'news' && parts.length === 1) return { page: 'news' }
   if (parts[0] === 'practice' && parts.length === 2) return { page: 'practice', area: parts[1] }
   if (parts[0] === 'exam' && parts.length === 2) return { page: 'exam', id: parts[1] }
@@ -59,6 +62,8 @@ export function routeHash(route: Route): string {
       return '#/settings/users'
     case 'data-settings':
       return '#/settings/data'
+    case 'agents-settings':
+      return '#/settings/agents'
     case 'news':
       return '#/news'
     case 'practice':
@@ -78,7 +83,8 @@ const isSettings = (route: Route) =>
   route.page === 'provider' ||
   route.page === 'sign-in-settings' ||
   route.page === 'users-settings' ||
-  route.page === 'data-settings'
+  route.page === 'data-settings' ||
+  route.page === 'agents-settings'
 
 function remember(route: Route): Route {
   if (!isSettings(route)) outsideSettings = route

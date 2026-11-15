@@ -1,6 +1,7 @@
 /** Spec: lesson-pages. */
+import { QueryClient } from '@tanstack/react-query'
 import { screen, waitFor, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { installFakeApi, makeField, makeNote } from '../test/fakeApi'
 import { renderApp } from '../test/render'
 
@@ -88,6 +89,22 @@ describe('lesson content', () => {
       body: { body: '**Cache-aside**: read the cache, fall back to the database', source: 'user' },
     })
     expect(within(lesson).getByRole('button', { name: 'Edit lesson' })).toBeInTheDocument()
+  })
+
+  it('invalidates the map counts after a lesson is saved', async () => {
+    installFakeApi()
+    const invalidate = vi.spyOn(QueryClient.prototype, 'invalidateQueries')
+    try {
+      const { user } = renderApp('#/lesson/backend/caching')
+      const lesson = await openLesson('Caching')
+      await user.click(await within(lesson).findByRole('button', { name: 'Write lesson' }))
+      await user.type(within(lesson).getByRole('textbox', { name: 'Lesson text (Markdown)' }), 'Text')
+      await user.click(within(lesson).getByRole('button', { name: 'Save lesson' }))
+      await within(lesson).findByTestId('lesson-body')
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: ['counts'] })
+    } finally {
+      invalidate.mockRestore()
+    }
   })
 
   it('clears a lesson by saving an empty text', async () => {

@@ -1,7 +1,7 @@
 /**
  * Spec checks for the change chat-session-history (openspec/changes/chat-session-history/specs):
  * the first message creates a chat, History lists the chats, a past chat is reopened and continued
- * with its stored history, New chat, rename, delete of the open chat, the open chat after a reload,
+ * with its stored history, New chat, rename, delete of the open chat, a reload that starts a new chat,
  * the chat history in backup and restore, and no access without a session.
  *
  * The provider is the fake OpenAI-compatible server on port 8002 (e2e/fake_llm.py): "[[history]]"
@@ -209,34 +209,43 @@ test('History: the first message creates a chat; reopen and continue, New chat, 
   expect(errors).toEqual([])
 })
 
-test('The open chat survives a reload; a remembered chat that is gone starts a new chat without an error', async ({
-  page,
-  request,
-}) => {
+test('Reload starts a new chat, and the old chat is in History', async ({ page, request }) => {
   const errors = watchErrors(page)
   const { agent, box, log } = await openChat(page, request)
   const question = unique('reload')
   await send(page, box, question)
   await expect(log.getByText('OK from fake')).toBeVisible({ timeout: ANSWER_TIMEOUT })
   const [chat] = await mine(request)
+  const newChat = agent.getByRole('button', { name: 'New chat' })
 
-  // Scenario: Reload.
+  // Scenario: Reload starts a new chat.
   await page.reload()
-  await expect(log.locator('.agent-bubble.user')).toHaveText(question, { timeout: ANSWER_TIMEOUT })
+  await expect(box).toBeVisible()
+  await expect(box).toBeEnabled({ timeout: ANSWER_TIMEOUT })
+  await expect(log.locator('.agent-bubble')).toHaveCount(0)
+  await expect(log).not.toContainText(question)
+  await expect(log).not.toContainText('OK from fake')
+  await expect(newChat).toBeDisabled()
+  await expect(agent.getByRole('alert')).toHaveCount(0)
+  await shot(page, 'chat-reload-new')
+  const fresh = unique('after reload')
+  expect((await send(page, box, fresh)).session_id).toBeUndefined()
+  await expect(log.getByText('OK from fake')).toBeVisible({ timeout: ANSWER_TIMEOUT })
+  expect(await mine(request)).toHaveLength(2)
+
+  // Scenario: The old chat is in History.
+  await agent.getByRole('button', { name: 'History' }).click()
+  const history = agent.getByRole('region', { name: 'Chat history' })
+  const old = history.locator('.history-row').filter({ hasText: question.slice(0, 60) })
+  await expect(old).toHaveCount(1)
+  await old.click()
+  await expect(history).toHaveCount(0)
+  await expect(log.locator('.agent-bubble.user')).toHaveText(question)
   await expect(log.getByText('OK from fake')).toBeVisible()
   const next = await send(page, box, '[[history]] again')
   expect(next.session_id).toBe(chat.id)
   await expect(log.getByText(/HISTORY user-messages=2/)).toBeVisible({ timeout: ANSWER_TIMEOUT })
-  expect((await mine(request))[0].message_count).toBe(4)
-
-  // Scenario: Remembered chat is gone.
-  expect((await request.delete(`${API}/api/agent/sessions/${chat.id}`, { headers: H })).status()).toBe(204)
-  await page.reload()
-  await expect(box).toBeVisible()
-  await expect(box).toBeEnabled({ timeout: ANSWER_TIMEOUT })
-  await expect(log).not.toContainText(question)
-  await expect(agent.getByRole('alert')).toHaveCount(0)
-  await expect(agent.getByRole('button', { name: 'New chat' })).toBeDisabled()
+  expect((await mine(request)).find((s) => s.id === chat.id)?.message_count).toBe(4)
   expect(errors).toEqual([])
 })
 

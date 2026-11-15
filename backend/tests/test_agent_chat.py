@@ -347,3 +347,80 @@ def test_call_cut_every_step_stops_after_three_steps(client: TestClient) -> None
     assert len(fake.calls) == 3
     assert len(body["steps"]) == 3
     assert body["changed_lessons"] == []
+
+
+# --- per-area settings ---------------------------------------------------------
+
+AREA_TEXT = "Always answer with a code example."
+AREA_HEADER = "Instructions of the user for this area"
+LESSON_PAGE = {"kind": "lesson", "domain": "backend", "node": "caching"}
+
+
+def save_area(client: TestClient, domain: str, **body: Any) -> None:
+    payload = {"instructions": "", "tools": None, **body}
+    response = client.put(
+        f"/api/agents/areas/{domain}", json=payload, headers={"X-LearningHub": "1"}
+    )
+    assert response.status_code == 200, response.text
+
+
+# Scenario: Instructions reach the agent on the area
+def test_area_instructions_reach_the_agent(client: TestClient) -> None:
+    fake = use(client, Turn("ok"))
+    save_area(client, "backend", instructions=AREA_TEXT)
+    assert chat(client, "hi", LESSON_PAGE).status_code == 200
+    system = fake.calls[0]["system"]
+    assert f"{AREA_HEADER} (follow them unless they conflict with the rules above):\n" in system
+    assert AREA_TEXT in system
+
+
+# Scenario: Instructions stay on their area
+@pytest.mark.parametrize(
+    "page", [None, {"kind": "roadmap", "domain": "devops"}], ids=["home", "other-area"]
+)
+def test_area_instructions_stay_on_their_area(
+    client: TestClient, page: dict[str, Any] | None
+) -> None:
+    fake = use(client, Turn("ok"))
+    save_area(client, "backend", instructions=AREA_TEXT)
+    assert chat(client, "hi", page).status_code == 200
+    assert AREA_HEADER not in fake.calls[0]["system"]
+    assert AREA_TEXT not in fake.calls[0]["system"]
+
+
+# Scenario: Note linked to the area
+def test_area_instructions_reach_the_agent_on_a_linked_note(client: TestClient) -> None:
+    fake = use(client, Turn("ok"), Turn("ok"))
+    save_area(client, "backend", instructions=AREA_TEXT)
+    note_id = import_note(client, "Redis", "evicts keys")
+    page = {"kind": "note", "note_id": note_id}
+    chat(client, "hi", page)
+    assert AREA_HEADER not in fake.calls[0]["system"]  # not linked yet
+    link(client, note_id, "backend/caching")
+    chat(client, "hi", page)
+    assert AREA_TEXT in fake.calls[1]["system"]
+
+
+# Scenario: Tool off on the area
+def test_tool_off_on_the_area_is_not_offered_and_refused(client: TestClient) -> None:
+    allowed = ["list_roadmap", "read_lesson", "read_note", "search_notes"]
+    fake = use(
+        client,
+        Turn("Trying.", (call("write_lesson", node_id="backend/caching", markdown="# Caching"),)),
+        Turn("Could not write."),
+    )
+    save_area(client, "backend", tools=allowed)
+    assert chat(client, "write it", LESSON_PAGE).status_code == 200
+    assert {s.name for s in fake.calls[0]["tools"]} == set(allowed)
+    refused = fake.calls[1]["messages"][-1].text
+    assert "not available" in refused
+    assert client.get("/api/lessons/backend/caching").json()["body"] == ""
+
+
+# Scenario: Tool off on one area only
+def test_tool_off_on_one_area_only(client: TestClient) -> None:
+    fake = use(client, Turn("ok"))
+    save_area(client, "backend", tools=["read_note"])
+    page = {"kind": "lesson", "domain": "devops", "node": "docker"}
+    assert chat(client, "hi", page).status_code == 200
+    assert "write_lesson" in {s.name for s in fake.calls[0]["tools"]}

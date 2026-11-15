@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { useEffect, useEffectEvent, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   api,
   queryKeys,
@@ -38,26 +38,6 @@ export interface Entry {
 }
 
 let seq = 0
-
-/** Which chat is open, remembered per browser (guarded: storage may be blocked). */
-const SESSION_KEY = 'lh.agent.session'
-
-function readSession(): string | null {
-  try {
-    return localStorage.getItem(SESSION_KEY)
-  } catch {
-    return null
-  }
-}
-
-function saveSession(id: string | null) {
-  try {
-    if (id) localStorage.setItem(SESSION_KEY, id)
-    else localStorage.removeItem(SESSION_KEY)
-  } catch {
-    // The chat still works; it is just not shown again after a reload.
-  }
-}
 
 /** A stored chat as the panel shows it: like the live conversation it once was. */
 function toEntries(detail: ChatSessionDetail): Entry[] {
@@ -99,7 +79,7 @@ export function useAgentChat({ effort, page }: Options) {
   const [entries, setEntries] = useState<Entry[]>([])
   const [busy, setBusy] = useState(false)
   // A stored chat is being read.
-  const [loading, setLoading] = useState(() => readSession() !== null)
+  const [loading, setLoading] = useState(false)
   // The stored chat this conversation belongs to; null until its first answer.
   const [sessionId, setSessionId] = useState<string | null>(null)
   const session = useRef<string | null>(null)
@@ -107,7 +87,6 @@ export function useAgentChat({ effort, page }: Options) {
   const setSession = (id: string | null) => {
     session.current = id
     setSessionId(id)
-    saveSession(id)
   }
 
   const newChat = () => {
@@ -135,23 +114,6 @@ export function useAgentChat({ effort, page }: Options) {
     setSession(detail ? detail.id : null)
     setLoading(false)
   }
-
-  // After a reload the chat that was open is shown again (`loading` starts true for it).
-  const restore = useEffectEvent((live: () => boolean) => {
-    const remembered = readSession()
-    if (!remembered) return
-    read(remembered).then(
-      (detail) => live() && show(detail),
-      () => live() && show(null),
-    )
-  })
-  useEffect(() => {
-    let mounted = true
-    restore(() => mounted)
-    return () => {
-      mounted = false
-    }
-  }, [])
 
   /** `retryFrom`: the stored question this turn replaces (with everything after it). */
   const send = async (turn: Turn, base: Entry[] = entries, retryFrom?: string) => {

@@ -25,6 +25,42 @@ describe('RoadmapMap', () => {
     expect(state.calls.some((c) => c.url === '/api/domains/backend/counts')).toBe(true)
   })
 
+  it('marks a node with a lesson and leaves the others unmarked', async () => {
+    const state = installFakeApi([])
+    state.lessons['backend/redis'] = {
+      node_id: 'backend/redis',
+      body: 'Eviction policies',
+      source: 'user',
+      updated_at: '2026-11-07T00:00:00Z',
+    }
+    renderApp('#/roadmap/backend')
+    const redis = await screen.findByTestId('node-backend/redis')
+    expect(await within(redis).findByLabelText('Has a lesson')).toBeInTheDocument()
+    expect(redis).toHaveClass('has-lesson')
+    for (const id of ['backend/apis', 'backend/caching', 'backend/auth']) {
+      const node = screen.getByTestId(`node-${id}`)
+      expect(node).not.toHaveClass('has-lesson')
+      expect(within(node).queryByLabelText('Has a lesson')).not.toBeInTheDocument()
+    }
+  })
+
+  it('shows the note badge and the lesson mark on one node', async () => {
+    const state = installFakeApi([
+      makeNote('Redis eviction', 'backend/caching'),
+      makeNote('HTTP caching', 'backend/caching'),
+    ])
+    state.lessons['backend/caching'] = {
+      node_id: 'backend/caching',
+      body: 'Cache-aside',
+      source: 'user',
+      updated_at: '2026-11-07T00:00:00Z',
+    }
+    renderApp('#/roadmap/backend')
+    const caching = await screen.findByTestId('node-backend/caching')
+    expect(await within(caching).findByLabelText('2 notes')).toHaveTextContent('2')
+    expect(within(caching).getByLabelText('Has a lesson')).toBeInTheDocument()
+  })
+
   it('scrolls the active domain tab into view inside its row', async () => {
     installFakeApi([])
     const scrollIntoView = vi.fn()
@@ -82,7 +118,7 @@ describe('RoadmapMap start view', () => {
 
 describe('layoutRoadmap', () => {
   it('creates one flow node per roadmap node, parent edges and a spine between topics', () => {
-    const { nodes, edges } = layoutRoadmap(backend, { caching: 3 }, 'backend/redis')
+    const { nodes, edges } = layoutRoadmap(backend, { caching: 3 }, ['redis'], 'backend/redis')
     expect(nodes).toHaveLength(4)
     expect(edges.map((e) => e.id).sort()).toEqual(
       ['caching->redis', 'spine:apis->caching', 'spine:caching->auth'].sort(),
@@ -91,12 +127,14 @@ describe('layoutRoadmap', () => {
     expect(byId.caching.count).toBe(3)
     expect(byId.apis.count).toBe(0)
     expect(byId.redis.selected).toBe(true)
+    expect(byId.redis.hasLesson).toBe(true)
+    expect(byId.caching.hasLesson).toBe(false)
     expect(byId.caching.isTopic).toBe(true)
     expect(byId.redis.isTopic).toBe(false)
   })
 
   it('stacks topics down a spine and branches subtopics to the right', () => {
-    const { nodes } = layoutRoadmap(backend, {}, null)
+    const { nodes } = layoutRoadmap(backend, {}, [], null)
     const pos = Object.fromEntries(nodes.map((n) => [n.id, n.position]))
     expect(pos.apis.x).toBe(pos.caching.x)
     expect(pos.caching.y).toBeGreaterThan(pos.apis.y)

@@ -210,7 +210,8 @@ test('Note page header: Back, title, node picker and More actions stay on one li
   const more = article.getByRole('button', { name: 'More actions' })
   const controls = [
     article.getByRole('button', { name: '← Back' }),
-    article.getByRole('textbox', { name: 'Note title' }),
+    article.getByRole('heading', { name: note.title }),
+    article.getByRole('button', { name: 'Rename' }),
     article.getByRole('combobox', { name: 'Linked to' }),
     more,
   ]
@@ -220,7 +221,7 @@ test('Note page header: Back, title, node picker and More actions stay on one li
     const middles = boxes.map((b) => b.y + b.height / 2)
     for (const middle of middles) expect(Math.abs(middle - middles[0])).toBeLessThan(6)
     const head = (await header.boundingBox())!
-    const button = boxes[3]
+    const button = boxes[boxes.length - 1]
     // More actions sits at the right end of the header (its padding is 12 px).
     expect(head.x + head.width - (button.x + button.width)).toBeLessThan(16)
   }
@@ -293,7 +294,7 @@ test('Read a note: Edit page, Export PDF, Archive and Delete are in the More act
   }
   await more.click()
   await expect(more).toHaveAttribute('aria-expanded', 'true')
-  await expect(items).toHaveText(['Edit page', 'Export PDF', 'Archive', 'Delete'])
+  await expect(items).toHaveText(['Rename', 'Edit page', 'Export PDF', 'Archive', 'Delete'])
   // The menu hangs under its button, inside the window.
   const box = (await menu.boundingBox())!
   const button = (await more.boundingBox())!
@@ -313,14 +314,14 @@ test('Read a note: Edit page, Export PDF, Archive and Delete are in the More act
   await expect(items.nth(1)).toBeFocused()
   await page.keyboard.press('ArrowUp')
   await page.keyboard.press('ArrowUp')
-  await expect(items.nth(3)).toBeFocused()
+  await expect(items.nth(4)).toBeFocused()
   await page.keyboard.press('Escape')
   await expect(menu).toHaveCount(0)
   await expect(more).toBeFocused()
 
   // A click outside closes it, and so does a click into the note's own page.
   await more.click()
-  await article.getByRole('textbox', { name: 'Note title' }).click()
+  await article.getByRole('heading', { name: note.title }).click()
   await expect(menu).toHaveCount(0)
   await more.click()
   await expect(menu).toBeVisible()
@@ -333,7 +334,7 @@ test('Read a note: Edit page, Export PDF, Archive and Delete are in the More act
   await expect(menu).toHaveCount(0)
   await expect(page.getByRole('status').filter({ hasText: 'This note is archived.' })).toBeVisible()
   await more.click()
-  await expect(items).toHaveText(['Edit page', 'Export PDF', 'Restore', 'Delete'])
+  await expect(items).toHaveText(['Rename', 'Edit page', 'Export PDF', 'Restore', 'Delete'])
   await menu.getByRole('menuitem', { name: 'Restore' }).click()
   await expect(page.getByText('This note is archived.')).toHaveCount(0)
 
@@ -342,7 +343,7 @@ test('Read a note: Edit page, Export PDF, Archive and Delete are in the More act
   await menu.getByRole('menuitem', { name: 'Edit page' }).click()
   await expect(page.getByRole('region', { name: 'Edit page' })).toBeVisible()
   await more.click()
-  await expect(items).toHaveText(['Archive', 'Delete'])
+  await expect(items).toHaveText(['Rename', 'Archive', 'Delete'])
   await page.keyboard.press('Escape')
   await page.getByRole('region', { name: 'Edit page' }).getByRole('button', { name: 'Cancel' }).click()
 

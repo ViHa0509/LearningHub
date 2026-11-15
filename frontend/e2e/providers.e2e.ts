@@ -401,7 +401,7 @@ test.describe('Agents are defined in code and assigned providers', () => {
   test('Different providers per agent are assigned in Settings', async ({ page, request }) => {
     const claude = await makeProvider(request, 'Claude main', 'fake-ok')
     const qwen = await makeProvider(request, 'Local qwen', 'fake-ok')
-    await page.goto('/#/settings')
+    await page.goto('/#/settings/agents')
     const assistant = page.getByRole('article', { name: 'Learning assistant' })
     await assistant.getByLabel('Primary provider').selectOption({ label: claude.name })
     await assistant.getByLabel('Fallback provider').selectOption({ label: qwen.name })
@@ -424,6 +424,7 @@ test.describe('Agents are defined in code and assigned providers', () => {
     const get = (id: string) => agents.find((a: { id: string }) => a.id === id)
     expect(get('assistant').primary.id).toBe(claude.id)
     expect(get('lesson-writer').primary.id).toBe(qwen.id)
+    await page.goto('/#/settings')
     await expect(page.getByRole('article', { name: claude.name })).toContainText('Learning assistant (primary)')
   })
 
@@ -439,7 +440,7 @@ test.describe('Agents are defined in code and assigned providers', () => {
     expect(writerApi.effective.id).toBe(sub.id)
     expect(writerApi.effective_reason).toBe('assistant')
 
-    await page.goto('/#/settings')
+    await page.goto('/#/settings/agents')
     const writer = page.getByRole('article', { name: 'Lesson writer' })
     await expect(writer.getByLabel('Primary provider')).toHaveValue('')
     const effective = writer.locator('.agent-effective')
@@ -466,7 +467,7 @@ test.describe('Agents are defined in code and assigned providers', () => {
     // The lesson writer's own primary wins over the assistant's.
     // Assigned through the API, so the page is reloaded to read it again.
     await assign(request, 'lesson-writer', main.id, null)
-    await page.goto('/#/settings')
+    await page.goto('/#/settings/agents')
     await page.reload()
     const own = page.getByRole('article', { name: 'Lesson writer' }).locator('.agent-effective')
     await expect(own).toContainText(`Uses ${main.name}`)

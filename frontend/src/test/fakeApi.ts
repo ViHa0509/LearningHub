@@ -143,6 +143,20 @@ export const TYPES: ProviderTypeInfo[] = [
   },
 ]
 
+const ALL_AGENTS = ['assistant', 'lesson-writer', 'outline']
+/** The app tools of GET /api/agents/tools, in the backend's order. */
+export const AGENT_TOOLS = [
+  { name: 'search_notes', description: 'Search the notes by text.', agents: ALL_AGENTS },
+  { name: 'read_note', description: 'Read one note.', agents: ALL_AGENTS },
+  { name: 'list_roadmap', description: 'List the topics of a roadmap.', agents: ALL_AGENTS },
+  { name: 'read_lesson', description: 'Read the lesson of a topic.', agents: ALL_AGENTS },
+  { name: 'write_lesson', description: 'Write or update the lesson of a topic.', agents: ALL_AGENTS },
+  { name: 'list_node_resources', description: 'List the reference links of a topic.', agents: ALL_AGENTS },
+  { name: 'fetch_reference', description: 'Fetch the text of a reference link.', agents: ALL_AGENTS },
+  { name: 'save_learned_note', description: 'Save what was learned as a note.', agents: ['assistant'] },
+  { name: 'propose_topics', description: 'Propose the topics of an area.', agents: ['outline'] },
+]
+
 export const AGENT_DEFS = [
   { id: 'assistant', name: 'Learning assistant', description: 'The chat panel.' },
   { id: 'lesson-writer', name: 'Lesson writer', description: 'Drafts lessons.' },
@@ -358,6 +372,8 @@ export interface FakeState {
   providers: ProviderOut[]
   /** Agent id -> assigned provider ids. */
   assignments: Record<string, { primary: string | null; fallback: string | null }>
+  /** Domain id -> the saved extra instructions and tools of the area (null tools = every tool). */
+  areaAgents: Record<string, { instructions: string; tools: string[] | null }>
   /** Agent id -> Internet search switch. */
   webSearch: Record<string, boolean>
   /** What Test Connection answers. */
@@ -599,6 +615,7 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
     providers: [],
     assignments: {},
     webSearch: {},
+    areaAgents: {},
     test: () => ({ status: 'ok', ok: true, message: 'The model answered: OK', latency_ms: 420 }),
     models: ['gpt-5.5', 'gpt-5.5-mini'],
     chat: () => ({ reply: 'ok', steps: [], changed_lessons: [], stopped: false }),
@@ -915,6 +932,19 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
     if (primary?.is_active) return { provider: primary, reason: inherited ? 'assistant' : 'primary' }
     const first = state.providers.find((p) => p.is_active)
     return first ? { provider: first, reason: 'default' } : { reason: 'none' }
+  }
+  const areaAgentOut = (domain: string) => {
+    const d = [...builtinSummaries(), ...visibleFields().flatMap(areaSummaries)].find((x) => x.id === domain)
+    if (!d) return undefined
+    const saved = state.areaAgents[domain]
+    return {
+      domain_id: d.id,
+      title: d.title,
+      field_title: d.field_id ? d.field_title : null,
+      editable: d.editable,
+      instructions: saved?.instructions ?? '',
+      tools: saved ? saved.tools : null,
+    }
   }
   const agentOut = (def: (typeof AGENT_DEFS)[number]): AgentOut => {
     const eff = effective(def.id)
@@ -1346,7 +1376,11 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
             counts[id] = (counts[id] ?? 0) + 1
           }
         }
-        return respond({ domain, counts })
+        const lessons = Object.entries(state.lessons)
+          .filter(([id, l]) => id.startsWith(`${domain}/`) && l.body.trim())
+          .map(([id]) => id.split('/')[1])
+          .sort()
+        return respond({ domain, counts, lessons })
       }
       if (url === '/api/ai-providers/types') return respond(state.types)
       if (url === '/api/ai-providers' && method === 'GET') return respond(state.providers.map(withUse))
@@ -1420,6 +1454,26 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
           return respond(withUse(target))
         }
         return respond(withUse(target))
+      }
+      if (url === '/api/agents/tools') return respond(AGENT_TOOLS)
+      if (url === '/api/agents/areas' && method === 'GET') {
+        return respond(
+          [...builtinSummaries(), ...visibleFields().flatMap(areaSummaries)].map((d) => areaAgentOut(d.id)),
+        )
+      }
+      const areaMatch = url.match(/^\/api\/agents\/areas\/([^/]+)$/)
+      if (areaMatch && method === 'PUT') {
+        const domain = areaMatch[1]
+        if (!areaAgentOut(domain)) return respond({ detail: 'domain not found' }, 404)
+        const text = typeof body?.instructions === 'string' ? body.instructions : ''
+        if (text.length > 4000) return respond({ detail: 'instructions must be at most 4000 characters' }, 422)
+        const chosen: string[] | null = Array.isArray(body?.tools) ? body.tools : null
+        const unknown = chosen?.find((t) => !AGENT_TOOLS.some((k) => k.name === t))
+        if (unknown) return respond({ detail: `unknown tool: ${unknown}` }, 422)
+        const stored = chosen ? [...new Set(chosen)].sort() : null
+        if (text === '' && stored === null) delete state.areaAgents[domain]
+        else state.areaAgents[domain] = { instructions: text, tools: stored }
+        return respond(areaAgentOut(domain))
       }
       if (url === '/api/agents') return respond(AGENT_DEFS.map(agentOut))
       const settingsMatch = url.match(/^\/api\/agents\/([^/]+)\/settings$/)

@@ -223,9 +223,11 @@ button.disclosure .icon { width: 16px; height: 16px; flex: none; margin-right: 0
   padding: 0 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
   font-size: 13px; cursor: pointer;
 }
-.roadmap-node.has-notes { border-color: var(--has-notes); background: var(--has-notes-soft); }
+.roadmap-node.has-notes, .roadmap-node.has-lesson { border-color: var(--has-notes); background: var(--has-notes-soft); }
 .roadmap-node.selected { outline: 3px solid var(--accent); }
-.node-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.node-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lesson-mark { flex: none; display: inline-flex; width: 16px; height: 16px; color: var(--has-notes); }
+.lesson-mark svg { width: 16px; height: 16px; }
 .badge { min-width: 22px; text-align: center; border-radius: 11px; background: var(--has-notes); color: var(--surface); font-weight: 600; font-size: 12px; padding: 1px 6px; }
 
 .note-view { display: flex; flex-direction: column; height: 100%; }
@@ -234,6 +236,7 @@ button.disclosure .icon { width: 16px; height: 16px; flex: none; margin-right: 0
 .note-header { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--surface); }
 .note-header > button { flex: none; }
 .note-fields { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex: 1 1 0; min-width: 0; }
+.note-title { font-size: 16px; font-weight: 600; margin: 0; min-width: 0; flex: 1 1 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .title-input { flex: 3 1 100px; min-width: 0; font-weight: 600; }
 .link-field { display: inline-flex; flex: 1 1 120px; align-items: center; gap: 6px; min-width: 0; max-width: 320px; font-size: 13px; }
 .link-field > span { flex: none; white-space: nowrap; }
@@ -1165,3 +1168,11 @@ a.auth-provider:hover { border-color: var(--accent); color: var(--accent); }
 @media (pointer: coarse) {
   .bank-pictures button { min-height: 44px; }
 }
+
+.area-agent-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin: 12px 0; display: flex; flex-direction: column; gap: 10px; }
+.area-agent-card textarea { width: 100%; box-sizing: border-box; }
+.area-agent-counter { margin: 0; text-align: right; }
+.area-agent-tools { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin: 0; display: grid; gap: 0 16px; }
+.area-agent-tools legend { font-weight: 600; padding: 0 4px; }
+.area-agent-tool { font-weight: 400; align-items: flex-start; margin-top: 8px; }
+@media (min-width: 640px) { .area-agent-tools { grid-template-columns: 1fr 1fr; } }

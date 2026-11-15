@@ -10,6 +10,7 @@ import json
 import zipfile
 from collections.abc import Callable, Collection
 from dataclasses import dataclass
+from dataclasses import field as dc_field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -30,6 +31,7 @@ from app.data_sync.backup import (
     OPTIONAL_FILES,
     AgentProviderRow,
     AgentSettingRow,
+    AreaAgentSettingRow,
     BankRow,
     ChatSessionRow,
     FieldRow,
@@ -44,6 +46,7 @@ from app.db import (
     AgentProvider,
     AgentSetting,
     AIProvider,
+    AreaAgentSetting,
     ChatMessage,
     ChatSession,
     ExamAttempt,
@@ -85,6 +88,8 @@ class Parsed:
     assignments: list[AgentProviderRow]
     switches: list[AgentSettingRow]
     blob_names: list[str]  # archive member names of the files
+    # Empty when the archive has no area-settings entry (older backups): the rows are removed.
+    area_settings: list[AreaAgentSettingRow] = dc_field(default_factory=list)
     # None when the archive has no chat entry: the chat history is then left as it is.
     chats: list[ChatSessionRow] | None = None
     # None when the archive has no fields entry: the user's fields are then left as they are.
@@ -268,6 +273,11 @@ def validate(path: Path) -> Parsed:
         providers = _rows(archive, DATA_FILES["ai_providers"], ProviderRow, budget)
         assignments = _rows(archive, DATA_FILES["agent_providers"], AgentProviderRow, budget)
         switches = _rows(archive, DATA_FILES["agent_settings"], AgentSettingRow, budget)
+        area_settings = (
+            _rows(archive, OPTIONAL_FILES["area_agent_settings"], AreaAgentSettingRow, budget)
+            if OPTIONAL_FILES["area_agent_settings"] in names
+            else []
+        )
         chats = (
             _rows(archive, OPTIONAL_FILES["chat_sessions"], ChatSessionRow, budget)
             if OPTIONAL_FILES["chat_sessions"] in names
@@ -307,7 +317,17 @@ def validate(path: Path) -> Parsed:
     if banks is not None:
         _check_banks(banks, present)
     return Parsed(
-        manifest, notes, lessons, providers, assignments, switches, blobs, chats, fields, banks
+        manifest,
+        notes,
+        lessons,
+        providers,
+        assignments,
+        switches,
+        blobs,
+        area_settings,
+        chats,
+        fields,
+        banks,
     )
 
 
@@ -478,7 +498,7 @@ def restore_archive(
         )
         provider_ids = {p.id: uuid4() for p in parsed.providers}
         try:
-            for table in (AgentProvider, AgentSetting, Lesson, Note, AIProvider):
+            for table in (AgentProvider, AgentSetting, AreaAgentSetting, Lesson, Note, AIProvider):
                 session.execute(delete(table).where(table.user_id == user_id))
             session.add_all(
                 AIProvider(
@@ -496,6 +516,9 @@ def restore_archive(
             session.add_all(Lesson(**item.model_dump(), user_id=user_id) for item in parsed.lessons)
             session.add_all(
                 AgentSetting(**s.model_dump(), user_id=user_id) for s in parsed.switches
+            )
+            session.add_all(
+                AreaAgentSetting(**a.model_dump(), user_id=user_id) for a in parsed.area_settings
             )
             session.flush()
             session.add_all(
@@ -579,6 +602,7 @@ def restore_archive(
             "providers": len(parsed.providers),
             "agent_providers": len(parsed.assignments),
             "agent_settings": len(parsed.switches),
+            "area_agent_settings": len(parsed.area_settings),
             **chat_counts,
             **field_counts,
             **bank_counts,

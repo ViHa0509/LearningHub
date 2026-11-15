@@ -627,3 +627,45 @@ def test_mcp_server_refuses_without_a_valid_user(client: TestClient, value: str 
     assert out.returncode != 0
     assert b"LH_AGENT_USER_ID" in out.stderr
     assert out.stdout == b""
+
+
+# Scenario: Tools off on the area reach Claude Code
+def test_mcp_config_passes_the_allowed_tools() -> None:
+    runner = ReplayRunner(fixture_lines("answer_from_notes.jsonl", note_id="n1"))
+    tools = AgentTools(None, None, user_id=USER_ID, allowed={"search_notes", "read_note"})  # type: ignore[arg-type]
+    agent(runner, token=TOKEN).run(SYSTEM, [Message(role="user", text=QUESTION)], tools, 6)
+    env = runner.last["mcp_config"]["mcpServers"]["learninghub"]["env"]
+    assert env["LH_AGENT_TOOLS"] == "read_note,search_notes"
+
+
+def test_mcp_config_without_a_tool_limit_has_no_tools_variable() -> None:
+    runner = ReplayRunner(fixture_lines("answer_from_notes.jsonl", note_id="n1"))
+    tools = AgentTools(None, None, user_id=USER_ID)  # type: ignore[arg-type]
+    agent(runner, token=TOKEN).run(SYSTEM, [Message(role="user", text=QUESTION)], tools, 6)
+    assert "LH_AGENT_TOOLS" not in runner.last["mcp_config"]["mcpServers"]["learninghub"]["env"]
+
+
+def test_mcp_server_lists_only_the_allowed_tools(client: TestClient) -> None:
+    env = {
+        **os.environ,
+        "LH_AGENT_USER_ID": str(user_id_of(client.app)),
+        "LH_AGENT_TOOLS": "read_note,search_notes",
+        "LH_DATABASE_URL": TEST_DATABASE_URL,
+        "PYTHONPATH": str(BACKEND_DIR),
+    }
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "app.agent.mcp_server"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+        cwd=BACKEND_DIR,
+    )
+    server = McpClient(proc)
+    try:
+        tools = server.request("tools/list")["result"]["tools"]
+        assert [t["name"] for t in tools] == ["search_notes", "read_note"]
+    finally:
+        server.close()
+        assert proc.stderr is not None
+        proc.stderr.close()

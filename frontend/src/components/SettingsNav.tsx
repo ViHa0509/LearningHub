@@ -2,10 +2,11 @@ import { useEffect, useRef } from 'react'
 import { useIsAdmin } from '../lib/auth'
 import { backFromSettings, routeHash } from '../lib/route'
 
-export type SettingsTab = 'providers' | 'users' | 'sign-in' | 'data'
+export type SettingsTab = 'providers' | 'agents' | 'users' | 'sign-in' | 'data'
 
 const TABS: { id: SettingsTab; label: string; href: string; adminOnly?: boolean }[] = [
   { id: 'providers', label: 'AI providers', href: '#/settings' },
+  { id: 'agents', label: 'Agents', href: '#/settings/agents' },
   { id: 'users', label: 'Users', href: '#/settings/users', adminOnly: true },
   { id: 'sign-in', label: 'Sign-in', href: '#/settings/sign-in', adminOnly: true },
   { id: 'data', label: 'Data & sync', href: '#/settings/data' },

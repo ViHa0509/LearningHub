@@ -11,6 +11,7 @@ export interface RoadmapNodeData extends Record<string, unknown> {
   title: string
   fullId: string
   count: number
+  hasLesson: boolean
   selected: boolean
   isTopic: boolean
 }
@@ -22,6 +23,7 @@ export interface RoadmapNodeData extends Record<string, unknown> {
 export function layoutRoadmap(
   roadmap: Roadmap,
   counts: Record<string, number>,
+  lessons: readonly string[] | ReadonlySet<string>,
   selectedNode: string | null,
 ): { nodes: Node<RoadmapNodeData>[]; edges: Edge[] } {
   const children = new Map<string | null, RoadmapNode[]>()
@@ -71,6 +73,7 @@ export function layoutRoadmap(
     }
   }
 
+  const withLesson = new Set(lessons)
   const nodes = roadmap.nodes.map((node) => {
     const cell = cells.get(node.id) ?? { column: 0, row: 0 }
     return {
@@ -81,6 +84,7 @@ export function layoutRoadmap(
         title: node.title,
         fullId: node.full_id,
         count: counts[node.id] ?? 0,
+        hasLesson: withLesson.has(node.id),
         selected: node.full_id === selectedNode,
         isTopic: node.parent === null,
       },

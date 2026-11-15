@@ -23,6 +23,7 @@ LOG = logging.getLogger("learninghub.mcp")
 
 SERVER_NAME = "learninghub"
 USER_VARIABLE = "LH_AGENT_USER_ID"
+TOOLS_VARIABLE = "LH_AGENT_TOOLS"
 DEFAULT_PROTOCOL = "2025-06-18"
 PROTOCOL_VERSIONS = frozenset({"2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"})
 # Variables the server must never hold, whatever the parent process passes on.
@@ -60,8 +61,9 @@ def tool_result(outcome: ToolOutcome) -> dict[str, Any]:
 class McpServer:
     """Answers one JSON-RPC message at a time; ``run_tool`` runs one agent tool."""
 
-    def __init__(self, run_tool: RunTool) -> None:
+    def __init__(self, run_tool: RunTool, allowed: set[str] | None = None) -> None:
         self._run_tool = run_tool
+        self._allowed = allowed
 
     def handle(self, message: Any) -> dict[str, Any] | None:
         """The response to a message, or None for a notification."""
@@ -101,12 +103,12 @@ class McpServer:
             "serverInfo": {"name": SERVER_NAME, "version": "1.0.0"},
         }
 
-    @staticmethod
-    def tools_list() -> dict[str, Any]:
+    def tools_list(self) -> dict[str, Any]:
         return {
             "tools": [
                 {"name": s.name, "description": s.description, "inputSchema": s.parameters}
                 for s in SPECS + ASSISTANT_SPECS
+                if self._allowed is None or s.name in self._allowed
             ]
         }
 
@@ -146,7 +148,15 @@ def serve(server: McpServer, lines: Iterable[bytes], out: IO[bytes]) -> None:
             out.flush()
 
 
-def database_tools() -> RunTool:
+def allowed_tools() -> set[str] | None:
+    """The tool names of LH_AGENT_TOOLS (comma separated); unset means every tool."""
+    raw = os.environ.get(TOOLS_VARIABLE)
+    if raw is None:
+        return None
+    return {name.strip() for name in raw.split(",") if name.strip()}
+
+
+def database_tools(allowed: set[str] | None = None) -> RunTool:
     """Runs each tool in its own session, on the database and roadmaps of LH_* settings.
 
     The tools act for the user in ``LH_AGENT_USER_ID``; without a valid id of an existing user
@@ -179,7 +189,9 @@ def database_tools() -> RunTool:
             if user is None:
                 raise LookupError("the user no longer exists")
             catalog = catalog_for(session, user, builtin)
-            return AgentTools(session, catalog, user_id=user_id, store=store).run(name, arguments)
+            return AgentTools(session, catalog, user_id=user_id, store=store, allowed=allowed).run(
+                name, arguments
+            )
 
     return run_tool
 
@@ -188,7 +200,8 @@ def main() -> None:
     for name in SECRET_VARIABLES:
         os.environ.pop(name, None)
     logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
-    serve(McpServer(database_tools()), sys.stdin.buffer, sys.stdout.buffer)
+    allowed = allowed_tools()
+    serve(McpServer(database_tools(allowed), allowed), sys.stdin.buffer, sys.stdout.buffer)
 
 
 if __name__ == "__main__":

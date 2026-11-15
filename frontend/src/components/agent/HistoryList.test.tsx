@@ -1,5 +1,5 @@
 /**
- * Spec: chat-history - History in the chat panel, The open chat survives a reload;
+ * Spec: chat-history - History in the chat panel, A page load starts a new chat;
  * agent-chat - Chat panel (New chat and History).
  */
 import { screen, waitFor, within } from '@testing-library/react'
@@ -8,7 +8,6 @@ import type { ChatRequest, ChatSessionDetail, StoredChatMessage } from '../../ap
 import { installFakeApi, twoProviders } from '../../test/fakeApi'
 import { renderAppReady } from '../../test/render'
 
-const SESSION_KEY = 'lh.agent.session'
 const panel = () => screen.getByRole('complementary', { name: 'Agent' })
 const history = () => within(panel()).getByRole('region', { name: 'Chat history' })
 const input = () => within(panel()).findByRole('textbox', { name: 'Message the agent' })
@@ -204,7 +203,6 @@ describe('chat history', () => {
     await user.click(within(panel()).getByRole('button', { name: 'History' }))
     expect(within(panel()).queryByText('A signed token.')).not.toBeInTheDocument()
     expect(within(panel()).getByRole('button', { name: 'New chat' })).toBeDisabled()
-    expect(localStorage.getItem(SESSION_KEY)).toBeNull()
   })
 
   it('New chat leaves History and empties the conversation', async () => {
@@ -222,38 +220,50 @@ describe('chat history', () => {
   })
 })
 
-describe('the open chat survives a reload', () => {
-  it('remembers the chat it is in and shows it again', async () => {
+describe('a page load starts a new chat', () => {
+  it('Reload starts a new chat', async () => {
     const state = setup()
     state.chat = () => ({ reply: 'A signed token.' })
     const first = await renderAppReady()
     await first.user.type(await input(), 'what is JWT?{Enter}')
     await within(panel()).findByText('A signed token.')
     const id = state.chatSessions[0].id
-    expect(localStorage.getItem(SESSION_KEY)).toBe(id)
+    first.unmount()
+
+    state.chat = () => ({ reply: 'Through the exp claim.' })
+    const callsBefore = state.calls.length
+    const { user } = await renderAppReady()
+    const box = await input()
+    expect(box).toBeEnabled()
+    expect(within(panel()).queryByText('A signed token.')).not.toBeInTheDocument()
+    expect(within(panel()).queryByText('what is JWT?')).not.toBeInTheDocument()
+    expect(within(panel()).getByRole('button', { name: 'New chat' })).toBeDisabled()
+    expect(state.calls.slice(callsBefore).some((c) => c.url === `/api/agent/sessions/${id}`)).toBe(false)
+
+    await user.type(box, 'and how does it expire?{Enter}')
+    await within(panel()).findByText('Through the exp claim.')
+    expect((chats(state).at(-1)!.body as ChatRequest).session_id).toBeUndefined()
+    expect(state.chatSessions).toHaveLength(2)
+  })
+
+  it('The old chat is in History', async () => {
+    const state = setup()
+    state.chat = () => ({ reply: 'A signed token.' })
+    const first = await renderAppReady()
+    await first.user.type(await input(), 'what is JWT?{Enter}')
+    await within(panel()).findByText('A signed token.')
+    const id = state.chatSessions[0].id
     first.unmount()
 
     state.chat = () => ({ reply: 'Through the exp claim.' })
     const { user } = await renderAppReady()
+    expect(within(panel()).queryByText('A signed token.')).not.toBeInTheDocument()
+    await openHistory(user)
+    await user.click(await waitFor(() => row('what is JWT?')))
     expect(await within(panel()).findByText('A signed token.')).toBeInTheDocument()
-    expect(within(panel()).getByText('what is JWT?')).toBeInTheDocument()
     await user.type(await input(), 'and how does it expire?{Enter}')
     await within(panel()).findByText('Through the exp claim.')
     expect((chats(state).at(-1)!.body as ChatRequest).session_id).toBe(id)
     expect(state.chatSessions).toHaveLength(1)
-    expect(state.chatSessions[0].message_count).toBe(4)
-  })
-
-  it('starts an empty new chat without an error when the remembered chat is gone', async () => {
-    const state = setup()
-    localStorage.setItem(SESSION_KEY, 'deleted-elsewhere')
-    const { user } = await renderAppReady()
-    await waitFor(() => expect(state.calls.some((c) => c.url === '/api/agent/sessions/deleted-elsewhere')).toBe(true))
-    await waitFor(() => expect(localStorage.getItem(SESSION_KEY)).toBeNull())
-    expect(within(panel()).queryByRole('alert')).not.toBeInTheDocument()
-    expect(within(panel()).getByRole('button', { name: 'New chat' })).toBeDisabled()
-    await user.type(await input(), 'hello{Enter}')
-    await within(panel()).findByText('ok')
-    expect((chats(state).at(-1)!.body as ChatRequest).session_id).toBeUndefined()
   })
 })

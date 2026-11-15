@@ -33,12 +33,18 @@ function RoadmapNodeView({ data }: NodeProps<Node<RoadmapNodeData>>) {
   const classes = ['roadmap-node']
   if (data.isTopic) classes.push('topic')
   if (data.count > 0) classes.push('has-notes')
+  if (data.hasLesson) classes.push('has-lesson')
   if (data.selected) classes.push('selected')
   return (
     <div className={classes.join(' ')} data-testid={`node-${data.fullId}`} aria-selected={data.selected}>
       <Handle id="top" type="target" position={Position.Top} isConnectable={false} />
       <Handle id="left" type="target" position={Position.Left} isConnectable={false} />
       <span className="node-title">{data.title}</span>
+      {data.hasLesson && (
+        <span className="lesson-mark" role="img" aria-label="Has a lesson">
+          <Icon name="lesson" />
+        </span>
+      )}
       {data.count > 0 && (
         <span className="badge" aria-label={`${data.count} notes`}>
           {data.count}
@@ -80,7 +86,7 @@ export function RoadmapMap({
 
   const flow = useMemo(
     () =>
-      roadmap.data ? layoutRoadmap(roadmap.data, counts.data?.counts ?? {}, selectedNodeId) : null,
+      roadmap.data ? layoutRoadmap(roadmap.data, counts.data?.counts ?? {}, counts.data?.lessons ?? [], selectedNodeId) : null,
     [roadmap.data, counts.data, selectedNodeId],
   )
 

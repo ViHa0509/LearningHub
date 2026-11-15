@@ -282,7 +282,11 @@ def render_conversation(messages: Sequence[Message]) -> str:
     )
 
 
-def mcp_config(setup: ClaudeCodeSetup, user_id: uuid.UUID | None = None) -> dict[str, Any]:
+def mcp_config(
+    setup: ClaudeCodeSetup,
+    user_id: uuid.UUID | None = None,
+    allowed: set[str] | None = None,
+) -> dict[str, Any]:
     """The MCP configuration of one run: only the app's tool server, with only what it needs.
 
     ``LH_AGENT_USER_ID`` names the user the tools act for; the server refuses to start without
@@ -296,6 +300,9 @@ def mcp_config(setup: ClaudeCodeSetup, user_id: uuid.UUID | None = None) -> dict
     }
     if user_id is not None:
         env["LH_AGENT_USER_ID"] = str(user_id)
+    if allowed is not None:
+        # Unset means every tool; an empty value means none.
+        env["LH_AGENT_TOOLS"] = ",".join(sorted(allowed))
     return {
         "mcpServers": {
             SERVER_NAME: {
@@ -571,6 +578,7 @@ class ClaudeCodeAgent:
         with_tools: bool,
         web_search: bool = False,
         user_id: uuid.UUID | None = None,
+        allowed: set[str] | None = None,
     ) -> AgentResult:
         if not self.model or self.model.startswith("-"):
             raise ProviderError("the model name cannot start with '-'", "invalid_config")
@@ -583,7 +591,7 @@ class ClaudeCodeAgent:
             if with_tools:
                 config_path = folder / "mcp.json"
                 config_path.write_text(
-                    json.dumps(mcp_config(self._setup, user_id)), encoding="utf-8"
+                    json.dumps(mcp_config(self._setup, user_id, allowed)), encoding="utf-8"
                 )
             argv = self.command(system, config_path, web_search)
             env = build_env(
@@ -656,6 +664,7 @@ class ClaudeCodeAgent:
             with_tools=True,
             web_search=web_search,
             user_id=tools.user_id if tools is not None else None,
+            allowed=tools.allowed if tools is not None else None,
         )
 
     def complete(self, system: str, messages: Sequence[Message], tools: Sequence[ToolSpec]) -> Turn:

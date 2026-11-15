@@ -18,6 +18,7 @@ import { useScreenClass, type ScreenClass } from '../lib/useScreenClass'
 import { useTheme, type Theme } from '../lib/theme'
 import { AgentPanel, type AgentRequest } from './AgentPanel'
 import { AuthPages } from './AuthPages'
+import { AgentsSettings } from './AgentsSettings'
 import { DataSettings } from './DataSettings'
 import { SignInSettings } from './SignInSettings'
 import { AdminOnly } from './AdminOnly'
@@ -238,6 +239,8 @@ function MainApp({ theme, onThemeChange, health, user }: MainProps) {
     )
   } else if (route.page === 'data-settings') {
     center = <DataSettings />
+  } else if (route.page === 'agents-settings') {
+    center = <AgentsSettings />
   } else if (route.page === 'provider') {
     center = <ProviderPage key={route.id} id={route.id} />
   } else if (route.page === 'lesson') {

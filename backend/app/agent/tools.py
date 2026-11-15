@@ -236,8 +236,11 @@ class AgentTools:
         user_id: uuid.UUID,
         agent_id: str = ASSISTANT_AGENT,
         store: FileStore | None = None,
+        allowed: set[str] | None = None,
     ) -> None:
         self._store = store
+        # The tools the user allows on this area; None means every tool of the agent.
+        self._allowed = allowed
         self._agent_id = agent_id
         self._session = session
         # Every note and lesson query and write is filtered by this user; there is no default.
@@ -263,16 +266,26 @@ class AgentTools:
     def _owner_id(self) -> uuid.UUID:
         return self._user_id
 
+    @property
+    def allowed(self) -> set[str] | None:
+        return None if self._allowed is None else set(self._allowed)
+
     def specs(self) -> tuple[ToolSpec, ...]:
         if self._agent_id == OUTLINE_AGENT:
-            return SPECS + OUTLINE_SPECS
-        return SPECS + ASSISTANT_SPECS if self._agent_id == ASSISTANT_AGENT else SPECS
+            specs = SPECS + OUTLINE_SPECS
+        else:
+            specs = SPECS + ASSISTANT_SPECS if self._agent_id == ASSISTANT_AGENT else SPECS
+        if self._allowed is None:
+            return specs
+        return tuple(s for s in specs if s.name in self._allowed)
 
     def run(self, name: str, args: dict[str, Any]) -> ToolOutcome:
         handler = self._handlers.get(name)
         offered = {spec.name for spec in self.specs()}
         if handler is None or (name in _AGENT_ONLY and name not in offered):
             return _error(f"unknown tool '{name}'")
+        if self._allowed is not None and name not in self._allowed:
+            return _error(f"tool '{name}' is not available for this agent")
         try:
             return handler(args)
         except ToolInputError as exc:
