@@ -234,7 +234,10 @@ button.disclosure .icon { width: 16px; height: 16px; flex: none; margin-right: 0
 .note-header { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--surface); }
 .note-header > button { flex: none; }
 .note-fields { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex: 1 1 0; min-width: 0; }
-.title-input { flex: 3 1 140px; min-width: 0; font-weight: 600; }
+.title-input { flex: 3 1 100px; min-width: 0; font-weight: 600; }
+.link-field { display: inline-flex; flex: 1 1 120px; align-items: center; gap: 6px; min-width: 0; max-width: 320px; font-size: 13px; }
+.link-field > span { flex: none; white-space: nowrap; }
+.open-lesson { flex: none; font-size: 13px; white-space: nowrap; }
 .note-header select { flex: 1 1 120px; min-width: 0; max-width: 260px; }
 .note-actions { display: flex; flex: none; align-items: center; gap: 8px; margin-left: auto; }
 .note-confirm {

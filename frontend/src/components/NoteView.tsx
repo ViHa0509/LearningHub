@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, type Note, type Roadmap } from '../api'
-import { setLeaveGuard } from '../lib/route'
+import { domainOf } from '../lib/grouping'
+import { routeHash, setLeaveGuard } from '../lib/route'
 import { ActionMenu } from './ActionMenu'
 import { Icon } from './Icon'
 import { DISCARD_PROMPT, NoteEditor } from './NoteEditor'
@@ -23,6 +24,8 @@ export function NoteView({ note, roadmaps, onClose, onChanged, onDeleted }: Prop
   // Bumped after a page save, so the frame reloads the stored page.
   const [version, setVersion] = useState(0)
   const [menuOpen, setMenuOpen] = useState(false)
+  const savedNode = note.node_id && !note.node_missing ? note.node_id : null
+  const [pickedNode, setPickedNode] = useState<string | null>(savedNode)
   const moreButton = useRef<HTMLButtonElement>(null)
 
   const closeMenu = (restoreFocus: boolean) => {
@@ -45,6 +48,15 @@ export function NoteView({ note, roadmaps, onClose, onChanged, onDeleted }: Prop
       setError(e instanceof Error ? e.message : 'Something went wrong')
     }
   }
+
+  // A saved link change (or another note) resets the pending pick (state adjusted during render).
+  const [pickedFor, setPickedFor] = useState({ id: note.id, node: savedNode })
+  if (pickedFor.id !== note.id || pickedFor.node !== savedNode) {
+    setPickedFor({ id: note.id, node: savedNode })
+    setPickedNode(savedNode)
+  }
+
+  const linkDirty = pickedNode !== savedNode
 
   const titleDirty = title !== note.title
   const canSaveTitle = title.trim() !== '' && title.trim() !== note.title
@@ -99,12 +111,28 @@ export function NoteView({ note, roadmaps, onClose, onChanged, onDeleted }: Prop
               </button>
             </span>
           )}
-          <NodePicker
-            roadmaps={roadmaps}
-            label="Roadmap node"
-            value={note.node_id && !note.node_missing ? note.node_id : null}
-            onChange={(node) => void run(() => api.link(note.id, node))}
-          />
+          <label className="link-field" onKeyDown={(e) => e.key === 'Escape' && setPickedNode(savedNode)}>
+            <span className="muted">Linked to</span>
+            <NodePicker roadmaps={roadmaps} label="Linked to" value={pickedNode} onChange={setPickedNode} />
+          </label>
+          {linkDirty && (
+            <span className="title-actions">
+              <button type="button" className="primary" aria-label="Save link" onClick={() => void run(() => api.link(note.id, pickedNode))}>
+                Save link
+              </button>
+              <button type="button" aria-label="Cancel link change" onClick={() => setPickedNode(savedNode)}>
+                Cancel link change
+              </button>
+            </span>
+          )}
+          {savedNode && (
+            <a
+              className="open-lesson"
+              href={routeHash({ page: 'lesson', domain: domainOf(savedNode), node: savedNode.slice(savedNode.indexOf('/') + 1) })}
+            >
+              Open lesson
+            </a>
+          )}
           {note.node_missing && (
             <span className="tag warn">Linked node {note.node_id} no longer exists</span>
           )}

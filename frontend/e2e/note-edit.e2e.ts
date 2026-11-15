@@ -187,7 +187,7 @@ test('Rename on the note page: Save and Cancel appear on change, blur does not s
   await expect(article.getByRole('button', { name: 'Cancel title change' })).toBeVisible()
   await shot(page, 'note-edit-title-dirty')
   await field.blur()
-  await page.getByRole('combobox', { name: 'Roadmap node' }).focus()
+  await page.getByRole('combobox', { name: 'Linked to' }).focus()
   await page.waitForTimeout(500)
   expect((await listNotes(request)).find((n) => n.id === note.id)?.title).toBe(note.title)
   await expect(listOf(page).getByRole('button', { name: note.title, exact: true })).toBeVisible()
@@ -246,6 +246,64 @@ function expectNoEditorTraces(stored: string) {
   expect(stored).not.toContain('lh-collect')
 }
 
+test('Link on the note page: pick does not save, Cancel restores, Save persists, Open lesson', async ({
+  page,
+  request,
+}) => {
+  const errors = watchErrors(page)
+  const { note } = await createNote(request, 'link', 'backend/redis')
+  // Created up front: the app loads its note list once per visit.
+  const { note: unsorted } = await createNote(request, 'unsorted link', 'backend/redis')
+  const cleared = await request.patch(`${API}/notes/${unsorted.id}`, { headers: H, data: { node_id: null } })
+  expect(cleared.ok()).toBeTruthy()
+  const article = await openNotePage(page, note)
+  const picker = article.getByRole('combobox', { name: 'Linked to' })
+  const save = article.getByRole('button', { name: 'Save link' })
+  const cancel = article.getByRole('button', { name: 'Cancel link change' })
+  const apiNode = async () => (await listNotes(request)).find((n) => n.id === note.id)?.node_id
+
+  await expect(picker).toHaveValue('backend/redis')
+  await expect(save).toHaveCount(0)
+  await expect(cancel).toHaveCount(0)
+
+  // Picking shows the buttons but saves nothing.
+  await picker.selectOption('devops/docker')
+  await expect(save).toBeVisible()
+  await expect(cancel).toBeVisible()
+  await page.waitForTimeout(500)
+  expect(await apiNode()).toBe('backend/redis')
+  await shot(page, 'note-link-dirty')
+
+  // Cancel restores the saved link.
+  await cancel.click()
+  await expect(picker).toHaveValue('backend/redis')
+  await expect(save).toHaveCount(0)
+  await expect(cancel).toHaveCount(0)
+  expect(await apiNode()).toBe('backend/redis')
+
+  // Save stores it, also after a reload.
+  await picker.selectOption('devops/docker')
+  await save.click()
+  await expect(save).toHaveCount(0)
+  await expect(cancel).toHaveCount(0)
+  expect(await apiNode()).toBe('devops/docker')
+  await page.reload()
+  await expect(article.getByRole('combobox', { name: 'Linked to' })).toHaveValue('devops/docker')
+  await shot(page, 'note-link-saved')
+
+  // Open lesson goes to the lesson page of the linked node.
+  await article.getByRole('link', { name: 'Open lesson' }).click()
+  await expect(page).toHaveURL(/#\/lesson\/devops\/docker$/)
+  await expect(page.getByRole('article', { name: /^Lesson:/ })).toBeVisible()
+
+  // An unsorted note has no lesson link.
+  const unsortedArticle = await openNotePage(page, unsorted)
+  await expect(unsortedArticle.getByRole('combobox', { name: 'Linked to' })).toBeVisible()
+  await expect(unsortedArticle.getByRole('link', { name: 'Open lesson' })).toHaveCount(0)
+
+  expect(errors).toEqual([])
+})
+
 test('Edit page: the page itself becomes editable in a sandboxed frame, Save writes only the changed text', async ({
   page,
   request,
@@ -294,7 +352,7 @@ test('Edit page: the page itself becomes editable in a sandboxed frame, Save wri
   // Title and link unchanged; content persists after reload.
   await page.reload()
   await expect(page.getByRole('textbox', { name: 'Note title' })).toHaveValue(note.title)
-  await expect(page.getByRole('combobox', { name: 'Roadmap node' })).toHaveValue('backend/redis')
+  await expect(page.getByRole('combobox', { name: 'Linked to' })).toHaveValue('backend/redis')
   await expect(originalFrame(page, note.title).locator('#marker')).toHaveText('volatile-lru evicts keys with a TTL')
   await expect(originalFrame(page, note.title).locator('h1')).toHaveText(note.title)
   await shot(page, 'note-edit-saved')

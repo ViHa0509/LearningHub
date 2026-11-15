@@ -211,7 +211,7 @@ test('Note page header: Back, title, node picker and More actions stay on one li
   const controls = [
     article.getByRole('button', { name: '← Back' }),
     article.getByRole('textbox', { name: 'Note title' }),
-    article.getByRole('combobox', { name: 'Roadmap node' }),
+    article.getByRole('combobox', { name: 'Linked to' }),
     more,
   ]
   const oneLine = async () => {

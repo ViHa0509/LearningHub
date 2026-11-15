@@ -74,7 +74,7 @@ describe('note view', () => {
     expect(frame.getAttribute('sandbox')).not.toContain('allow-same-origin')
     expect(frame).toHaveAttribute('src', `/api/notes/${note.id}/original`)
     expect(within(article).getByRole('textbox', { name: 'Note title' })).toHaveValue('Redis eviction')
-    expect(within(article).getByRole('combobox', { name: 'Roadmap node' })).toHaveValue('backend/caching')
+    expect(within(article).getByRole('combobox', { name: 'Linked to' })).toHaveValue('backend/caching')
   })
 
   it('renames the note', async () => {
@@ -95,7 +95,7 @@ describe('note view', () => {
     expect(within(article).queryByRole('button', { name: 'Save title' })).not.toBeInTheDocument()
     const input = within(article).getByRole('textbox', { name: 'Note title' })
     await user.type(input, ' v2')
-    await user.click(within(article).getByRole('combobox', { name: 'Roadmap node' }))
+    await user.click(within(article).getByRole('combobox', { name: 'Linked to' }))
     expect(state.calls.some((c) => c.method === 'PATCH' && (c.body as { title?: string }).title)).toBe(false)
 
     await user.click(within(article).getByRole('button', { name: 'Save title' }))
@@ -197,13 +197,48 @@ describe('note view', () => {
     expect(await within(article).findByRole('alert')).toHaveTextContent('the page changed since you opened it')
     expect(state.sources[note.id]).toBe('<p>saved in another tab</p>')
   })
-  it('changes and removes the link', async () => {
+  it('changes and removes the link only through Save link', async () => {
     const { user, article, state, note } = await openNote('Redis eviction')
-    const picker = within(article).getByRole('combobox', { name: 'Roadmap node' })
+    const patches = () => state.calls.filter((c) => c.method === 'PATCH' && c.url === `/api/notes/${note.id}`)
+    const picker = within(article).getByRole('combobox', { name: 'Linked to' })
     await user.selectOptions(picker, 'devops/docker')
+    expect(patches()).toEqual([])
+    await user.click(within(article).getByRole('button', { name: 'Save link' }))
+    await waitFor(() => expect(patches().map((c) => c.body)).toEqual([{ node_id: 'devops/docker' }]))
+    await waitFor(() => expect(within(article).queryByRole('button', { name: 'Save link' })).not.toBeInTheDocument())
     await user.selectOptions(picker, '')
-    const patches = state.calls.filter((c) => c.method === 'PATCH' && c.url === `/api/notes/${note.id}`)
-    expect(patches.map((c) => c.body)).toEqual([{ node_id: 'devops/docker' }, { node_id: null }])
+    await user.click(within(article).getByRole('button', { name: 'Save link' }))
+    await waitFor(() => expect(patches().map((c) => c.body)).toEqual([{ node_id: 'devops/docker' }, { node_id: null }]))
+  })
+
+  it('cancels a link change', async () => {
+    const { user, article, state } = await openNote('Redis eviction')
+    const picker = within(article).getByRole('combobox', { name: 'Linked to' })
+    await user.selectOptions(picker, 'devops/docker')
+    await user.click(within(article).getByRole('button', { name: 'Cancel link change' }))
+    expect(picker).toHaveValue('backend/caching')
+    expect(within(article).queryByRole('button', { name: 'Save link' })).not.toBeInTheDocument()
+    expect(state.calls.some((c) => c.method === 'PATCH')).toBe(false)
+  })
+
+  it('Open lesson links to the lesson of the linked node', async () => {
+    const { article } = await openNote('Redis eviction')
+    expect(within(article).getByRole('link', { name: 'Open lesson' })).toHaveAttribute('href', '#/lesson/backend/caching')
+  })
+
+  it('shows no Open lesson link for an unsorted note', async () => {
+    const { article } = await openNote('Redis eviction', null)
+    expect(within(article).queryByRole('link', { name: 'Open lesson' })).not.toBeInTheDocument()
+  })
+
+  it('shows no Open lesson link when the linked node no longer exists', async () => {
+    installFakeApi([makeNote('Redis eviction', 'backend/gone', { node_missing: true })])
+    const { user } = renderApp()
+    // The list button also carries the "missing node" tag, so match the title loosely.
+    await user.click(await screen.findByRole('button', { name: /^Redis eviction/ }, { timeout: 5000 }))
+    const article = await screen.findByRole('article', { name: 'Note: Redis eviction' })
+    expect(within(article).getByText(/no longer exists/)).toBeInTheDocument()
+    expect(within(article).queryByRole('link', { name: 'Open lesson' })).not.toBeInTheDocument()
   })
 
   it('shows a loading indicator until the stored page has loaded', async () => {
