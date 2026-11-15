@@ -247,6 +247,28 @@ def _learn(payload: dict) -> tuple[dict | None, str | None]:
     return call, None
 
 
+def _cut(payload: dict) -> tuple[dict | None, str | None, bool]:
+    """[[cut]] / [[cut-text]] in the last user message: answers cut by the output limit.
+
+    [[cut]]: one write_lesson call with empty input and finish_reason "length"; once a tool result
+    is in, the text "CUT recovered". [[cut-text]]: a text answer with finish_reason "length".
+    Returns (tool call, text, cut), with cut True when finish_reason must be "length".
+    """
+    messages = payload.get("messages") or []
+    last_user = max((i for i, m in enumerate(messages) if m.get("role") == "user"), default=-1)
+    if last_user < 0:
+        return None, None, False
+    text = _text(messages[last_user].get("content"))
+    if "[[cut-text]]" in text:
+        return None, "CUT text answer that was stopped", True
+    if "[[cut]]" not in text:
+        return None, None, False
+    if any(m.get("role") == "tool" for m in messages[last_user + 1 :]):
+        return None, "CUT recovered", False
+    call = {"id": "call_cut", "type": "function", "function": {"name": "write_lesson", "arguments": "{}"}}
+    return call, None, True
+
+
 def error_response(status: int, kind: str, message: str, code: str | None) -> JSONResponse:
     body = {"error": {"message": message, "type": kind, "param": None, "code": code}}
     return JSONResponse(body, status_code=status)
@@ -271,7 +293,14 @@ async def chat_completions(payload: dict) -> JSONResponse:
         return error_response(404, "invalid_request_error", f"The model `{model}` does not exist", "model_not_found")
     call = _outline_call(payload)
     learn_call, learn_text = _learn(payload)
-    if learn_call is not None:
+    cut_call, cut_text, cut = _cut(payload)
+    if cut_call is not None:
+        message = {"role": "assistant", "content": None, "tool_calls": [cut_call]}
+        finish = "length"
+    elif cut_text is not None:
+        message = {"role": "assistant", "content": cut_text}
+        finish = "length" if cut else "stop"
+    elif learn_call is not None:
         message = {"role": "assistant", "content": None, "tool_calls": [learn_call]}
         finish = "tool_calls"
     elif learn_text is not None:

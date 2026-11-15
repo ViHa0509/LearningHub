@@ -288,3 +288,62 @@ def test_previous_turns_are_sent_to_the_model(client: TestClient) -> None:
         ("assistant", "First answer."),
         ("user", "second"),
     ]
+
+
+# --- output limit and repeated failures ------------------------------------------------
+
+
+# Scenario: Cut tool call
+def test_cut_tool_call_is_not_run(client: TestClient) -> None:
+    fake = use(
+        client,
+        Turn("", (call("write_lesson", node_id="backend/graphql"),), truncated=True),
+        Turn("Sorry, I will try a shorter one."),
+    )
+    body = chat(client, "draft the lesson").json()
+    assert [s["summary"] for s in body["steps"]] == ["The answer was cut off by the output limit"]
+    assert body["changed_lessons"] == []
+    assert client.get("/api/lessons/backend/graphql").json()["source"] != "agent"
+    last = fake.calls[-1]["messages"][-1]
+    assert last.role == "tool" and last.tool_call_id == "id-write_lesson"
+    assert "cut off by the output limit" in last.text and "max_tokens" in last.text
+
+
+# Scenario: Cut text answer
+def test_cut_text_answer_ends_with_the_note(client: TestClient) -> None:
+    use(client, Turn("A half sentence and", truncated=True))
+    reply = chat(client, "explain").json()["reply"]
+    assert reply.splitlines()[-1] == "(The answer was cut off by the output limit.)"
+
+
+# Scenario: Same failing call three times
+def test_same_failing_call_three_times_stops_the_run(client: TestClient) -> None:
+    fake = use(client, *[Turn("", (call("read_note", note_id="nope"),)) for _ in range(10)])
+    body = chat(client, "read it").json()
+    assert body["stopped"] is True
+    assert "stopped after 6 steps" in body["reply"]
+    assert len(fake.calls) == 3
+    assert len(body["steps"]) == 3
+
+
+# Scenario: New area with search on / off
+def test_lesson_writer_names_both_search_cases() -> None:
+    from app.agent.agents import AGENTS
+
+    text = AGENTS["lesson-writer"].instructions
+    assert "no notes and no references" in text
+    assert "Internet search is on" in text and "Internet search is off" in text
+    assert "no source was used" in text
+    assert "without the full lesson text" in text
+
+
+# Scenario: Same failing call three times (cut every time)
+def test_call_cut_every_step_stops_after_three_steps(client: TestClient) -> None:
+    turns = [Turn("", (call("write_lesson", node_id="backend/graphql"),), truncated=True)] * 10
+    fake = use(client, *turns)
+    body = chat(client, "draft the lesson").json()
+    assert body["stopped"] is True
+    assert "stopped after 6 steps" in body["reply"]
+    assert len(fake.calls) == 3
+    assert len(body["steps"]) == 3
+    assert body["changed_lessons"] == []

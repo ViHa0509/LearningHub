@@ -15,7 +15,7 @@ import openai
 from app.agent.llm.errors import ProviderError, classify_anthropic, classify_openai
 from app.agent.messages import Message, ToolCall, ToolSpec, Turn
 
-ANTHROPIC_DEFAULT_MAX_TOKENS = 2048
+ANTHROPIC_DEFAULT_MAX_TOKENS = 8192
 # Anthropic's own web search (a server tool: it runs at Anthropic, results come back as blocks).
 WEB_SEARCH_MAX_USES = 5
 # The dynamic-filtering version needs a recent model; older models take the basic one.
@@ -128,6 +128,7 @@ def from_anthropic(response: Any) -> Turn:
         searches=tuple(searches),
         sources=tuple(sources),
         raw=raw,
+        truncated=getattr(response, "stop_reason", None) == "max_tokens",
     )
 
 
@@ -192,7 +193,8 @@ def from_openai(response: Any) -> Turn:
         if not isinstance(arguments, dict):
             arguments = {"_unparsed_arguments": call.function.arguments}
         calls.append(ToolCall(id=call.id, name=call.function.name, input=arguments))
-    return Turn(text=(message.content or "").strip(), tool_calls=tuple(calls))
+    truncated = getattr(response.choices[0], "finish_reason", None) == "length"
+    return Turn(text=(message.content or "").strip(), tool_calls=tuple(calls), truncated=truncated)
 
 
 OPENAI_PLAIN = ("temperature", "top_p", "max_tokens", "frequency_penalty", "presence_penalty")
@@ -315,6 +317,7 @@ class AnthropicChat(_Adapter):
             searches=tuple(searches),
             sources=tuple(sources),
             raw=turn.raw,
+            truncated=turn.truncated,
         )
 
 

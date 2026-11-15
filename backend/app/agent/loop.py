@@ -1,5 +1,6 @@
 """The agent loop: call the model, run the tools it asks for, repeat until it answers."""
 
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
@@ -179,6 +180,24 @@ def run_agent(
 
 
 MAX_SOURCES = 8
+CUT_SUMMARY = "The answer was cut off by the output limit"
+CUT_RESULT = (
+    "The answer was cut off by the output limit (max_tokens). Make the call shorter, "
+    "or ask the admin to raise max_tokens in the provider configuration."
+)
+CUT_NOTE = "(The answer was cut off by the output limit.)"
+MAX_SAME_FAILURES = 3
+
+
+def _error_text(result: str) -> str | None:
+    """The error of a tool result, or None when the call did not fail."""
+    try:
+        data = json.loads(result)
+    except ValueError:
+        return None
+    if isinstance(data, dict) and "error" in data:
+        return str(data["error"])
+    return None
 
 
 def with_sources(reply: str, sources: Sequence[tuple[str, str]]) -> str:
@@ -205,6 +224,7 @@ def tool_loop(
     messages = list(conversation)
     result = result if result is not None else AgentResult(reply="")
     sources: list[tuple[str, str]] = []
+    failures: dict[tuple[str, str, str], int] = {}
     for _ in range(max_steps):
         # Only a model that can search the web is asked to (Anthropic's server tool).
         if web_search:
@@ -221,12 +241,24 @@ def tool_loop(
             )
         sources += [s for s in turn.sources if s not in sources]
         if not turn.tool_calls:
-            result.reply = with_sources(turn.text or "(The model gave an empty answer.)", sources)
+            reply = with_sources(turn.text or "(The model gave an empty answer.)", sources)
+            result.reply = f"{reply}\n\n{CUT_NOTE}" if turn.truncated else reply
             return result
         messages.append(
             Message(role="assistant", text=turn.text, tool_calls=turn.tool_calls, raw=turn.raw)
         )
         for call in turn.tool_calls:
+            if turn.truncated:
+                # The call may be incomplete: never run it.
+                result.steps.append(Step(tool=call.name, input=call.input, summary=CUT_SUMMARY))
+                messages.append(Message(role="tool", text=CUT_RESULT, tool_call_id=call.id))
+                cut_key = (call.name, "", CUT_SUMMARY)
+                failures[cut_key] = failures.get(cut_key, 0) + 1
+                if failures[cut_key] >= MAX_SAME_FAILURES:
+                    result.stopped = True
+                    result.reply = stopped_reply(max_steps)
+                    return result
+                continue
             outcome = tools.run(call.name, call.input)
             result.steps.append(Step(tool=call.name, input=call.input, summary=outcome.summary))
             if outcome.changed_lesson and outcome.changed_lesson not in result.changed_lessons:
@@ -238,6 +270,14 @@ def tool_loop(
             if proposal is not None:
                 result.proposed_topics = proposal
             messages.append(Message(role="tool", text=outcome.result, tool_call_id=call.id))
+            error = _error_text(outcome.result)
+            if error is not None:
+                key = (call.name, json.dumps(call.input, sort_keys=True, default=str), error)
+                failures[key] = failures.get(key, 0) + 1
+                if failures[key] >= MAX_SAME_FAILURES:
+                    result.stopped = True
+                    result.reply = stopped_reply(max_steps)
+                    return result
     result.stopped = True
     result.reply = stopped_reply(max_steps)
     return result

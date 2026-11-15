@@ -50,7 +50,12 @@ AGENTS: dict[str, AgentDef] = {
                 "words, never copying text, and end it with a 'Sources' list of the URLs you "
                 "used. Save it with write_lesson and reply with a one-line summary of what you "
                 "wrote. If write_lesson refuses because the user wrote the lesson, show your "
-                "draft in the chat instead. " + LESSON_TEMPLATE
+                "draft in the chat instead. When the topic has no notes and no references: if "
+                "Internet search is on, search the web and read 2 to 4 trustworthy sources "
+                "(official bodies, laws and regulations, textbooks, reference works) and cite "
+                "them under Sources; if Internet search is off, write from your own knowledge "
+                "and say under Sources that no source was used. Never call write_lesson "
+                "without the full lesson text. " + LESSON_TEMPLATE
             ),
         ),
         AgentDef(

@@ -170,7 +170,7 @@ def test_anthropic_sends_only_set_parameters_and_a_default_max_tokens() -> None:
         "temperature",
         "cache_control",
     }
-    assert create.kwargs["max_tokens"] == 2048
+    assert create.kwargs["max_tokens"] == 8192
     # Prompt caching is on by default (change lesson-template).
     assert create.kwargs["cache_control"] == {"type": "ephemeral"}
     assert create.kwargs["temperature"] == 0.2
@@ -371,3 +371,35 @@ def test_normalize_key_keeps_other_keys_and_ambiguous_pastes() -> None:
     assert normalize_key("  sk-proj-abc123 \n") == "sk-proj-abc123"
     two = SETUP_TOKEN + " sk-ant-" + "api03-" + "z" * 20
     assert normalize_key(two) == two.replace(" ", "")
+
+
+# --- output limit --------------------------------------------------------------------------
+
+
+def test_anthropic_marks_an_answer_cut_by_max_tokens() -> None:
+    cut = anthropic_answer("half a lesson")
+    cut.stop_reason = "max_tokens"
+    client, _ = anthropic_client(cut)
+    assert (
+        AnthropicChat(client, "claude-sonnet-5-5", {}).complete("S", CONVERSATION[:1], []).truncated
+    )
+    whole = anthropic_answer("done")
+    whole.stop_reason = "end_turn"
+    client, _ = anthropic_client(whole)
+    turn = AnthropicChat(client, "claude-sonnet-5-5", {}).complete("S", CONVERSATION[:1], [])
+    assert turn.truncated is False
+
+
+def test_openai_marks_an_answer_cut_by_length() -> None:
+    cut = openai_answer("half")
+    cut.choices[0].finish_reason = "length"
+    client, _ = openai_client(cut)
+    assert OpenAICompatibleChat(client, "gpt-5.5", {}).complete("S", CONVERSATION[:1], []).truncated
+    whole = openai_answer("done")
+    whole.choices[0].finish_reason = "stop"
+    client, _ = openai_client(whole)
+    assert (
+        not OpenAICompatibleChat(client, "gpt-5.5", {})
+        .complete("S", CONVERSATION[:1], [])
+        .truncated
+    )

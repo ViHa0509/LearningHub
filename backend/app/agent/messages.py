@@ -36,6 +36,8 @@ class Turn:
     searches: tuple[str, ...] = ()
     sources: tuple[tuple[str, str], ...] = ()  # (title, url)
     raw: tuple[dict[str, Any], ...] = ()
+    # The answer stopped because the output limit (max_tokens) was reached.
+    truncated: bool = False
 
 
 @dataclass(frozen=True)
