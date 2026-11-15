@@ -4,15 +4,15 @@ Depends on `learning-fields` (areas and topics).
 
 ## 1. Backend
 
-- [ ] 1.1 Models and migration `0016_practice_exams.py`; verify with `test_migrations.py` cases
-- [ ] 1.2 Import (JSON or zip) with full validation; verify with `test_question_banks.py` for "Import a question bank"
-- [ ] 1.3 Practice answer, test draw, submit, scoring, history (design: Drawing a test); verify with tests for every scenario of "Practice by topic", "Mock exam by the bank's rules" (seeded random), "Test history and access"
-- [ ] 1.4 Backup and restore; verify with `test_data_backup.py` cases
+- [x] 1.1 Models and migration `0017_practice_exams.py`; verify with `test_migrations.py` cases
+- [x] 1.2 Import (JSON or zip) with full validation; verify with `test_question_banks.py` for "Import a question bank"
+- [x] 1.3 Practice answer, test draw, submit, scoring, history (design: Drawing a test); verify with tests for every scenario of "Practice by topic", "Mock exam by the bank's rules" (seeded random), "Test history and access"
+- [x] 1.4 Backup and restore; verify with `test_data_backup.py` cases
 
 ## 2. Frontend
 
-- [ ] 2.1 Practice page (topics, critical, got wrong, one-question flow); verify with Vitest
-- [ ] 2.2 Test page (palette, countdown, submit/confirm, time out, result and review) and history; verify with Vitest (fake timers)
+- [x] 2.1 Practice page (topics, critical, got wrong, one-question flow); verify with Vitest
+- [x] 2.2 Test page (palette, countdown, submit/confirm, time out, result and review) and history; verify with Vitest (fake timers)
 
 ## 3. E2E and integration
 

@@ -19,6 +19,7 @@ from app.auth.current import ADMIN_ONLY, CurrentUser
 from app.db import LearningArea, LearningField, LearningTopic, User, get_session
 from app.learning.catalog import UserCatalog, build_domain, visible_fields
 from app.learning.topics import MAX_TOPICS, clean_topics
+from app.practice.images import image_keys_of_areas, image_keys_of_field, release_images
 from app.roadmaps import KEBAB, RoadmapCatalog
 from app.routes.domains import IT_FIELD_TITLE, domain_summary, linked_nodes, roadmap_out
 from app.routes.guard import require_app_header
@@ -203,12 +204,18 @@ def update_field(
 
 @router.delete("/api/fields/{field_id}", status_code=204, dependencies=guarded)
 def delete_field(
-    field_id: str, session: Annotated[Session, Depends(get_session)], user: CurrentUser
+    field_id: str,
+    request: Request,
+    session: Annotated[Session, Depends(get_session)],
+    user: CurrentUser,
 ) -> Response:
-    """Deletes the areas and topics with it; notes and lessons stay (their topic is missing)."""
+    """Deletes the areas and topics with it (and their question banks, with their picture
+    files); notes and lessons stay (their topic is missing)."""
     field = _load_field(session, user, field_id, change=True)
+    keys = image_keys_of_field(session, field.id)
     session.delete(field)
     session.commit()
+    release_images(session, request.app.state.store, keys)
     return Response(status_code=204)
 
 
@@ -284,11 +291,16 @@ def update_area(
 
 @router.delete("/api/areas/{slug}", status_code=204, dependencies=guarded)
 def delete_area(
-    slug: str, session: Annotated[Session, Depends(get_session)], user: CurrentUser
+    slug: str,
+    request: Request,
+    session: Annotated[Session, Depends(get_session)],
+    user: CurrentUser,
 ) -> Response:
     area, _ = _load_area(session, user, slug, change=True)
+    keys = image_keys_of_areas(session, [area.id])
     session.delete(area)
     session.commit()
+    release_images(session, request.app.state.store, keys)
     return Response(status_code=204)
 
 

@@ -17,7 +17,8 @@
 }
 ```
 
-- `answer` is 1-based. `topic` must be a topic slug of the area. Numbers unique, 1..N. `image` names a file in the zip (PNG, JPEG, WebP; at most 2 MB each); `rules.questions` <= questions available; `per_topic` sums to at most `questions`; text lengths capped (question 2000, option 500, explanation 2000), at most 2000 questions and 50 MB per import.
+- A JSON-only import may name images that are not there yet: the question keeps the name and has no picture until `POST /api/banks/{id}/images` adds it (hosted requests are limited to about 4.5 MB, so pictures go in batches). A zip import still checks the images it contains.
+- `answer` is 1-based. `topic` must be a topic slug of the area. Numbers unique, 1..N. `image` names a file in the zip (PNG, JPEG, WebP; at most 2 MB each); `rules.questions` <= questions available; `per_topic` sums to at most `questions`; text lengths capped (question 2000, option 1000, explanation 2000; the official class B set has a 509-character option), at most 2000 questions and 50 MB per import.
 - The numbers in `rules` are whatever the source says; the example values are illustrative only.
 
 ## Data model (migration 0016)
@@ -29,7 +30,9 @@
 
 ## Drawing a test
 
-Server side, so the answers are never sent before the end: `POST /api/banks/{id}/exams` draws per `per_topic` first, then fills from the rest; ensures `min_critical`; shuffles question order; returns the questions without answers and the deadline. `POST /api/exams/{id}/submit {answers}` (accepted until deadline + 30 s grace; later answers count as unanswered) scores, applies `critical_fails`, stores the attempt and updates `question_answers`, and returns the review with correct answers and explanations. Practice answers use `POST /api/questions/{id}/answer {choice}` and return right/wrong with the explanation.
+Critical questions are drawn on their own: first `min_critical` questions from the critical ones, then `per_topic` counts from the non-critical questions of each topic, then the rest from the remaining non-critical questions until `questions` is reached. (The official class B rules: 30 questions = 1 critical + 8, 1, 1, 1, 9, 9 from chapters 1 to 6.)
+
+Server side, so the answers are never sent before the end: `POST /api/banks/{id}/exams` draws as described above; shuffles question order; returns the questions without answers and the deadline. `POST /api/exams/{id}/submit {answers}` (accepted until deadline + 30 s grace; later answers count as unanswered) scores, applies `critical_fails`, stores the attempt and updates `question_answers`, and returns the review with correct answers and explanations. Practice answers use `POST /api/questions/{id}/answer {choice}` and return right/wrong with the explanation.
 
 ## Access
 

@@ -186,8 +186,11 @@ class SupabaseFileStore:
 
 
 def release_blob(db: Session, store: FileStore, key: str) -> None:
-    """Delete a blob once no note of any user points at it (call after the row change commits)."""
-    from app.db import Note  # local: app.db does not depend on storage, keep it that way
+    """Delete a blob once no note or question image of any user points at it (call after the row
+    change commits)."""
+    from app.db import Note, Question  # local: app.db does not depend on storage, keep it so
 
-    if db.scalar(select(func.count()).select_from(Note).where(Note.storage_key == key)) == 0:
+    notes = db.scalar(select(func.count()).select_from(Note).where(Note.storage_key == key))
+    images = db.scalar(select(func.count()).select_from(Question).where(Question.image_key == key))
+    if notes == 0 and images == 0:
         store.delete(key)

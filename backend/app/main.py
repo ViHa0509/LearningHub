@@ -1,4 +1,5 @@
 import logging
+import random
 import socket
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -41,6 +42,7 @@ from app.routes import (
     lessons,
     news,
     notes,
+    practice,
     resources,
     settings_signin,
 )
@@ -147,6 +149,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.rate_limiter = RateLimiter(settings.agent_rate_per_minute)
     app.state.clock = utc_now
+    app.state.exam_random = random.SystemRandom()  # tests seed their own
     app.state.sync_transport = None  # tests inject an httpx2 transport for the sync sender
     app.state.auth_limiter = AuthLimiter(settings.auth_rate_per_minute)
     # The clock is read through app.state so tests can set it after the app is built.
@@ -191,6 +194,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         domains,
         fields,
         notes,
+        practice,
         lessons,
         agent,
         chat_sessions,

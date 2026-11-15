@@ -30,6 +30,7 @@ from app.data_sync.backup import (
     OPTIONAL_FILES,
     AgentProviderRow,
     AgentSettingRow,
+    BankRow,
     ChatSessionRow,
     FieldRow,
     LessonRow,
@@ -45,14 +46,19 @@ from app.db import (
     AIProvider,
     ChatMessage,
     ChatSession,
+    ExamAttempt,
     LearningArea,
     LearningField,
     LearningTopic,
     Lesson,
     Note,
+    Question,
+    QuestionAnswer,
+    QuestionBank,
     User,
 )
 from app.learning.topics import clean_topics
+from app.practice.schemas import BankRules
 from app.roadmaps import KEBAB
 from app.storage import FileStore, release_blob
 
@@ -82,6 +88,8 @@ class Parsed:
     chats: list[ChatSessionRow] | None = None
     # None when the archive has no fields entry: the user's fields are then left as they are.
     fields: list[FieldRow] | None = None
+    # None when the archive has no banks entry: the user's banks are then left as they are.
+    banks: list[BankRow] | None = None
 
 
 def _check_name(name: str) -> None:
@@ -143,6 +151,55 @@ def _check_fields(fields: list[FieldRow]) -> None:
             rows = [(t.slug, t.title, t.description, t.parent_slug) for t in area.topics]
             if clean_topics(rows)[1]:
                 raise RestoreRefused("data/learning_fields.json is not valid backup data")
+
+
+def _check_banks(banks: list[BankRow], present: set[str]) -> None:
+    """Each bank's numbers are unique, its answers and tests name its questions, an answer is one
+    of the options and every image file is in the archive."""
+    refused = RestoreRefused("data/question_banks.json is not valid backup data")
+    for bank in banks:
+        try:
+            BankRules.model_validate(bank.rules)
+        except ValidationError:
+            raise refused from None
+        numbers = [q.number for q in bank.questions]
+        if len(set(numbers)) != len(numbers):
+            raise refused
+        known = set(numbers)
+        if any(q.answer > len(q.options) for q in bank.questions):
+            raise refused
+        if any(q.image_key is not None and q.image_key not in present for q in bank.questions):
+            raise refused
+        if any(a.number not in known for a in bank.answers):
+            raise refused
+        for attempt in bank.attempts:
+            if any(n not in known for n in attempt.question_numbers):
+                raise refused
+            if any(not k.isdigit() or int(k) not in known for k in attempt.answers):
+                raise refused
+
+
+def _check_bank_areas(
+    session: Session, user_id: UUID, banks: list[BankRow], fields: list[FieldRow] | None
+) -> None:
+    """Each bank names an area the user will have: one of the archive's fields when it has them,
+    else one of the user's current areas."""
+    if fields is not None:
+        slugs = {a.slug for f in fields for a in f.areas}
+    else:
+        slugs = set(
+            session.scalars(
+                select(LearningArea.slug)
+                .join(LearningField, LearningField.id == LearningArea.field_id)
+                .where(LearningField.user_id == user_id)
+            )
+        )
+    missing = sorted({b.area_slug for b in banks} - slugs)
+    if missing:
+        names = ", ".join(f"'{slug}'" for slug in missing)
+        raise RestoreRefused(
+            f"a question bank belongs to the area {names}, which the user does not have"
+        )
 
 
 def _check_slugs_free(
@@ -218,6 +275,11 @@ def validate(path: Path) -> Parsed:
             if OPTIONAL_FILES["learning_fields"] in names
             else None
         )
+        banks = (
+            _rows(archive, OPTIONAL_FILES["question_banks"], BankRow, budget)
+            if OPTIONAL_FILES["question_banks"] in names
+            else None
+        )
         blobs = [n for n in names if n.startswith("files/")]
         for name in blobs:
             match = BLOB_KEY.match(name.removeprefix("files/"))
@@ -239,7 +301,11 @@ def validate(path: Path) -> Parsed:
         raise RestoreRefused("the archive has an unknown provider type")
     if fields is not None:
         _check_fields(fields)
-    return Parsed(manifest, notes, lessons, providers, assignments, switches, blobs, chats, fields)
+    if banks is not None:
+        _check_banks(banks, present)
+    return Parsed(
+        manifest, notes, lessons, providers, assignments, switches, blobs, chats, fields, banks
+    )
 
 
 def write_auto_backup(
@@ -300,6 +366,65 @@ def _restore_fields(session: Session, user_id: UUID, fields: list[FieldRow]) -> 
             )
 
 
+def _restore_banks(session: Session, user_id: UUID, banks: list[BankRow]) -> None:
+    """Replace the banks of the user's areas (questions, answers and tests go with them, ON DELETE
+    CASCADE) with the archive's; question ids are new, so tests and answers are mapped by number."""
+    own_areas = {
+        slug: area_id
+        for slug, area_id in session.execute(
+            select(LearningArea.slug, LearningArea.id)
+            .join(LearningField, LearningField.id == LearningArea.field_id)
+            .where(LearningField.user_id == user_id)
+        )
+    }
+    session.execute(delete(QuestionBank).where(QuestionBank.area_id.in_(list(own_areas.values()))))
+    session.flush()
+    for bank in banks:
+        bank_id = uuid4()
+        session.add(
+            QuestionBank(
+                id=bank_id,
+                area_id=own_areas[bank.area_slug],
+                title=bank.title,
+                rules=bank.rules,
+                question_count=len(bank.questions),
+                created_at=bank.created_at,
+            )
+        )
+        session.flush()
+        ids = {q.number: uuid4() for q in bank.questions}
+        session.add_all(
+            Question(**q.model_dump(), id=ids[q.number], bank_id=bank_id) for q in bank.questions
+        )
+        session.flush()
+        session.add_all(
+            QuestionAnswer(
+                user_id=user_id,
+                question_id=ids[a.number],
+                last_correct=a.last_correct,
+                times_wrong=a.times_wrong,
+                answered_at=a.answered_at,
+            )
+            for a in bank.answers
+        )
+        session.add_all(
+            ExamAttempt(
+                id=uuid4(),
+                user_id=user_id,
+                bank_id=bank_id,
+                question_ids=[str(ids[n]) for n in e.question_numbers],
+                answers={str(ids[int(k)]): v for k, v in e.answers.items()},
+                started_at=e.started_at,
+                deadline=e.deadline,
+                submitted_at=e.submitted_at,
+                score=e.score,
+                passed=e.passed,
+                failed_on_critical=e.failed_on_critical,
+            )
+            for e in bank.attempts
+        )
+
+
 def restore_archive(
     path: Path,
     factory: sessionmaker[Session],
@@ -319,6 +444,9 @@ def restore_archive(
     if parsed.fields is not None:
         with factory() as session:
             _check_slugs_free(session, user_id, parsed.fields, reserved_slugs)
+    if parsed.banks is not None:
+        with factory() as session:
+            _check_bank_areas(session, user_id, parsed.banks, parsed.fields)
     with factory() as session:
         write_auto_backup(session, user_id, store, storage_dir, version, now())
     with zipfile.ZipFile(path) as archive:
@@ -332,6 +460,15 @@ def restore_archive(
             store.put(key, archive.read(name))
     with factory() as session:
         old_keys = set(session.scalars(select(Note.storage_key).where(Note.user_id == user_id)))
+        old_keys |= set(
+            session.scalars(
+                select(Question.image_key)
+                .join(QuestionBank, QuestionBank.id == Question.bank_id)
+                .join(LearningArea, LearningArea.id == QuestionBank.area_id)
+                .join(LearningField, LearningField.id == LearningArea.field_id)
+                .where(LearningField.user_id == user_id, Question.image_key.is_not(None))
+            )
+        )
         provider_ids = {p.id: uuid4() for p in parsed.providers}
         try:
             for table in (AgentProvider, AgentSetting, Lesson, Note, AIProvider):
@@ -388,6 +525,9 @@ def restore_archive(
                     )
             if parsed.fields is not None:
                 _restore_fields(session, user_id, parsed.fields)
+            if parsed.banks is not None:
+                session.flush()
+                _restore_banks(session, user_id, parsed.banks)
             session.commit()
         except SQLAlchemyError:
             session.rollback()
@@ -395,7 +535,8 @@ def restore_archive(
                 "the archive's data is inconsistent; nothing was changed"
             ) from None
         for key in old_keys:
-            release_blob(session, store, key)
+            if key is not None:
+                release_blob(session, store, key)
     chat_counts = (
         {}
         if parsed.chats is None
@@ -413,6 +554,16 @@ def restore_archive(
             "learning_topics": sum(len(a.topics) for f in parsed.fields for a in f.areas),
         }
     )
+    bank_counts = (
+        {}
+        if not parsed.banks
+        else {
+            "question_banks": len(parsed.banks),
+            "questions": sum(len(b.questions) for b in parsed.banks),
+            "question_answers": sum(len(b.answers) for b in parsed.banks),
+            "exam_attempts": sum(len(b.attempts) for b in parsed.banks),
+        }
+    )
     return {
         "counts": {
             "notes": len(parsed.notes),
@@ -423,6 +574,7 @@ def restore_archive(
             "agent_settings": len(parsed.switches),
             **chat_counts,
             **field_counts,
+            **bank_counts,
         },
         "providers_needing_key": [
             p.name for p in parsed.providers if PROVIDER_TYPES[p.provider_type].needs_key

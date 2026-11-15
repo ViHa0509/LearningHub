@@ -273,6 +273,84 @@ class LearningTopic(Base):
     position: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
 
+class QuestionBank(Base):
+    """A question bank of an area (change practice-exams); visible like its area."""
+
+    __tablename__ = "question_banks"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    area_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("learning_areas.id", ondelete="CASCADE"), index=True
+    )
+    title: Mapped[str] = mapped_column(Text)
+    rules: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    question_count: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Question(Base):
+    """A question of a bank. ``answer`` is 1-based and never leaves the server before a test
+    is finished; ``image_key`` is a content-addressed key of the file store."""
+
+    __tablename__ = "questions"
+    __table_args__ = (UniqueConstraint("bank_id", "number", name="uq_questions_bank_number"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    bank_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("question_banks.id", ondelete="CASCADE"), index=True
+    )
+    number: Mapped[int] = mapped_column(Integer)
+    topic_slug: Mapped[str] = mapped_column(Text)
+    text: Mapped[str] = mapped_column(Text)
+    options: Mapped[list[str]] = mapped_column(JSONB)
+    answer: Mapped[int] = mapped_column(Integer)
+    critical: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # The file name the bank file gave; the picture itself may be added later (image_key).
+    image_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    image_key: Mapped[str | None] = mapped_column(Text, nullable=True, index=True)
+    explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class QuestionAnswer(Base):
+    """The last practice or test answer of a user to a question."""
+
+    __tablename__ = "question_answers"
+
+    user_id: Mapped[uuid.UUID] = user_fk(primary_key=True)
+    question_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("questions.id", ondelete="CASCADE"), primary_key=True
+    )
+    last_correct: Mapped[bool] = mapped_column(Boolean)
+    times_wrong: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    answered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ExamAttempt(Base):
+    """A mock test: the drawn question ids in order, the answers ``{question id: choice}`` and,
+    once submitted, the result."""
+
+    __tablename__ = "exam_attempts"
+    __table_args__ = (Index("ix_exam_attempts_user_bank", "user_id", "bank_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = user_fk()
+    bank_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("question_banks.id", ondelete="CASCADE"), index=True
+    )
+    question_ids: Mapped[list[str]] = mapped_column(JSONB)
+    answers: Mapped[dict[str, int]] = mapped_column(
+        JSONB, default=dict, server_default="{}", nullable=False
+    )
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    passed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    failed_on_critical: Mapped[list[int]] = mapped_column(
+        JSONB, default=list, server_default="[]", nullable=False
+    )
+
+
 class NodeResource(Base):
     """A reference link of one roadmap node, synced from a source at a pinned commit."""
 

@@ -10,6 +10,11 @@ The owner of an area SHALL be able to import a question bank from a JSON file or
 - **WHEN** the owner imports a valid bank of 12 questions with two images
 - **THEN** the area has the bank with 12 questions, and the images show in practice
 
+#### Scenario: Questions first, pictures after
+- **GIVEN** a bank JSON whose questions name 300 pictures, imported without them
+- **WHEN** the owner adds the pictures in several files of at most 4 MB each
+- **THEN** each upload attaches the pictures whose names match, says how many are still missing, and practice shows a question's picture once it is added
+
 #### Scenario: Invalid bank
 - **WHEN** the file has a question whose answer is 5 with only 4 options, or a topic the area does not have
 - **THEN** the import is refused naming that question, and nothing is stored

@@ -24,11 +24,15 @@ from app.db import (
     AIProvider,
     ChatMessage,
     ChatSession,
+    ExamAttempt,
     LearningArea,
     LearningField,
     LearningTopic,
     Lesson,
     Note,
+    Question,
+    QuestionAnswer,
+    QuestionBank,
 )
 from app.storage import FileStore
 
@@ -47,11 +51,14 @@ DATA_FILES = {
 OPTIONAL_FILES = {
     "chat_sessions": "data/chat_sessions.json",
     "learning_fields": "data/learning_fields.json",
+    "question_banks": "data/question_banks.json",
 }
 # An answer has no request limit; this bounds what a restore accepts for one message.
 MAX_MESSAGE_CHARS = 1_000_000
 SHA = re.compile(r"^[0-9a-f]{64}$")
-BLOB_KEY = re.compile(r"^blobs/([0-9a-f]{2})/([0-9a-f]{64})(\.html|\.htm|\.pdf)$")
+BLOB_KEY = re.compile(
+    r"^blobs/([0-9a-f]{2})/([0-9a-f]{64})(\.html|\.htm|\.pdf|\.png|\.jpg|\.webp)$"
+)
 
 
 class Row(BaseModel):
@@ -169,6 +176,54 @@ class FieldRow(Row):
     areas: list[AreaRow] = Field(default_factory=list)
 
 
+class BankQuestionRow(Row):
+    number: int = Field(ge=1)
+    topic_slug: str = Field(min_length=1, max_length=60)
+    text: str = Field(min_length=1, max_length=2000)
+    options: list[Annotated[str, Field(min_length=1, max_length=1000)]] = Field(
+        min_length=2, max_length=6
+    )
+    answer: int = Field(ge=1, le=6)
+    critical: bool = False
+    image_name: str | None = Field(default=None, max_length=255)
+    image_key: str | None = Field(default=None, pattern=BLOB_KEY.pattern)
+    explanation: str | None = Field(default=None, max_length=2000)
+
+
+class BankAnswerRow(Row):
+    """The user's last answer to the question with this number."""
+
+    number: int = Field(ge=1)
+    last_correct: bool
+    times_wrong: int = Field(ge=0)
+    answered_at: datetime
+
+
+class BankAttemptRow(Row):
+    """A test; questions and answers are named by question number (ids are new on restore)."""
+
+    question_numbers: list[int]
+    answers: dict[str, int] = Field(default_factory=dict)
+    started_at: datetime
+    deadline: datetime
+    submitted_at: datetime | None = None
+    score: int | None = None
+    passed: bool | None = None
+    failed_on_critical: list[int] = Field(default_factory=list)
+
+
+class BankRow(Row):
+    """A question bank of one of the user's areas with its questions, answers and tests."""
+
+    area_slug: str = Field(min_length=2, max_length=40)
+    title: str = Field(min_length=1, max_length=200)
+    rules: dict[str, Any]
+    created_at: datetime
+    questions: list[BankQuestionRow] = Field(max_length=2000)
+    answers: list[BankAnswerRow] = Field(default_factory=list)
+    attempts: list[BankAttemptRow] = Field(default_factory=list)
+
+
 class Manifest(BaseModel):
     format: int
     app_version: str
@@ -243,6 +298,73 @@ def _field_rows(session: Session, user_id: uuid.UUID) -> list[FieldRow]:
     ]
 
 
+def _bank_rows(session: Session, user_id: uuid.UUID) -> list[BankRow]:
+    """The banks of the user's own areas with their questions, the user's answers and tests."""
+    banks = list(
+        session.scalars(
+            select(QuestionBank)
+            .join(LearningArea, LearningArea.id == QuestionBank.area_id)
+            .join(LearningField, LearningField.id == LearningArea.field_id)
+            .where(LearningField.user_id == user_id)
+            .order_by(QuestionBank.created_at, QuestionBank.id)
+        )
+    )
+    rows: list[BankRow] = []
+    for bank in banks:
+        area = session.get(LearningArea, bank.area_id)
+        assert area is not None
+        questions = list(
+            session.scalars(
+                select(Question).where(Question.bank_id == bank.id).order_by(Question.number)
+            )
+        )
+        number_of = {q.id: q.number for q in questions}
+        id_of = {str(q.id): q.number for q in questions}
+        answers = [
+            BankAnswerRow(
+                number=number_of[a.question_id],
+                last_correct=a.last_correct,
+                times_wrong=a.times_wrong,
+                answered_at=a.answered_at,
+            )
+            for a in session.scalars(
+                select(QuestionAnswer).where(
+                    QuestionAnswer.user_id == user_id,
+                    QuestionAnswer.question_id.in_(list(number_of)),
+                )
+            )
+        ]
+        attempts = [
+            BankAttemptRow(
+                question_numbers=[id_of[i] for i in e.question_ids if i in id_of],
+                answers={str(id_of[k]): v for k, v in e.answers.items() if k in id_of},
+                started_at=e.started_at,
+                deadline=e.deadline,
+                submitted_at=e.submitted_at,
+                score=e.score,
+                passed=e.passed,
+                failed_on_critical=list(e.failed_on_critical),
+            )
+            for e in session.scalars(
+                select(ExamAttempt)
+                .where(ExamAttempt.user_id == user_id, ExamAttempt.bank_id == bank.id)
+                .order_by(ExamAttempt.started_at, ExamAttempt.id)
+            )
+        ]
+        rows.append(
+            BankRow(
+                area_slug=area.slug,
+                title=bank.title,
+                rules=bank.rules,
+                created_at=bank.created_at,
+                questions=[BankQuestionRow.model_validate(q) for q in questions],
+                answers=answers,
+                attempts=attempts,
+            )
+        )
+    return rows
+
+
 def build_backup(
     session: Session,
     user_id: uuid.UUID,
@@ -304,6 +426,7 @@ def build_backup(
         for chat in chats
     ]
     field_rows = _field_rows(session, user_id)
+    bank_rows = _bank_rows(session, user_id)
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as archive:
         written: set[str] = set()
         kept: list[Note] = []
@@ -317,6 +440,17 @@ def build_backup(
                 archive.writestr(f"files/{note.storage_key}", data)
                 written.add(note.storage_key)
             kept.append(note)
+        for bank in bank_rows:
+            for question in bank.questions:
+                key = question.image_key
+                if key is None or key in written:
+                    continue
+                try:
+                    archive.writestr(f"files/{key}", store.get(key))
+                except FileNotFoundError:
+                    question.image_key = None  # the image is gone: keep the question without it
+                    continue
+                written.add(key)
         skipped = len(notes) - len(kept)
         files = len(written)
         counts = {
@@ -332,6 +466,13 @@ def build_backup(
             "learning_areas": sum(len(f.areas) for f in field_rows),
             "learning_topics": sum(len(a.topics) for f in field_rows for a in f.areas),
         }
+        if bank_rows:  # older counts stay as they were for users without banks
+            counts |= {
+                "question_banks": len(bank_rows),
+                "questions": sum(len(b.questions) for b in bank_rows),
+                "question_answers": sum(len(b.answers) for b in bank_rows),
+                "exam_attempts": sum(len(b.attempts) for b in bank_rows),
+            }
         manifest = {
             "format": FORMAT,
             "app_version": app_version,
@@ -360,6 +501,12 @@ def build_backup(
             OPTIONAL_FILES["learning_fields"],
             json.dumps(
                 [f.model_dump(mode="json") for f in field_rows], ensure_ascii=False, indent=1
+            ).encode("utf-8"),
+        )
+        archive.writestr(
+            OPTIONAL_FILES["question_banks"],
+            json.dumps(
+                [b.model_dump(mode="json") for b in bank_rows], ensure_ascii=False, indent=1
             ).encode("utf-8"),
         )
     return counts
