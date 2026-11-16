@@ -1,5 +1,5 @@
 import { QueryClient } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, waitFor } from '@testing-library/react'
 import { expect } from 'vitest'
 import userEvent from '@testing-library/user-event'
 import App from '../App'
@@ -19,6 +19,6 @@ export function renderApp(hash = '#/') {
 /** renderApp, then waits until the login check is done and the app (or a login page) shows. */
 export async function renderAppReady(hash = '#/') {
   const rendered = renderApp(hash)
-  await waitFor(() => expect(screen.queryByRole('main', { name: 'Loading' })).not.toBeInTheDocument())
+  await waitFor(() => expect(document.querySelector('.app-loading')).not.toBeInTheDocument())
   return rendered
 }

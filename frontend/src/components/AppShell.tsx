@@ -82,7 +82,11 @@ export function AppShell() {
         {health.state === 'down' ? (
           <ServiceUnavailable health={health} />
         ) : loading ? (
-          <main className="auth-page" aria-busy="true" aria-label="Loading" />
+          <main className="auth-page" aria-busy="true">
+            <p className="app-loading muted" role="status">
+              <span className="spinner" aria-hidden="true"></span>Loading…
+            </p>
+          </main>
         ) : (
           <AuthPages
             route={authRoute ?? { page: auth.status?.has_owner === false ? 'create' : 'login', params: new URLSearchParams() }}

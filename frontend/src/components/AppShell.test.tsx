@@ -1,8 +1,12 @@
-/** Spec: responsive-layout - Screen classes, Side panels as drawers on a phone, One side panel at a time on a tablet. */
-import { act, screen, within } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
-import { installFakeApi, makeNote, twoProviders } from '../test/fakeApi'
-import { renderAppReady } from '../test/render'
+/**
+ * Spec: responsive-layout - Screen classes, Side panels as drawers on a phone, One side panel at a time on a tablet.
+ * Spec: learning-views - Loading indicator while the app starts.
+ */
+import { act, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import indexHtml from '../../index.html?raw'
+import { installFakeApi, makeNote, requireLogin, twoProviders } from '../test/fakeApi'
+import { renderApp, renderAppReady } from '../test/render'
 import { resetScreenClass, setScreenClass } from '../test/screenClass'
 
 afterEach(() => {
@@ -207,5 +211,86 @@ describe('side panels as drawers on a phone', () => {
     await renderAppReady()
     expect(await screen.findByRole('complementary', { name: 'Learned items' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Learned' })).not.toBeInTheDocument()
+  })
+})
+
+describe('loading indicator while the app starts', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  /** Holds `GET /api/auth/status` (and `/api/auth/me` when asked) until `release()`; the rest is the fake API. */
+  function holdAuth(options: { me?: boolean; healthDown?: boolean } = {}) {
+    const inner = globalThis.fetch
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (options.healthDown && url === '/api/health') {
+        return Promise.resolve(new Response(JSON.stringify({ status: 'unavailable', reason: 'database' }), { status: 503 }))
+      }
+      if (url === (options.me ? '/api/auth/me' : '/api/auth/status')) return gate.then(() => inner(input, init))
+      return inner(input, init)
+    })
+    return release
+  }
+
+  const indicator = () => screen.queryByRole('status')
+
+  it('Before the app code has loaded: the delivered page holds the status element with Loading…', () => {
+    const root = new DOMParser().parseFromString(indexHtml, 'text/html').querySelector('#root')
+    const status = root?.querySelector('[role="status"]')
+    expect(status).not.toBeNull()
+    expect(status?.textContent).toBe('Loading…')
+    expect(indexHtml).not.toMatch(/<script(?![^>]* src=)/)
+    expect(indexHtml).not.toMatch(/\sstyle=/)
+  })
+
+  it('While the session is being checked: the indicator shows until the status answers, then the page replaces it', async () => {
+    installFakeApi()
+    const release = holdAuth()
+    renderApp()
+    expect(indicator()).toHaveTextContent('Loading…')
+    expect(screen.getByRole('main', { busy: true })).toContainElement(indicator())
+    expect(screen.queryByRole('complementary', { name: 'Learned items' })).not.toBeInTheDocument()
+    release()
+    expect(await screen.findByRole('complementary', { name: 'Learned items' })).toBeInTheDocument()
+  })
+
+  it('While the session is being checked: also while the session answer is slow', async () => {
+    const state = installFakeApi()
+    requireLogin(state, { signedIn: true })
+    const release = holdAuth({ me: true })
+    renderApp()
+    await waitFor(() => expect(state.calls.some((c) => c.url === '/api/auth/status')).toBe(true))
+    expect(indicator()).toHaveTextContent('Loading…')
+    release()
+    expect(await screen.findByRole('complementary', { name: 'Learned items' })).toBeInTheDocument()
+    expect(document.querySelector('.app-loading')).not.toBeInTheDocument()
+  })
+
+  it('Gone once the app shows: the user content and the sign-in page carry no start indicator', async () => {
+    installFakeApi()
+    await renderAppReady()
+    await screen.findByRole('complementary', { name: 'Learned items' })
+    expect(document.querySelector('.app-loading')).not.toBeInTheDocument()
+  })
+
+  it('Gone once the app shows: the sign-in page', async () => {
+    const state = installFakeApi()
+    requireLogin(state, { signedIn: false })
+    renderApp()
+    await screen.findByRole('main', { name: 'Log in' })
+    expect(document.querySelector('.app-loading')).not.toBeInTheDocument()
+  })
+
+  it('Service unavailable wins: the outage page shows, not the indicator, while the status is pending', async () => {
+    installFakeApi()
+    holdAuth({ healthDown: true })
+    renderApp()
+    expect(await screen.findByRole('main', { name: 'Service unavailable' })).toBeInTheDocument()
+    expect(document.querySelector('.app-loading')).not.toBeInTheDocument()
   })
 })

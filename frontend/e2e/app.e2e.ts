@@ -271,3 +271,64 @@ test('a lesson in the template shows contents, numbered cards, callouts and a ta
     await page.request.put(`${API}/api/lessons/backend/redis`, { headers: H, data: { body: '' } })
   }
 })
+
+/** Holds every `/api/auth/status` answer until `release()` is called. */
+async function holdAuthStatus(page: Page) {
+  let release!: () => void
+  const gate = new Promise<void>((r) => (release = r))
+  await page.route('**/api/auth/status', async (route) => {
+    await gate
+    await route.fallback()
+  })
+  return release
+}
+
+test('Loading indicator while the app starts: the delivered HTML holds a status element with "Loading…"', async ({ request }) => {
+  const res = await request.get('/')
+  expect(res.ok()).toBe(true)
+  const html = await res.text()
+  const root = /<div id="root"[^>]*>([\s\S]*?)<\/div>/.exec(html)
+  expect(root, 'a #root element').not.toBeNull()
+  expect(root![1]).toMatch(/role="status"/)
+  expect(root![1]).toContain('Loading…')
+})
+
+test('Loading indicator while the app starts: shown while the session is checked, replaced once it answers', async ({ page }) => {
+  const release = await holdAuthStatus(page)
+  await page.goto('/', { waitUntil: 'commit' })
+  const loading = page.locator('.app-loading')
+  await expect(loading).toBeVisible()
+  await expect(loading).toHaveText('Loading…')
+  await expect(page.getByRole('status').filter({ hasText: 'Loading…' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Home' })).toHaveCount(0)
+  await page.emulateMedia({ colorScheme: 'light' })
+  await shot(page, 'app-loading-light')
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await shot(page, 'app-loading-dark')
+
+  release()
+  await expect(page.getByRole('region', { name: 'Home' })).toBeVisible()
+  // Gone once the app shows.
+  await expect(page.locator('.app-loading')).toHaveCount(0)
+  await expect(page.getByText('Loading…', { exact: true }).filter({ visible: true })).toHaveCount(0)
+})
+
+test('Loading indicator while the app starts: reduced motion stops the spinner', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  const release = await holdAuthStatus(page)
+  await page.goto('/', { waitUntil: 'commit' })
+  const spinner = page.locator('.app-loading .spinner')
+  await expect(spinner).toBeVisible()
+  await expect(spinner).toHaveCSS('animation-name', 'none')
+  release()
+  await expect(page.locator('.app-loading')).toHaveCount(0)
+})
+
+test('Loading indicator while the app starts: the spinner spins without the reduced-motion request', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  const release = await holdAuthStatus(page)
+  await page.goto('/', { waitUntil: 'commit' })
+  await expect(page.locator('.app-loading .spinner')).not.toHaveCSS('animation-name', 'none')
+  release()
+  await expect(page.locator('.app-loading')).toHaveCount(0)
+})

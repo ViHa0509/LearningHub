@@ -279,6 +279,8 @@ input[type='range'], input[type='checkbox'] { accent-color: var(--accent); }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+/* The app start: in index.html until the app's code has loaded, then in the session gate (same markup). */
+.app-loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; gap: 10px; margin: 0; background: var(--bg); }
 .title-actions { display: inline-flex; gap: 6px; }
 .note-editor { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .note-editor-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--surface); }

@@ -50,6 +50,9 @@ test('backend down: the Service unavailable page names the server, with no retry
   await expect(screen.getByText(/^Last checked \d{2}:\d{2}:\d{2}$/)).toBeVisible()
   // No retry controls: no button, no countdown.
   await expect(screen.getByRole('button')).toHaveCount(0)
+  // The start-up indicator does not show next to the outage page.
+  await expect(page.locator('.app-loading')).toHaveCount(0)
+  await expect(page.getByText('Loading…', { exact: true }).filter({ visible: true })).toHaveCount(0)
   await expect(screen.getByRole('status')).toHaveCount(0)
   await expect(page.getByText(/Retrying|Try again/)).toHaveCount(0)
   await expect(page.getByText(/Is the backend running\?/)).toHaveCount(0)
