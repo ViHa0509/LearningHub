@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type DragEvent } from 'react'
 import { api, type Note, type Roadmap } from '../api'
 import { groupNotes } from '../lib/grouping'
 import { ActionMenu } from './ActionMenu'
@@ -19,6 +19,18 @@ interface Props {
 }
 
 const UNDO_MS = 8000
+const UNSORTED = 'unsorted'
+
+/** One line after Archive or after a drop; `previous` is the link a drop replaced. */
+type Undo =
+  | { kind: 'archived'; id: string; title: string }
+  | { kind: 'moved'; id: string; title: string; target: string; previous: string | null; canUndo: boolean }
+
+/** The note being dragged and the drop target under the pointer (a node `full_id` or 'unsorted'). */
+interface Drag {
+  note: Note
+  over: string | null
+}
 
 export function LearnedList({
   notes,
@@ -34,14 +46,88 @@ export function LearnedList({
   const [menuFor, setMenuFor] = useState<string | null>(null)
   const [renaming, setRenaming] = useState<{ id: string; draft: string } | null>(null)
   const [moving, setMoving] = useState<{ note: Note; target: string | null } | null>(null)
-  const [undo, setUndo] = useState<{ id: string; title: string } | null>(null)
+  const [undo, setUndo] = useState<Undo | null>(null)
+  const [drag, setDrag] = useState<Drag | null>(null)
   const [archivedOpen, setArchivedOpen] = useState(false)
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const triggers = useRef(new Map<string, HTMLButtonElement>())
   const undoTimer = useRef<number | undefined>(undefined)
 
-  useEffect(() => () => window.clearTimeout(undoTimer.current), [])
+  const dragTimer = useRef<number | undefined>(undefined)
+
+  useEffect(
+    () => () => {
+      window.clearTimeout(undoTimer.current)
+      window.clearTimeout(dragTimer.current)
+    },
+    [],
+  )
+
+  const showUndo = (next: Undo) => {
+    setUndo(next)
+    window.clearTimeout(undoTimer.current)
+    undoTimer.current = window.setTimeout(() => setUndo(null), UNDO_MS)
+  }
+
+  const knownNodes = new Set(roadmaps.flatMap((r) => r.nodes.map((n) => n.full_id)))
+  /** Where the list shows the note now: its node, or Unsorted for no link or a missing node. */
+  const placeOf = (note: Note) =>
+    note.node_id === null || note.node_missing || !knownNodes.has(note.node_id) ? UNSORTED : note.node_id
+
+  const startDrag = (e: DragEvent<HTMLElement>, note: Note) => {
+    e.dataTransfer.setData('application/x-learninghub-note', note.id)
+    e.dataTransfer.effectAllowed = 'move'
+    setMenuFor(null)
+    // Chromium ends a drag when the DOM changes inside dragstart, so the state is set a tick later.
+    window.clearTimeout(dragTimer.current)
+    dragTimer.current = window.setTimeout(() => setDrag({ note, over: null }), 0)
+  }
+
+  const endDrag = () => {
+    window.clearTimeout(dragTimer.current)
+    setDrag(null)
+  }
+
+  const canDropOn = (key: string) => drag !== null && placeOf(drag.note) !== key
+
+  const dropProps = (key: string, title: string) => ({
+    onDragOver: (e: DragEvent<HTMLElement>) => {
+      if (!canDropOn(key)) return
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
+      setDrag((d) => (d && d.over !== key ? { ...d, over: key } : d))
+    },
+    onDragLeave: (e: DragEvent<HTMLElement>) => {
+      if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
+      setDrag((d) => (d && d.over === key ? { ...d, over: null } : d))
+    },
+    onDrop: (e: DragEvent<HTMLElement>) => {
+      e.preventDefault()
+      // The note comes from state: dataTransfer can be filled by another page.
+      const note = drag?.note
+      endDrag()
+      if (note && placeOf(note) !== key) void drop(note, key === UNSORTED ? null : key, title)
+    },
+  })
+
+  const drop = async (note: Note, target: string | null, targetTitle: string) => {
+    setMenuFor(null)
+    if (await run(() => api.link(note.id, target), 'Move failed')) {
+      showUndo({
+        kind: 'moved',
+        id: note.id,
+        title: note.title,
+        target: targetTitle,
+        previous: note.node_id,
+        canUndo: !note.node_missing,
+      })
+    }
+  }
+
+  const undoMove = async (line: Extract<Undo, { kind: 'moved' }>) => {
+    if (await run(() => api.link(line.id, line.previous), 'Undo failed')) setUndo(null)
+  }
 
   const run = async (action: () => Promise<unknown>, failure: string) => {
     setError(null)
@@ -67,9 +153,7 @@ export function LearnedList({
   const archive = async (note: Note) => {
     setMenuFor(null)
     if (await run(() => api.setArchived(note.id, true), 'Archive failed')) {
-      setUndo({ id: note.id, title: note.title })
-      window.clearTimeout(undoTimer.current)
-      undoTimer.current = window.setTimeout(() => setUndo(null), UNDO_MS)
+      showUndo({ kind: 'archived', id: note.id, title: note.title })
     }
   }
 
@@ -106,10 +190,19 @@ export function LearnedList({
 
   const undoLine = undo && (
     <p className="undo-line" role="status">
-      Archived ‘{undo.title}’.{' '}
-      <button type="button" className="link" onClick={() => void restore({ id: undo.id })}>
-        Undo
-      </button>
+      {undo.kind === 'archived' ? `Archived ‘${undo.title}’.` : `Moved ‘${undo.title}’ to ${undo.target}.`}
+      {(undo.kind === 'archived' || undo.canUndo) && (
+        <>
+          {' '}
+          <button
+            type="button"
+            className="link"
+            onClick={() => void (undo.kind === 'archived' ? restore({ id: undo.id }) : undoMove(undo))}
+          >
+            Undo
+          </button>
+        </>
+      )}
     </p>
   )
 
@@ -194,13 +287,20 @@ export function LearnedList({
     )
   }
 
-  const grouped = groupNotes(notes, roadmaps, filter)
+  const grouped = groupNotes(notes, roadmaps, filter, { allTopics: drag !== null })
 
   const item = (note: Note) => {
     const highlighted = note.id === selectedNoteId || (!!selectedNodeId && note.node_id === selectedNodeId)
     const menuOpen = menuFor === note.id
+    const draggable = renaming?.id !== note.id
     return (
-      <li key={note.id} className={highlighted ? 'note-item highlighted' : 'note-item'}>
+      <li
+        key={note.id}
+        className={highlighted ? 'note-item highlighted' : 'note-item'}
+        draggable={draggable}
+        onDragStart={draggable ? (e) => startDrag(e, note) : undefined}
+        onDragEnd={draggable ? endDrag : undefined}
+      >
         {renaming?.id === note.id ? (
           <form
             className="rename-form"
@@ -304,20 +404,30 @@ export function LearnedList({
         <section key={domain.domainId} aria-label={domain.title} className="domain-group">
           <h3>{domain.title}</h3>
           {domain.nodes.map(({ node, notes: nodeNotes }) => (
-            <div key={node.full_id} className="node-group" aria-label={`${domain.title} > ${node.title}`} role="group">
+            <div
+              key={node.full_id}
+              className={drag?.over === node.full_id ? 'node-group drop-target' : 'node-group'}
+              aria-label={`${domain.title} > ${node.title}`}
+              role="group"
+              {...dropProps(node.full_id, node.title)}
+            >
               <h4>{node.title}</h4>
-              <ul>{nodeNotes.map(item)}</ul>
+              {nodeNotes.length > 0 ? <ul>{nodeNotes.map(item)}</ul> : <p className="muted drop-hint">Drop here</p>}
             </div>
           ))}
         </section>
       ))}
-      {grouped.unsorted.length > 0 && (
-        <section aria-label="Unsorted" className="domain-group">
+      {(grouped.unsorted.length > 0 || drag) && (
+        <section
+          aria-label="Unsorted"
+          className={drag?.over === UNSORTED ? 'domain-group drop-target' : 'domain-group'}
+          {...dropProps(UNSORTED, 'Unsorted')}
+        >
           <h3>Unsorted</h3>
-          <ul>{grouped.unsorted.map(item)}</ul>
+          {grouped.unsorted.length > 0 ? <ul>{grouped.unsorted.map(item)}</ul> : <p className="muted drop-hint">Drop here</p>}
         </section>
       )}
-      {grouped.domains.length === 0 && grouped.unsorted.length === 0 && (
+      {grouped.domains.length === 0 && grouped.unsorted.length === 0 && !drag && (
         <p className="muted">No note title matches “{filter}”.</p>
       )}
       {archivedSection}

@@ -54,7 +54,12 @@ const latest = (notes: Note[]) => notes.reduce((max, note) => Math.max(max, upda
  * newest first by `updated_at`; nodes and domains follow their most recently updated note (ties
  * keep roadmap order); Unsorted comes last, also newest first.
  */
-export function groupNotes(notes: Note[], roadmaps: Roadmap[], filter = ''): GroupedNotes {
+export function groupNotes(
+  notes: Note[],
+  roadmaps: Roadmap[],
+  filter = '',
+  options: { allTopics?: boolean } = {},
+): GroupedNotes {
   const visible = notes.filter((note) => matchesFilter(note, filter))
   const byNode = new Map<string, Note[]>()
   const known = new Set(roadmaps.flatMap((r) => r.nodes.map((n) => n.full_id)))
@@ -77,7 +82,15 @@ export function groupNotes(notes: Note[], roadmaps: Roadmap[], filter = ''): Gro
       .map((node) => ({ node, notes: newestFirst(byNode.get(node.full_id) ?? []) }))
       // Array.sort is stable: equal times keep the roadmap order.
       .sort((a, b) => updated(b.notes[0]) - updated(a.notes[0]))
-    if (nodes.length > 0) domains.push({ domainId: roadmap.id, title: roadmap.title, nodes })
+    if (nodes.length === 0) continue
+    if (options.allTopics) {
+      // Drop targets: the topics without a visible note go after the others, in roadmap order, so
+      // nothing above the pointer moves when a drag starts. Domains without a note stay out.
+      for (const node of roadmapOrder(roadmap)) {
+        if (!byNode.has(node.full_id)) nodes.push({ node, notes: [] })
+      }
+    }
+    domains.push({ domainId: roadmap.id, title: roadmap.title, nodes })
   }
   domains.sort(
     (a, b) => latest(b.nodes.flatMap((n) => n.notes)) - latest(a.nodes.flatMap((n) => n.notes)),

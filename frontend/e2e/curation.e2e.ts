@@ -522,3 +522,157 @@ test('Learned-items list: the filter stays on top and uncovered while the list s
   await page.screenshot({ path: 'e2e-results/screens/learned-filter-sticky.png' })
   expect(errors).toEqual([])
 })
+
+// ---- change learned-list-drag-drop ----
+
+const movedLine = (page: Page) => listOf(page).getByRole('status')
+
+test('Learned-items list: topics without notes appear while dragging and are hidden when the drag ends', async ({ page, request }) => {
+  const errors = watchErrors(page)
+  const note = await createNote(request, 'dragshow', 'backend/caching')
+  const all = await listNotes(request)
+  const emptyDomain = ['data-engineer', 'qa', 'ai-engineer', 'frontend', 'devops'].find(
+    (d) => !all.some((n) => n.node_id?.startsWith(`${d}/`)),
+  )
+  await page.goto('/')
+  const list = listOf(page)
+  const caching = list.getByRole('group', { name: 'Backend > Caching' })
+  await expect(caching.getByRole('button', { name: note.title, exact: true })).toBeVisible()
+  const redis = list.getByRole('group', { name: 'Backend > Redis' })
+  await expect(redis).toHaveCount(0)
+  await expect(list.getByRole('region', { name: 'Unsorted' }).or(list.getByText('Drop here'))).toHaveCount(0)
+
+  const row = list.locator('li.note-item', { hasText: note.title })
+  const dt = await page.evaluateHandle(() => new DataTransfer())
+  await row.dispatchEvent('dragstart', { dataTransfer: dt })
+  await expect(redis).toBeVisible()
+  await expect(redis.getByText('Drop here')).toBeVisible()
+  await expect(list.getByRole('region', { name: 'Unsorted' })).toBeVisible()
+  // Backend lists its other empty topics after Caching, in roadmap order.
+  const names = await list.getByRole('group').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label') ?? ''))
+  const backend = names.filter((n) => n.startsWith('Backend > '))
+  expect(backend[0]).toBe('Backend > Caching')
+  expect(backend.length).toBeGreaterThan(2)
+  if (emptyDomain) {
+    expect(names.some((n) => n.toLowerCase().startsWith(`${emptyDomain.replace('-', ' ')}`))).toBeFalsy()
+  }
+  await shot(page, 'drag-drop-topics-shown')
+
+  await row.dispatchEvent('dragend', { dataTransfer: dt })
+  await expect(redis).toHaveCount(0)
+  await expect(list.getByRole('region', { name: 'Unsorted' })).toHaveCount(0)
+  await expect(caching.getByRole('button', { name: note.title, exact: true })).toBeVisible()
+  expect((await listNotes(request)).find((n) => n.id === note.id)?.node_id).toBe('backend/caching')
+  await expect(movedLine(page)).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('Learned-items list: drop a note on a topic, Undo puts it back', async ({ page, request }) => {
+  const errors = watchErrors(page)
+  const note = await createNote(request, 'dragdrop', 'backend/caching')
+  await page.goto('/')
+  const list = listOf(page)
+  const caching = list.getByRole('group', { name: 'Backend > Caching' })
+  const row = list.locator('li.note-item', { hasText: note.title })
+  await expect(row).toBeVisible()
+
+  const dt = await page.evaluateHandle(() => new DataTransfer())
+  await row.dispatchEvent('dragstart', { dataTransfer: dt })
+  const redis = list.getByRole('group', { name: 'Backend > Redis' })
+  await expect(redis).toBeVisible()
+  await redis.dispatchEvent('dragenter', { dataTransfer: dt })
+  await redis.dispatchEvent('dragover', { dataTransfer: dt })
+  await shot(page, 'drag-drop-over-topic')
+  await redis.dispatchEvent('drop', { dataTransfer: dt })
+  await row.dispatchEvent('dragend', { dataTransfer: dt })
+
+  await expect(redis.getByRole('button', { name: note.title, exact: true })).toBeVisible()
+  await expect(caching.getByRole('button', { name: note.title, exact: true })).toHaveCount(0)
+  const status = movedLine(page)
+  await expect(status).toContainText(`Moved ‘${note.title}’ to Redis.`)
+  await shot(page, 'drag-drop-moved')
+  expect((await listNotes(request)).find((n) => n.id === note.id)?.node_id).toBe('backend/redis')
+
+  await status.getByRole('button', { name: 'Undo' }).click()
+  await expect(caching.getByRole('button', { name: note.title, exact: true })).toBeVisible()
+  await expect(list.getByRole('group', { name: 'Backend > Redis' })).toHaveCount(0)
+  expect((await listNotes(request)).find((n) => n.id === note.id)?.node_id).toBe('backend/caching')
+  expect(errors).toEqual([])
+})
+
+test('Learned-items list: drop a linked note on Unsorted removes its link', async ({ page, request }) => {
+  const errors = watchErrors(page)
+  const note = await createNote(request, 'dragunsorted', 'backend/caching')
+  await page.goto('/')
+  const list = listOf(page)
+  const row = list.locator('li.note-item', { hasText: note.title })
+  await expect(row).toBeVisible()
+
+  const dt = await page.evaluateHandle(() => new DataTransfer())
+  await row.dispatchEvent('dragstart', { dataTransfer: dt })
+  const unsorted = list.getByRole('region', { name: 'Unsorted' })
+  await expect(unsorted).toBeVisible()
+  await unsorted.dispatchEvent('dragenter', { dataTransfer: dt })
+  await unsorted.dispatchEvent('dragover', { dataTransfer: dt })
+  await unsorted.dispatchEvent('drop', { dataTransfer: dt })
+  await row.dispatchEvent('dragend', { dataTransfer: dt })
+
+  await expect(unsorted.getByRole('button', { name: note.title, exact: true })).toBeVisible()
+  await expect(movedLine(page)).toContainText('to Unsorted')
+  expect((await listNotes(request)).find((n) => n.id === note.id)?.node_id ?? null).toBeNull()
+  await shot(page, 'drag-drop-unsorted')
+  expect(errors).toEqual([])
+})
+
+test('Learned-items list: drop on the notes own topic saves nothing and shows no Undo line', async ({ page, request }) => {
+  const errors = watchErrors(page)
+  const note = await createNote(request, 'dragown', 'backend/caching')
+  let writes = 0
+  page.on('request', (r) => {
+    if (r.method() !== 'GET' && r.url().includes('/api/notes')) writes += 1
+  })
+  await page.goto('/')
+  const list = listOf(page)
+  const caching = list.getByRole('group', { name: 'Backend > Caching' })
+  const row = list.locator('li.note-item', { hasText: note.title })
+  await expect(row).toBeVisible()
+
+  const dt = await page.evaluateHandle(() => new DataTransfer())
+  await row.dispatchEvent('dragstart', { dataTransfer: dt })
+  await expect(list.getByRole('group', { name: 'Backend > Redis' })).toBeVisible()
+  await caching.dispatchEvent('dragenter', { dataTransfer: dt })
+  await caching.dispatchEvent('dragover', { dataTransfer: dt })
+  await caching.dispatchEvent('drop', { dataTransfer: dt })
+  await row.dispatchEvent('dragend', { dataTransfer: dt })
+
+  await expect(caching.getByRole('button', { name: note.title, exact: true })).toBeVisible()
+  await expect(movedLine(page)).toHaveCount(0)
+  expect(writes).toBe(0)
+  expect((await listNotes(request)).find((n) => n.id === note.id)?.node_id).toBe('backend/caching')
+  expect(errors).toEqual([])
+})
+
+test('Learned-items list: a real mouse drag moves a note onto a topic without notes', async ({ page, request }) => {
+  const errors = watchErrors(page)
+  const note = await createNote(request, 'dragmouse', 'backend/caching')
+  await page.goto('/')
+  const list = listOf(page)
+  const row = list.locator('li.note-item', { hasText: note.title })
+  await expect(row).toBeVisible()
+  const redis = list.getByRole('group', { name: 'Backend > How the internet works' })
+  // The topic only exists once the drag has started, so press and move by hand.
+  await row.hover()
+  await page.mouse.down()
+  const box = (await row.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2 + 10, box.y + box.height / 2 + 10, { steps: 5 })
+  await expect(redis).toBeVisible()
+  const heading = redis.getByText('Drop here')
+  const t = (await heading.boundingBox())!
+  await page.mouse.move(t.x + 20, t.y + t.height / 2, { steps: 15 })
+  await page.mouse.up()
+  await shot(page, 'drag-drop-real-mouse')
+  await expect(redis.getByRole('button', { name: note.title, exact: true })).toBeVisible()
+  await expect(movedLine(page)).toContainText(`Moved ‘${note.title}’ to How the internet works.`)
+  expect((await listNotes(request)).find((n) => n.id === note.id)?.node_id).toBe('backend/internet')
+  expect(errors).toEqual([])
+})

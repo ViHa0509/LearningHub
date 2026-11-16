@@ -1,7 +1,8 @@
 /** Spec: learning-views - Learned-items list. */
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
+import { api } from '../api'
 import { groupNotes } from '../lib/grouping'
 import { backend, devops, installFakeApi, makeNote } from '../test/fakeApi'
 import { renderApp } from '../test/render'
@@ -324,6 +325,201 @@ describe('LearnedList actions', () => {
     expect(await screen.findByText('Nothing learned yet')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Archived (1)' }))
     expect(screen.getByRole('button', { name: 'Old JWT' })).toBeInTheDocument()
+  })
+})
+
+describe('LearnedList drag and drop', () => {
+  const transfer = () => ({ setData: vi.fn(), getData: vi.fn(() => ''), effectAllowed: '', dropEffect: '' })
+  const patches = (state: { calls: { method: string; body?: unknown }[] }) =>
+    state.calls.filter((c) => c.method === 'PATCH').map((c) => c.body)
+  // A prefix match: a note with a missing node carries a tag in its button's name.
+  const row = (title: string) => screen.getByRole('button', { name: new RegExp(`^${title}`) }).closest('li') as HTMLElement
+  const status = () => within(screen.getByRole('complementary', { name: 'Learned items' })).queryByRole('status')
+  const group = (name: string) => screen.getByRole('group', { name })
+  const unsorted = () => screen.getByRole('region', { name: 'Unsorted' })
+
+  async function setup(notes = sample()) {
+    const state = installFakeApi(notes)
+    const view = renderApp()
+    await screen.findByRole('button', { name: new RegExp(`^${notes[0].title}`) })
+    return { ...view, state }
+  }
+
+  /** Starts a drag the way the browser does and waits for the deferred state. */
+  async function startDrag(title: string, dataTransfer = transfer()) {
+    fireEvent.dragStart(row(title), { dataTransfer })
+    await screen.findAllByText('Drop here')
+    return dataTransfer
+  }
+
+  const drop = (target: HTMLElement) => {
+    const dataTransfer = transfer()
+    fireEvent.dragOver(target, { dataTransfer })
+    fireEvent.drop(target, { dataTransfer })
+  }
+
+  // Scenario: Topics without notes appear while dragging
+  it('shows the topics without notes and Unsorted while dragging, and hides them when the drag ends', async () => {
+    renderList([makeNote('Redis eviction', 'backend/caching'), makeNote('GitHub Actions', 'devops/ci-cd')])
+    expect(screen.queryByRole('region', { name: 'Unsorted' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Backend > Redis' })).not.toBeInTheDocument()
+
+    const data = transfer()
+    fireEvent.dragStart(row('Redis eviction'), { dataTransfer: data })
+    expect(data.setData).toHaveBeenCalledWith('application/x-learninghub-note', expect.any(String))
+    expect(data.effectAllowed).toBe('move')
+    await screen.findByRole('group', { name: 'Backend > Redis' })
+    const names = screen.getAllByRole('group').map((g) => g.getAttribute('aria-label'))
+    expect(names.indexOf('Backend > Caching')).toBeLessThan(names.indexOf('Backend > Redis'))
+    expect(within(group('Backend > Redis')).getByText('Drop here')).toBeInTheDocument()
+    expect(within(unsorted()).getByText('Drop here')).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Frontend' })).not.toBeInTheDocument()
+
+    fireEvent.dragEnd(row('Redis eviction'))
+    expect(screen.queryByRole('group', { name: 'Backend > Redis' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Unsorted' })).not.toBeInTheDocument()
+  })
+
+  it('does not start a drag state when the drag ends before the deferred tick', () => {
+    vi.useFakeTimers()
+    try {
+      renderList()
+      fireEvent.dragStart(row('Redis eviction'), { dataTransfer: transfer() })
+      fireEvent.dragEnd(row('Redis eviction'))
+      vi.runAllTimers()
+      expect(screen.queryByText('Drop here')).not.toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  // Scenario: Drop a note on a topic, Undo a drop
+  it('drops a note on a topic, says so with Undo, and Undo links it back', async () => {
+    const { user, state } = await setup()
+    await startDrag('Redis eviction')
+    drop(group('Backend > Redis'))
+    expect(await screen.findByText(/^Moved ‘Redis eviction’ to Redis\./)).toHaveTextContent(
+      'Moved ‘Redis eviction’ to Redis. Undo',
+    )
+    expect(patches(state)).toEqual([{ node_id: 'backend/redis' }])
+    expect(within(await screen.findByRole('group', { name: 'Backend > Redis' })).getByRole('button', { name: 'Redis eviction' })).toBeInTheDocument()
+    expect(screen.queryByText('Drop here')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Undo' }))
+    await waitFor(() =>
+      expect(within(screen.getByRole('group', { name: 'Backend > Caching' })).getByRole('button', { name: 'Redis eviction' })).toBeInTheDocument(),
+    )
+    expect(patches(state)).toEqual([{ node_id: 'backend/redis' }, { node_id: 'backend/caching' }])
+    expect(screen.queryByText(/^Moved/)).not.toBeInTheDocument()
+  })
+
+  it('highlights the topic under the pointer and clears it when the pointer leaves', async () => {
+    await setup()
+    await startDrag('Redis eviction')
+    const redis = group('Backend > Redis')
+    fireEvent.dragOver(redis, { dataTransfer: transfer() })
+    expect(redis).toHaveClass('drop-target')
+    fireEvent.dragLeave(redis, { dataTransfer: transfer() })
+    expect(redis).not.toHaveClass('drop-target')
+  })
+
+  // Scenario: Drop on Unsorted
+  it('drops a linked note on Unsorted and sends node_id null', async () => {
+    const { state } = await setup()
+    await startDrag('Redis eviction')
+    drop(unsorted())
+    expect(await screen.findByText(/^Moved ‘Redis eviction’ to Unsorted\./)).toBeInTheDocument()
+    expect(patches(state)).toEqual([{ node_id: null }])
+    await waitFor(() => expect(within(unsorted()).getByRole('button', { name: 'Redis eviction' })).toBeInTheDocument())
+  })
+
+  // Scenario: Drop on the note's own topic
+  it('accepts no drop on the own topic: no preventDefault, no save, no Undo line', async () => {
+    const { state } = await setup()
+    await startDrag('Redis eviction')
+    const own = group('Backend > Caching')
+    // dispatchEvent answers false when a handler called preventDefault.
+    expect(fireEvent.dragOver(own, { dataTransfer: transfer() })).toBe(true)
+    expect(fireEvent.dragOver(group('Backend > Redis'), { dataTransfer: transfer() })).toBe(false)
+    fireEvent.drop(own, { dataTransfer: transfer() })
+    expect(patches(state)).toEqual([])
+    expect(status()).not.toBeInTheDocument()
+  })
+
+  it('treats Unsorted as the place of an unlinked note and of a missing-node note', async () => {
+    const { state } = await setup([
+      makeNote('Loose research'),
+      makeNote('Old SOAP note', 'backend/soap', { node_missing: true }),
+      makeNote('Redis eviction', 'backend/caching'),
+    ])
+    await startDrag('Loose research')
+    expect(fireEvent.dragOver(unsorted(), { dataTransfer: transfer() })).toBe(true)
+    drop(unsorted())
+    fireEvent.dragEnd(row('Loose research'))
+    expect(patches(state)).toEqual([])
+
+    await startDrag('Old SOAP note')
+    expect(fireEvent.dragOver(unsorted(), { dataTransfer: transfer() })).toBe(true)
+    expect(fireEvent.dragOver(group('Backend > Caching'), { dataTransfer: transfer() })).toBe(false)
+  })
+
+  it('ignores a drop when no drag of this list is in progress', async () => {
+    const { state } = await setup()
+    const foreign = transfer()
+    foreign.getData.mockReturnValue('some-note-id')
+    const target = group('Backend > Caching')
+    expect(fireEvent.dragOver(target, { dataTransfer: foreign })).toBe(true)
+    fireEvent.drop(target, { dataTransfer: foreign })
+    expect(patches(state)).toEqual([])
+  })
+
+  it('shows no Undo button after moving a note whose node is missing', async () => {
+    const { state } = await setup([
+      makeNote('Old SOAP note', 'backend/soap', { node_missing: true }),
+      makeNote('Redis eviction', 'backend/caching'),
+    ])
+    await startDrag('Old SOAP note')
+    drop(group('Backend > Redis'))
+    expect(await screen.findByText(/^Moved ‘Old SOAP note’ to Redis\./)).toBeInTheDocument()
+    expect(status()).not.toHaveTextContent('Undo')
+    expect(screen.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument()
+    expect(patches(state)).toEqual([{ node_id: 'backend/redis' }])
+  })
+
+  it('shows the error line and no Undo line when the link fails', async () => {
+    const spy = vi.spyOn(api, 'link').mockRejectedValue(new Error('Could not link'))
+    try {
+      await setup()
+      await startDrag('Redis eviction')
+      drop(group('Backend > Redis'))
+      expect(await screen.findByRole('alert')).toHaveTextContent('Could not link')
+      expect(status()).not.toBeInTheDocument()
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('does not make a row being renamed draggable, nor an archived row', async () => {
+    const { user } = await setup([
+      makeNote('Redis eviction', 'backend/caching'),
+      makeNote('Old JWT', 'backend/auth', { archived_at: '2026-11-07T00:00:00Z' }),
+    ])
+    expect(row('Redis eviction')).toHaveAttribute('draggable', 'true')
+    await user.click(screen.getByRole('button', { name: 'More actions for Redis eviction' }))
+    await user.click(screen.getByRole('menuitem', { name: 'Rename' }))
+    const renaming = screen.getByRole('textbox', { name: 'New title' }).closest('li') as HTMLElement
+    expect(renaming).toHaveAttribute('draggable', 'false')
+    fireEvent.dragStart(renaming, { dataTransfer: transfer() })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(screen.queryByText('Drop here')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    await user.click(screen.getByRole('button', { name: 'Archived (1)' }))
+    const archived = screen.getByRole('button', { name: 'Old JWT' }).closest('li') as HTMLElement
+    expect(archived).not.toHaveAttribute('draggable', 'true')
+    fireEvent.dragStart(archived, { dataTransfer: transfer() })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(screen.queryByText('Drop here')).not.toBeInTheDocument()
   })
 })
 
