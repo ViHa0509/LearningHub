@@ -353,7 +353,10 @@ function MainApp({ theme, onThemeChange, health, user }: MainProps) {
               selectedNoteId={route.page === 'note' ? route.id : null}
               selectedNodeId={route.page === 'lesson' ? selectedNodeId : null}
               onOpenNote={openNoteFromList}
-              onImport={() => setImporting(true)}
+              onImport={() => {
+                setImporting(true)
+                if (phone) setLeftOpen(false)
+              }}
               onChanged={refresh}
             />
           )}

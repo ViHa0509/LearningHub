@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.auth.current import CurrentUser
 from app.config import Settings
 from app.db import Note, User, get_session
-from app.extract import UndecodableError, decode_html, extract
+from app.extract import HTML_SUFFIXES, UndecodableError, decode_html, extract
 from app.learning.catalog import UserCatalog
 from app.lesson_pdf import PdfImportError, extract_pdf, pdf_note_html
 from app.roadmaps import RoadmapCatalog
@@ -27,7 +27,6 @@ from app.storage import FileStore, blob_key, release_blob, sha256_hex
 
 router = APIRouter(prefix="/api/notes", tags=["notes"])
 
-HTML_SUFFIXES = {".html", ".htm"}
 PDF_SUFFIX = ".pdf"
 # Opaque-origin sandbox: scripts run, but cannot reach the app's origin, cookies or storage.
 ORIGINAL_HEADERS = {

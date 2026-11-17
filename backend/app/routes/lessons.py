@@ -7,7 +7,9 @@ from sqlalchemy.orm import Session
 
 from app.auth.current import CurrentUser
 from app.db import Lesson, User, get_session
+from app.extract import HTML_SUFFIXES, UndecodableError, decode_html
 from app.learning.catalog import UserCatalog
+from app.lesson_html import extract_html
 from app.lesson_pdf import PdfImportError, extract_pdf
 from app.roadmaps import RoadmapCatalog
 from app.routes.guard import require_app_header
@@ -39,6 +41,39 @@ def extract_lesson_pdf(request: Request, file: Annotated[UploadFile, File()]) ->
     except PdfImportError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return ExtractedPdfOut(**extracted.__dict__)
+
+
+class ExtractedFileOut(BaseModel):
+    markdown: str
+    pages: int | None
+    truncated: bool
+    warning: str | None
+
+
+@router.post(
+    "/extract-file", response_model=ExtractedFileOut, dependencies=[Depends(require_app_header)]
+)
+def extract_lesson_file(request: Request, file: Annotated[UploadFile, File()]) -> ExtractedFileOut:
+    """Text of an HTML page or a PDF for the lesson editor; nothing is stored."""
+    limit: int = request.app.state.settings.max_upload_bytes
+    data = file.file.read(limit + 1)
+    if len(data) > limit:
+        raise HTTPException(
+            status_code=422, detail=f"the file is larger than {limit // (1024 * 1024)} MB"
+        )
+    if (file.filename or "").lower().endswith(tuple(HTML_SUFFIXES)):
+        try:
+            page = extract_html(decode_html(data))
+        except UndecodableError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return ExtractedFileOut(
+            markdown=page.markdown, pages=None, truncated=page.truncated, warning=page.warning
+        )
+    try:
+        extracted = extract_pdf(data)
+    except PdfImportError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return ExtractedFileOut(**extracted.__dict__)
 
 
 def require_node(catalog: RoadmapCatalog, domain_id: str, node_id: str) -> str:

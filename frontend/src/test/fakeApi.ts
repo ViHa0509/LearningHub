@@ -10,7 +10,7 @@ import type {
   Role,
   ChatReply,
   ChatRequest,
-  ExtractedPdf,
+  ExtractedFile,
   ImportOutcome,
   Lesson,
   NewsItem,
@@ -362,12 +362,13 @@ export interface FakeState {
   importRequests: string[][]
   lessons: Record<string, Lesson>
   /**
-   * Answers POST /api/lessons/extract-pdf for the uploaded file: the extracted text, or a status and
-   * detail for a refusal. Default: a file named *.pdf gives "Text of <name>", any other a 422.
+   * Answers POST /api/lessons/extract-file for the uploaded file: the extracted text, or a status and
+   * detail for a refusal. Default: a file named *.pdf gives "Text of <name>", *.html or *.htm gives
+   * Markdown for an HTML page (pages null), any other a 422.
    */
-  extractPdf: (
+  extractFile: (
     file: File,
-  ) => ExtractedPdf | { status: number; detail: string } | Promise<ExtractedPdf | { status: number; detail: string }>
+  ) => ExtractedFile | { status: number; detail: string } | Promise<ExtractedFile | { status: number; detail: string }>
   types: ProviderTypeInfo[]
   providers: ProviderOut[]
   /** Agent id -> assigned provider ids. */
@@ -607,10 +608,20 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
     importResults,
     importRequests: [],
     lessons: {},
-    extractPdf: (file) =>
-      file.name.toLowerCase().endsWith('.pdf')
+    extractFile: (file) => {
+      const name = file.name.toLowerCase()
+      if (name.endsWith('.html') || name.endsWith('.htm')) {
+        return {
+          markdown: '# Kafka\n\nA log of events.\n\n- topics\n- partitions\n\n| a | b |\n| --- | --- |\n| 1 | 2 |',
+          pages: null,
+          truncated: false,
+          warning: null,
+        }
+      }
+      return name.endsWith('.pdf')
         ? { markdown: `Text of ${file.name}`, pages: 1, truncated: false, warning: null }
-        : { status: 422, detail: 'the file is not a PDF' },
+        : { status: 422, detail: 'the file is not a PDF' }
+    },
     types: TYPES,
     providers: [],
     assignments: {},
@@ -1249,10 +1260,10 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
         }))
         return respond(customRoadmap(slug))
       }
-      if (url === '/api/lessons/extract-pdf' && method === 'POST') {
+      if (url === '/api/lessons/extract-file' && method === 'POST') {
         const file = init?.body instanceof FormData ? init.body.get('file') : null
         if (!(file instanceof File)) return respond({ detail: [{ msg: 'Field required' }] }, 422)
-        const answer = await state.extractPdf(file)
+        const answer = await state.extractFile(file)
         return 'status' in answer ? respond({ detail: answer.detail }, answer.status) : respond(answer)
       }
       const lesson = url.match(/^\/api\/lessons\/([^/]+)\/([^/]+)$/)

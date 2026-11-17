@@ -1,7 +1,7 @@
 /** Spec: lesson-pages, "Import a PDF into the lesson editor" and "Export a lesson as PDF". */
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ExtractedPdf } from '../api'
+import type { ExtractedFile } from '../api'
 import { installFakeApi, type FakeState } from '../test/fakeApi'
 import { renderApp } from '../test/render'
 
@@ -19,7 +19,7 @@ async function openDocker(state: FakeState) {
   const lesson = await openLesson('Docker')
   const loaded = state.lessons['devops/docker'] ? 'Edit lesson' : 'Write lesson'
   await within(lesson).findByRole('button', { name: loaded })
-  const upload = (file: File) => user.upload(within(lesson).getByLabelText('PDF file'), file)
+  const upload = (file: File) => user.upload(within(lesson).getByLabelText('PDF or HTML file'), file)
   return { user, lesson, upload }
 }
 
@@ -36,18 +36,18 @@ describe('lesson PDF import', () => {
     await upload(new File([new Uint8Array(4 * 1024 * 1024 + 1)], 'huge.pdf', { type: 'application/pdf' }))
 
     expect(await within(lesson).findByRole('alert')).toHaveTextContent('Could not import huge.pdf: larger than 4 MB')
-    expect(state.calls.some((c) => c.url === '/api/lessons/extract-pdf')).toBe(false)
+    expect(state.calls.some((c) => c.url === '/api/lessons/extract-file')).toBe(false)
   })
 
   it('opens the PDF text in the editor and saves it only on Save', async () => {
     const state = installFakeApi()
-    state.extractPdf = () => ({ markdown: 'Docker images\n\n- layers', pages: 1, truncated: false, warning: null })
+    state.extractFile = () => ({ markdown: 'Docker images\n\n- layers', pages: 1, truncated: false, warning: null })
     const { user, lesson, upload } = await openDocker(state)
 
     await upload(pdf('docker.pdf'))
     const editor = await within(lesson).findByRole('textbox', { name: 'Lesson text (Markdown)' })
     expect(editor).toHaveValue('Docker images\n\n- layers')
-    const call = state.calls.findIndex((c) => c.method === 'POST' && c.url === '/api/lessons/extract-pdf')
+    const call = state.calls.findIndex((c) => c.method === 'POST' && c.url === '/api/lessons/extract-file')
     expect(call).toBeGreaterThanOrEqual(0)
     expect(state.headers[call]['X-LearningHub']).toBe('1')
     expect(puts(state)).toHaveLength(0)
@@ -74,17 +74,17 @@ describe('lesson PDF import', () => {
 
   it('says it is reading the PDF and disables Import meanwhile', async () => {
     const state = installFakeApi()
-    let finish: (answer: ExtractedPdf) => void = () => {}
-    state.extractPdf = () => new Promise<ExtractedPdf>((resolve) => (finish = resolve))
+    let finish: (answer: ExtractedFile) => void = () => {}
+    state.extractFile = () => new Promise<ExtractedFile>((resolve) => (finish = resolve))
     const { lesson, upload } = await openDocker(state)
 
     await upload(pdf('docker.pdf'))
-    expect(await within(lesson).findByRole('status')).toHaveTextContent('Reading PDF…')
-    expect(within(lesson).getByRole('button', { name: 'Import PDF' })).toBeDisabled()
+    expect(await within(lesson).findByRole('status')).toHaveTextContent('Reading the file…')
+    expect(within(lesson).getByRole('button', { name: 'Import PDF or HTML' })).toBeDisabled()
 
     finish({ markdown: 'Read', pages: 1, truncated: false, warning: null })
     expect(await within(lesson).findByRole('textbox', { name: 'Lesson text (Markdown)' })).toHaveValue('Read')
-    expect(within(lesson).getByRole('button', { name: 'Import PDF' })).toBeEnabled()
+    expect(within(lesson).getByRole('button', { name: 'Import PDF or HTML' })).toBeEnabled()
     expect(within(lesson).queryByRole('status')).not.toBeInTheDocument()
   })
 
@@ -96,7 +96,7 @@ describe('lesson PDF import', () => {
 
     await upload(pdf('docker.pdf'))
     await waitFor(() => expect(confirm).toHaveBeenCalledWith('Replace the lesson text with the text of docker.pdf?'))
-    await waitFor(() => expect(within(lesson).getByRole('button', { name: 'Import PDF' })).toBeEnabled())
+    await waitFor(() => expect(within(lesson).getByRole('button', { name: 'Import PDF or HTML' })).toBeEnabled())
     expect(editorOf(lesson)).not.toBeInTheDocument()
     expect(within(lesson).getByTestId('lesson-body')).toHaveTextContent('My own notes')
     expect(puts(state)).toHaveLength(0)
@@ -112,7 +112,7 @@ describe('lesson PDF import', () => {
 
     await upload(pdf('docker.pdf'))
     await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1))
-    await waitFor(() => expect(within(lesson).getByRole('button', { name: 'Import PDF' })).toBeEnabled())
+    await waitFor(() => expect(within(lesson).getByRole('button', { name: 'Import PDF or HTML' })).toBeEnabled())
     expect(editor).toHaveValue('Draft in progress')
     expect(puts(state)).toHaveLength(0)
   })
@@ -145,7 +145,7 @@ describe('lesson PDF import', () => {
   it('refuses a file that is not a readable PDF with the reason and keeps the lesson', async () => {
     const state = installFakeApi()
     withLesson(state, 'My own notes')
-    state.extractPdf = () => ({ status: 422, detail: 'the PDF is password-protected' })
+    state.extractFile = () => ({ status: 422, detail: 'the PDF is password-protected' })
     const confirm = vi.spyOn(window, 'confirm')
     const { lesson, upload } = await openDocker(state)
 
@@ -163,7 +163,7 @@ describe('lesson PDF import', () => {
     const state = installFakeApi()
     const { lesson } = await openDocker(state)
     // The picker filters on PDFs, but a file can still be dropped or forced past it.
-    fireEvent.change(within(lesson).getByLabelText('PDF file'), {
+    fireEvent.change(within(lesson).getByLabelText('PDF or HTML file'), {
       target: { files: [new File(['hello'], 'notes.txt', { type: 'text/plain' })] },
     })
     expect(await within(lesson).findByRole('alert')).toHaveTextContent('Could not import notes.txt: the file is not a PDF')
@@ -172,7 +172,7 @@ describe('lesson PDF import', () => {
 
   it('says a scanned PDF has no text and does not open the editor', async () => {
     const state = installFakeApi()
-    state.extractPdf = () => ({
+    state.extractFile = () => ({
       markdown: '',
       pages: 3,
       truncated: false,
@@ -191,7 +191,7 @@ describe('lesson PDF import', () => {
 
   it('shows the warning of a cut text next to the editor', async () => {
     const state = installFakeApi()
-    state.extractPdf = () => ({
+    state.extractFile = () => ({
       markdown: 'Long text',
       pages: 200,
       truncated: true,

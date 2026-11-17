@@ -6,6 +6,8 @@ from pathlib import PurePath
 
 from bs4 import BeautifulSoup
 
+# A file with one of these suffixes is an HTML page.
+HTML_SUFFIXES = {".html", ".htm"}
 NON_TEXT_TAGS = ("script", "style", "noscript", "template", "svg")
 META_CHARSET = re.compile(rb"""<meta[^>]+charset\s*=\s*["']?\s*([A-Za-z0-9_\-:.]+)""", re.I)
 WHITESPACE = re.compile(r"\s+")

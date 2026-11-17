@@ -205,6 +205,56 @@ describe('side panels as drawers on a phone', () => {
     }
   })
 
+  it('Import from the drawer on a phone: the drawer closes and the import dialog shows', async () => {
+    setup()
+    setScreenClass('phone')
+    const { user } = await renderAppReady()
+    await user.click(await screen.findByRole('button', { name: 'Learned' }))
+    const drawer = screen.getByRole('dialog', { name: 'Learned' })
+    await user.click(await within(drawer).findByRole('button', { name: 'Import' }))
+
+    expect(dialog('Learned')).not.toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Import HTML or PDF files' })).toBeInTheDocument()
+  })
+
+  it('Import from an empty list on a phone: the drawer closes and the import dialog shows', async () => {
+    installFakeApi([])
+    setScreenClass('phone')
+    const { user } = await renderAppReady()
+    await user.click(await screen.findByRole('button', { name: 'Learned' }))
+    const drawer = screen.getByRole('dialog', { name: 'Learned' })
+    await user.click(await within(drawer).findByRole('button', { name: 'Import HTML or PDF files' }))
+
+    expect(dialog('Learned')).not.toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Import HTML or PDF files' })).toBeInTheDocument()
+  })
+
+  it('Cancel the import on a phone: the dialog is gone and the drawer stays closed', async () => {
+    setup()
+    setScreenClass('phone')
+    const { user } = await renderAppReady()
+    await user.click(await screen.findByRole('button', { name: 'Learned' }))
+    await user.click(await within(screen.getByRole('dialog', { name: 'Learned' })).findByRole('button', { name: 'Import' }))
+    const importDialog = screen.getByRole('dialog', { name: 'Import HTML or PDF files' })
+    await user.click(within(importDialog).getByRole('button', { name: 'Cancel' }))
+
+    expect(dialog('Import HTML or PDF files')).not.toBeInTheDocument()
+    expect(dialog('Learned')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Learned' })).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('Import on a desktop: the import dialog shows and the learned list stays open', async () => {
+    setup()
+    setScreenClass('desktop')
+    const { user } = await renderAppReady()
+    const list = await screen.findByRole('complementary', { name: 'Learned items' })
+    await user.click(await within(list).findByRole('button', { name: 'Import' }))
+
+    expect(screen.getByRole('dialog', { name: 'Import HTML or PDF files' })).toBeInTheDocument()
+    expect(screen.getByRole('complementary', { name: 'Learned items' })).toBeInTheDocument()
+    expect(listToggle('Collapse learned list')).toBeInTheDocument()
+  })
+
   it('tablet and desktop panels keep the aside role (no drawer)', async () => {
     setup()
     setScreenClass('tablet')

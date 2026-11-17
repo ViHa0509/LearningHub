@@ -322,6 +322,40 @@ test.describe('phone only', () => {
     await expect(page).toHaveURL(new RegExp(`#/note/${noteId}$`))
   })
 
+  test('Import from the drawer on a phone: Import closes the Learned drawer and shows the import dialog; Cancel leaves the drawer closed', async ({ page }) => {
+    await page.goto('/')
+    const opener = page.getByRole('button', { name: 'Learned', exact: true })
+    await opener.tap()
+    const drawer = page.getByRole('dialog', { name: 'Learned' })
+    await expect(drawer).toBeVisible()
+    await expect(drawer.getByRole('button', { name: noteTitle, exact: true })).toBeVisible({ timeout: 15_000 })
+    await drawer.getByRole('button', { name: 'Import', exact: true }).tap()
+    const importDialog = page.getByRole('dialog', { name: 'Import HTML or PDF files' })
+    await expect(importDialog).toBeVisible()
+    await expect(drawer).toBeHidden()
+    await expect(opener).toHaveAttribute('aria-expanded', 'false')
+    await shotBoth(page, 'phone-import-dialog')
+    await importDialog.getByRole('button', { name: 'Cancel' }).tap()
+    await expect(importDialog).toHaveCount(0)
+    await expect(page.getByRole('dialog', { name: 'Learned' })).toHaveCount(0)
+    await expect(opener).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  test('Import from an empty list on a phone: "Import HTML or PDF files" closes the drawer and shows the import dialog', async ({ page }) => {
+    // The suite's owner has notes, so the notes lists are answered empty for this page only.
+    await page.route(
+      (url) => url.pathname === '/api/notes',
+      (route) => route.fulfill({ json: [] }),
+    )
+    await page.goto('/')
+    await page.getByRole('button', { name: 'Learned', exact: true }).tap()
+    const drawer = page.getByRole('dialog', { name: 'Learned' })
+    await expect(drawer.getByRole('heading', { name: 'Nothing learned yet' })).toBeVisible({ timeout: 15_000 })
+    await drawer.getByRole('button', { name: 'Import HTML or PDF files' }).tap()
+    await expect(page.getByRole('dialog', { name: 'Import HTML or PDF files' })).toBeVisible()
+    await expect(drawer).toBeHidden()
+  })
+
   test('Side panels as drawers on a phone: only one drawer is open at a time (Learned, then Agent)', async ({ page }) => {
     await page.goto('/')
     await page.getByRole('button', { name: 'Learned', exact: true }).tap()

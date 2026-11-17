@@ -26,3 +26,12 @@ For every domain the user can see, the user SHALL be able to choose which of the
 - **GIVEN** a connected user who unticked `kh_search` for `backend`
 - **WHEN** the user chats from the lesson page of `backend/caching`
 - **THEN** the model is not offered `kh_search`
+
+#### Scenario: Claude Code provider
+- **GIVEN** `search_notes` is unticked for `backend` and the assistant runs on a Claude Code provider
+- **WHEN** the user chats from the Backend roadmap
+- **THEN** the MCP server started for that chat lists no `search_notes` tool
+
+#### Scenario: Unknown tool name
+- **WHEN** a client saves the tools of an area with a name that is not a tool
+- **THEN** the request is refused and nothing changes

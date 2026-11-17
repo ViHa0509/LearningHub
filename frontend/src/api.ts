@@ -92,12 +92,13 @@ export interface Lesson {
   updated_at: string | null
 }
 
-/** The text of a PDF for the lesson editor (POST /api/lessons/extract-pdf); nothing is stored. */
-export interface ExtractedPdf {
+/** The text of a PDF or HTML page for the lesson editor (POST /api/lessons/extract-file); nothing is stored. */
+export interface ExtractedFile {
   markdown: string
-  pages: number
+  /** The PDF's page count; null for an HTML page. */
+  pages: number | null
   truncated: boolean
-  /** Set when the PDF has no text layer or the text was cut at the limit. */
+  /** Set when the file has no text or the text was cut at the limit. */
   warning: string | null
 }
 
@@ -811,10 +812,10 @@ export const api = {
   lesson: (domain: string, node: string) => request<Lesson>(`/api/lessons/${domain}/${node}`),
   saveLesson: (domain: string, node: string, body: string, source: LessonSource = 'user') =>
     request<Lesson>(`/api/lessons/${domain}/${node}`, json('PUT', { body, source })),
-  extractPdf: (file: File) => {
+  extractLessonFile: (file: File) => {
     const form = new FormData()
     form.append('file', file)
-    return request<ExtractedPdf>('/api/lessons/extract-pdf', { method: 'POST', body: form })
+    return request<ExtractedFile>('/api/lessons/extract-file', { method: 'POST', body: form })
   },
   resources: (domain: string, node: string) => request<NodeResources>(`/api/resources/${domain}/${node}`),
   /** The domain's sync status; null when the domain has no resource mapping (404). */

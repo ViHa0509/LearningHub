@@ -67,7 +67,7 @@ function lessonSection(page: Page) {
 }
 
 async function importPdf(page: Page, name: string, buffer: Buffer, mimeType = 'application/pdf') {
-  await lessonSection(page).getByLabel('PDF file').setInputFiles({ name, mimeType, buffer })
+  await lessonSection(page).getByLabel('PDF or HTML file').setInputFiles({ name, mimeType, buffer })
 }
 
 const DOCKER_PDF = makePdf([['Docker images', 'are read-only templates.', '', `${BULLET} layers`, `${BULLET} tags`]])
@@ -86,15 +86,15 @@ test.describe('Import a PDF into the lesson editor', () => {
     const errors = watchErrors(page)
     await page.goto(`/#/lesson/${NODE}`)
     const lesson = lessonSection(page)
-    await expect(lesson.getByRole('button', { name: 'Import PDF' })).toBeEnabled()
+    await expect(lesson.getByRole('button', { name: 'Import PDF or HTML' })).toBeEnabled()
 
     // The extraction is held back a moment so the progress text can be seen.
-    await page.route('**/api/lessons/extract-pdf', async (route) => {
+    await page.route('**/api/lessons/extract-file', async (route) => {
       await new Promise((resolve) => setTimeout(resolve, 800))
       await route.continue()
     })
     await importPdf(page, 'docker.pdf', DOCKER_PDF)
-    await expect(lesson.getByRole('status')).toHaveText('Reading PDF…')
+    await expect(lesson.getByRole('status')).toHaveText('Reading the file…')
 
     const editor = lesson.getByRole('textbox', { name: 'Lesson text (Markdown)' })
     await expect(editor).toBeVisible()
@@ -144,7 +144,7 @@ test.describe('Import a PDF into the lesson editor', () => {
     await editor.fill('Edited but not saved.')
     page.once('dialog', (dialog) => void dialog.dismiss())
     await importPdf(page, 'docker.pdf', DOCKER_PDF)
-    await expect(lesson.getByRole('button', { name: 'Import PDF' })).toBeEnabled()
+    await expect(lesson.getByRole('button', { name: 'Import PDF or HTML' })).toBeEnabled()
     await expect(editor).toHaveValue('Edited but not saved.')
 
     page.once('dialog', (dialog) => void dialog.accept())
@@ -184,6 +184,10 @@ test.describe('Import a PDF into the lesson editor', () => {
       multipart: { file: { name: 'docker.pdf', mimeType: 'application/pdf', buffer: DOCKER_PDF } },
     })
     expect(bare.status()).toBe(403)
+    const bareFile = await request.post(`${API}/lessons/extract-file`, {
+      multipart: { file: { name: 'docker.pdf', mimeType: 'application/pdf', buffer: DOCKER_PDF } },
+    })
+    expect(bareFile.status()).toBe(403)
   })
 
   test('Scanned PDF: the app says there is no text to import', async ({ page, request }) => {

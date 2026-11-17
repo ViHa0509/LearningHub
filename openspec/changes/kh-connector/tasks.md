@@ -2,7 +2,7 @@
 
 Contract: `design.md`. Backend tasks 1.1 -> 1.2 -> 1.3 in order (never two backend pytest runs at once); frontend 2.1 can run beside 1.x against the fake API.
 
-Archive order: this change modifies the `agent-settings` spec, which reaches `openspec/specs/` only when `agent-settings-page` is archived. Archive `agent-settings-page` before this change.
+`agent-settings-page` was archived on 2026-11-17, so the `agent-settings` spec this change modifies is in `openspec/specs/`.
 
 ## 1. Backend
 

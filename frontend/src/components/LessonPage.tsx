@@ -169,9 +169,9 @@ function LessonContent({ domain, node, title, onDraft }: LessonContentProps) {
       return
     }
     try {
-      const extracted = await api.extractPdf(file)
+      const extracted = await api.extractLessonFile(file)
       if (!extracted.markdown.trim()) {
-        setPdfNote(extracted.warning ?? 'The PDF has no text to import.')
+        setPdfNote(extracted.warning ?? 'The file has no text to import.')
         return
       }
       // The editor's text if it is open, else the saved lesson: never replace text without asking.
@@ -238,8 +238,8 @@ function LessonContent({ domain, node, title, onDraft }: LessonContentProps) {
             <input
               ref={fileInput}
               type="file"
-              accept="application/pdf,.pdf"
-              aria-label="PDF file"
+              accept="application/pdf,.pdf,text/html,.html,.htm"
+              aria-label="PDF or HTML file"
               hidden
               onChange={(e) => {
                 const file = e.target.files?.[0]
@@ -249,7 +249,7 @@ function LessonContent({ domain, node, title, onDraft }: LessonContentProps) {
               }}
             />
             <button type="button" onClick={() => fileInput.current?.click()} disabled={reading || saving}>
-              <Icon name="import" /> Import PDF
+              <Icon name="import" /> Import PDF or HTML
             </button>
             <button type="button" onClick={exportPdf} disabled={!body || draft !== null} title={exportTitle}>
               <Icon name="print" /> Export PDF
@@ -260,7 +260,7 @@ function LessonContent({ domain, node, title, onDraft }: LessonContentProps) {
       {lesson.isError && <p className="error">Could not load the lesson.</p>}
       {(reading || pdfNote) && (
         <p className="muted pdf-note" role="status">
-          {reading ? 'Reading PDF…' : pdfNote}
+          {reading ? 'Reading the file…' : pdfNote}
         </p>
       )}
       {pdfError && (
