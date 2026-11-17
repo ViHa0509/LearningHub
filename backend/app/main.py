@@ -23,6 +23,7 @@ from app.auth.ratelimit import AuthLimiter
 from app.auth.sessions import require_session, utc_now
 from app.config import Settings, get_settings
 from app.db import make_engine, make_session_factory
+from app.kh.service import KhService
 from app.news.refresh import NewsJobs, default_fetcher
 from app.news.sources import load_sources
 from app.resources.mapping import load_mappings
@@ -39,6 +40,7 @@ from app.routes import (
     data_upload,
     domains,
     fields,
+    kh,
     lessons,
     news,
     notes,
@@ -157,6 +159,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.session_factory, app.state.box, lambda: app.state.clock()
     )
     app.state.mailer = mailer_from_settings(settings)
+    app.state.kh = KhService(
+        settings, app.state.box, app.state.session_factory, lambda: app.state.clock()
+    )
 
     @app.exception_handler(RequestValidationError)
     async def field_errors(request: Request, exc: RequestValidationError) -> Response:
@@ -200,6 +205,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         chat_sessions,
         ai_providers,
         agents,
+        kh,
         resources,
         news,
         settings_signin,

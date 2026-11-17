@@ -17,7 +17,7 @@ import uuid
 from collections.abc import Callable, Iterable
 from typing import IO, Any
 
-from app.agent.tools import ASSISTANT_SPECS, SPECS, AgentTools, ToolOutcome
+from app.agent.tools import ASSISTANT_SPECS, KH_TOOL, SPECS, AgentTools, ToolOutcome
 
 LOG = logging.getLogger("learninghub.mcp")
 
@@ -61,9 +61,16 @@ def tool_result(outcome: ToolOutcome) -> dict[str, Any]:
 class McpServer:
     """Answers one JSON-RPC message at a time; ``run_tool`` runs one agent tool."""
 
-    def __init__(self, run_tool: RunTool, allowed: set[str] | None = None) -> None:
+    def __init__(
+        self,
+        run_tool: RunTool,
+        allowed: set[str] | None = None,
+        kh_offered: Callable[[], bool] = lambda: False,
+    ) -> None:
         self._run_tool = run_tool
         self._allowed = allowed
+        # kh_search is listed only when the user is connected to Knowledge Hub.
+        self._kh_offered = kh_offered
 
     def handle(self, message: Any) -> dict[str, Any] | None:
         """The response to a message, or None for a notification."""
@@ -108,7 +115,8 @@ class McpServer:
             "tools": [
                 {"name": s.name, "description": s.description, "inputSchema": s.parameters}
                 for s in SPECS + ASSISTANT_SPECS
-                if self._allowed is None or s.name in self._allowed
+                if (self._allowed is None or s.name in self._allowed)
+                and (s.name != KH_TOOL or self._kh_offered())
             ]
         }
 
@@ -156,44 +164,70 @@ def allowed_tools() -> set[str] | None:
     return {name.strip() for name in raw.split(",") if name.strip()}
 
 
-def database_tools(allowed: set[str] | None = None) -> RunTool:
+class DatabaseTools:
     """Runs each tool in its own session, on the database and roadmaps of LH_* settings.
 
     The tools act for the user in ``LH_AGENT_USER_ID``; without a valid id of an existing user
     the server refuses to start (``SystemExit`` with a message on stderr, exit code 1).
+    ``kh_offered`` tells whether the user is connected to Knowledge Hub (and the connector is
+    set up), which decides whether ``kh_search`` exists.
     """
-    from app.config import Settings
-    from app.db import User, make_engine, make_session_factory
-    from app.learning.catalog import catalog_for
-    from app.main import build_store
-    from app.roadmaps import RoadmapCatalog
 
-    raw = os.environ.get(USER_VARIABLE, "").strip()
-    if not raw:
-        raise SystemExit(f"{USER_VARIABLE} is not set: the tool server needs the user it acts for")
-    try:
-        user_id = uuid.UUID(raw)
-    except ValueError:
-        raise SystemExit(f"{USER_VARIABLE} is not a valid user id") from None
-    settings = Settings()
-    builtin = RoadmapCatalog.load(settings.roadmaps_dir)
-    store = build_store(settings)
-    sessions = make_session_factory(make_engine(settings.database_url))
-    with sessions() as session:
-        if session.get(User, user_id) is None:
-            raise SystemExit(f"{USER_VARIABLE} does not name an existing user")
+    def __init__(self, allowed: set[str] | None = None) -> None:
+        from app.agent.secrets import SecretBox
+        from app.auth.sessions import utc_now
+        from app.config import Settings
+        from app.db import User, make_engine, make_session_factory
+        from app.kh.service import KhService
+        from app.main import build_store
+        from app.roadmaps import RoadmapCatalog
 
-    def run_tool(name: str, arguments: dict[str, Any]) -> ToolOutcome:
-        with sessions() as session:
-            user = session.get(User, user_id)
+        raw = os.environ.get(USER_VARIABLE, "").strip()
+        if not raw:
+            raise SystemExit(
+                f"{USER_VARIABLE} is not set: the tool server needs the user it acts for"
+            )
+        try:
+            self._user_id = uuid.UUID(raw)
+        except ValueError:
+            raise SystemExit(f"{USER_VARIABLE} is not a valid user id") from None
+        settings = Settings()
+        self._allowed = allowed
+        self._builtin = RoadmapCatalog.load(settings.roadmaps_dir)
+        self._store = build_store(settings)
+        self._sessions = make_session_factory(make_engine(settings.database_url))
+        self._kh = KhService(settings, SecretBox.from_settings(settings), self._sessions, utc_now)
+        with self._sessions() as session:
+            if session.get(User, self._user_id) is None:
+                raise SystemExit(f"{USER_VARIABLE} does not name an existing user")
+
+    def kh_offered(self) -> bool:
+        try:
+            return self._kh.search_for(self._user_id) is not None
+        except Exception:  # the database is down: no kh_search this time
+            return False
+
+    def __call__(self, name: str, arguments: dict[str, Any]) -> ToolOutcome:
+        from app.db import User
+        from app.learning.catalog import catalog_for
+
+        with self._sessions() as session:
+            user = session.get(User, self._user_id)
             if user is None:
                 raise LookupError("the user no longer exists")
-            catalog = catalog_for(session, user, builtin)
-            return AgentTools(session, catalog, user_id=user_id, store=store, allowed=allowed).run(
-                name, arguments
-            )
+            catalog = catalog_for(session, user, self._builtin)
+            return AgentTools(
+                session,
+                catalog,
+                user_id=self._user_id,
+                store=self._store,
+                allowed=self._allowed,
+                kh_search=self._kh.search_for(self._user_id),
+            ).run(name, arguments)
 
-    return run_tool
+
+def database_tools(allowed: set[str] | None = None) -> DatabaseTools:
+    return DatabaseTools(allowed)
 
 
 def main() -> None:
@@ -201,7 +235,8 @@ def main() -> None:
         os.environ.pop(name, None)
     logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
     allowed = allowed_tools()
-    serve(McpServer(database_tools(allowed), allowed), sys.stdin.buffer, sys.stdout.buffer)
+    tools = database_tools(allowed)
+    serve(McpServer(tools, allowed, tools.kh_offered), sys.stdin.buffer, sys.stdout.buffer)
 
 
 if __name__ == "__main__":

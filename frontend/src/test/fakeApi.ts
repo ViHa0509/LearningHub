@@ -1,5 +1,6 @@
 import { vi } from 'vitest'
 import type {
+  KhPending,
   Bank,
   BankRules,
   AgentStep,
@@ -418,6 +419,11 @@ export interface FakeState {
   newsLastRefreshAt: string | null
   /** What GET /api/news says about staleness; a finished refresh sets it to false. */
   newsStale: boolean
+  /**
+   * The Knowledge Hub connector (GET /api/kh and the connect, poll and disconnect routes).
+   * `outcome` is what the next poll answers while a sign-in is pending; set it to finish, refuse or expire it.
+   */
+  kh: FakeKh
   /** The refresh job (idle until one is started). */
   newsJob: NewsRefreshStatus
   /**
@@ -499,6 +505,25 @@ export interface FakeAuth {
   tokens: FakeAuthToken[]
   /** When set, every auth POST answers 429 with this detail. */
   limited: string | null
+}
+
+/** The state behind the fake /api/kh routes. */
+export interface FakeKh {
+  available: boolean
+  status: 'disconnected' | 'pending' | 'connected'
+  email: string | null
+  /** The KH account a finished sign-in links. */
+  accountEmail: string
+  pending: KhPending | null
+  /** What polls answer while pending. */
+  outcome: 'pending' | 'connected' | 'expired' | 'denied'
+  reason: string | null
+  /** The interval (seconds) the fake identity service asks for. */
+  interval: number
+  /** Number of POST /api/kh/connect/poll calls. */
+  polls: number
+  /** When set, POST /api/kh/connect answers this status with a detail. */
+  connectError: { status: number; detail: string } | null
 }
 
 /** The Owner a signed-in test starts with. */
@@ -643,6 +668,18 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
     newsSources: NEWS_SOURCES,
     newsLastRefreshAt: '2026-11-08T09:00:00Z',
     newsStale: false,
+    kh: {
+      available: true,
+      status: 'disconnected',
+      email: null,
+      accountEmail: 'ada@kh.example.test',
+      pending: null,
+      outcome: 'pending',
+      reason: null,
+      interval: 5,
+      polls: 0,
+      connectError: null,
+    },
     newsJob: { state: 'idle', started_at: null, finished_at: null, error: null, sources: [] },
     newsRefreshOutcome: { items: [] },
     newsRefreshPolls: 1,
@@ -1467,6 +1504,76 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
         return respond(withUse(target))
       }
       if (url === '/api/agents/tools') return respond(AGENT_TOOLS)
+      if (url === '/api/kh' || url.startsWith('/api/kh/')) {
+        const kh = state.kh
+        if (url === '/api/kh' && method === 'GET') {
+          return respond({
+            available: kh.available,
+            status: kh.available ? kh.status : 'disconnected',
+            email: kh.status === 'connected' && kh.available ? kh.email : null,
+            pending: kh.status === 'pending' && kh.available ? kh.pending : null,
+          })
+        }
+        if (!kh.available) return respond({ detail: 'Not found' }, 404)
+        if (url === '/api/kh' && method === 'DELETE') {
+          kh.status = 'disconnected'
+          kh.email = null
+          kh.pending = null
+          return respond(null, 204)
+        }
+        if (url === '/api/kh/connect' && method === 'POST') {
+          if (kh.connectError) return respond({ detail: kh.connectError.detail }, kh.connectError.status)
+          if (kh.status === 'connected') return respond({ detail: 'Already connected: disconnect first.' }, 409)
+          kh.status = 'pending'
+          kh.pending = {
+            verification_uri: 'https://idp.example.test/device',
+            verification_uri_complete: 'https://idp.example.test/device?user_code=ABCD-EFGH',
+            user_code: 'ABCD-EFGH',
+            interval: kh.interval,
+            expires_at: '2030-01-01T00:10:00Z',
+          }
+          return respond(kh.pending)
+        }
+        if (url === '/api/kh/connect/poll' && method === 'POST') {
+          kh.polls += 1
+          if (kh.status === 'disconnected') return respond({ detail: 'No sign-in in progress' }, 404)
+          if (kh.status === 'connected') {
+            return respond({
+              status: 'connected',
+              interval: null,
+              email: kh.email,
+              reason: null,
+            })
+          }
+          if (kh.outcome === 'connected') {
+            kh.status = 'connected'
+            kh.email = kh.accountEmail
+            kh.pending = null
+            return respond({
+              status: 'connected',
+              interval: null,
+              email: kh.email,
+              reason: null,
+            })
+          }
+          if (kh.outcome === 'pending') {
+            return respond({
+              status: 'pending',
+              interval: kh.interval,
+              email: null,
+              reason: null,
+            })
+          }
+          kh.status = 'disconnected'
+          kh.pending = null
+          return respond({
+            status: kh.outcome,
+            interval: null,
+            email: null,
+            reason: kh.reason,
+          })
+        }
+      }
       if (url === '/api/agents/areas' && method === 'GET') {
         return respond(
           [...builtinSummaries(), ...visibleFields().flatMap(areaSummaries)].map((d) => areaAgentOut(d.id)),

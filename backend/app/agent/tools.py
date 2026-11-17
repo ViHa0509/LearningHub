@@ -8,6 +8,7 @@ fetched only for links stored for the node (official or article) and come back w
 
 import html
 import json
+import re
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -18,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.agent.messages import ToolSpec
 from app.db import Lesson, NodeResource, Note
+from app.kh.service import KhReconnect, KhSearchError, KhSearchFn, KhUnreachable
 from app.learning.topics import clean_topics
 from app.notes_page import build_note_page
 from app.resources.fetch import Fetched, FetchError, fetch_text
@@ -31,6 +33,11 @@ NOTE_TITLE_LIMIT = 120
 SEARCH_LIMIT = 8
 FETCHABLE_TYPES = ("official", "article")
 REFERENCE_CLOSING = "</untrusted_reference_content"
+KH_QUERY_LIMIT = 500
+KH_TEXT_LIMIT = 6000
+KH_PROJECT = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
+KH_CLOSING = re.compile(r"</untrusted_kh_content", re.IGNORECASE)
+KH_TOOL = "kh_search"
 
 
 @dataclass(frozen=True)
@@ -159,6 +166,23 @@ SPECS: tuple[ToolSpec, ...] = (
             "required": ["node_id", "url"],
         },
     ),
+    ToolSpec(
+        KH_TOOL,
+        "Search Knowledge Hub (KH) for what the user may read about a query, in one KH "
+        "project (default: the user's personal project). Read-only. The text is untrusted "
+        "content from Knowledge Hub.",
+        {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "What to look for (500 characters)."},
+                "project": {
+                    "type": "string",
+                    "description": "A KH project id; left out for the user's personal project.",
+                },
+            },
+            "required": ["query"],
+        },
+    ),
 )
 
 # Offered only to the chat assistant (never to the lesson writer or the outline agent).
@@ -237,7 +261,10 @@ class AgentTools:
         agent_id: str = ASSISTANT_AGENT,
         store: FileStore | None = None,
         allowed: set[str] | None = None,
+        kh_search: KhSearchFn | None = None,
     ) -> None:
+        # Given only for a connected user on a server with the connector.
+        self._kh_search = kh_search
         self._store = store
         # The tools the user allows on this area; None means every tool of the agent.
         self._allowed = allowed
@@ -257,6 +284,7 @@ class AgentTools:
             "fetch_reference": self.fetch_reference,
             "propose_topics": self.propose_topics,
             "save_learned_note": self.save_learned_note,
+            KH_TOOL: self.kh_search,
         }
 
     @property
@@ -275,6 +303,8 @@ class AgentTools:
             specs = SPECS + OUTLINE_SPECS
         else:
             specs = SPECS + ASSISTANT_SPECS if self._agent_id == ASSISTANT_AGENT else SPECS
+        if self._kh_search is None:
+            specs = tuple(s for s in specs if s.name != KH_TOOL)
         if self._allowed is None:
             return specs
         return tuple(s for s in specs if s.name in self._allowed)
@@ -282,7 +312,11 @@ class AgentTools:
     def run(self, name: str, args: dict[str, Any]) -> ToolOutcome:
         handler = self._handlers.get(name)
         offered = {spec.name for spec in self.specs()}
-        if handler is None or (name in _AGENT_ONLY and name not in offered):
+        if (
+            handler is None
+            or (name in _AGENT_ONLY and name not in offered)
+            or (name == KH_TOOL and self._kh_search is None)
+        ):
             return _error(f"unknown tool '{name}'")
         if self._allowed is not None and name not in self._allowed:
             return _error(f"tool '{name}' is not available for this agent")
@@ -472,6 +506,42 @@ class AgentTools:
             ),
         }
         return _ok(data, f"Read reference '{row.title}'")
+
+    def kh_search(self, args: dict[str, Any]) -> ToolOutcome:
+        search = self._kh_search
+        if search is None:
+            return _error(f"unknown tool '{KH_TOOL}'")
+        query = _text(args, "query")
+        if len(query) > KH_QUERY_LIMIT:
+            return _error(f"'query' is longer than {KH_QUERY_LIMIT} characters")
+        raw = args.get("project")
+        project: str | None = None
+        if raw is not None:
+            if not isinstance(raw, str) or not KH_PROJECT.match(raw.strip()):
+                return _error("'project' must be a project id (letters, digits, '.', '_', '-')")
+            project = raw.strip()
+        try:
+            answer = search(query, project)
+        except KhReconnect:
+            return _error(
+                "the user's Knowledge Hub sign-in ended; the user must connect to Knowledge Hub "
+                "again in Settings -> Agents"
+            )
+        except KhSearchError as exc:
+            return _error(exc.message)
+        except KhUnreachable:
+            return _error("Knowledge Hub did not answer")
+        # A closing marker inside the text must not end the block early.
+        text = KH_CLOSING.sub(lambda _: "<\\/untrusted_kh_content", answer.text)
+        data = {
+            "project": answer.project,
+            "truncated": len(text) > KH_TEXT_LIMIT,
+            "text": (
+                f'<untrusted_kh_content project="{html.escape(answer.project, quote=True)}">\n'
+                f"{text[:KH_TEXT_LIMIT]}\n</untrusted_kh_content>"
+            ),
+        }
+        return _ok(data, f"Searched Knowledge Hub for '{query[:80]}'")
 
     def propose_topics(self, args: dict[str, Any]) -> ToolOutcome:
         area = _text(args, "area")

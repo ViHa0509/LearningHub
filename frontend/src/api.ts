@@ -209,6 +209,32 @@ export interface AgentOut {
   web_search: boolean
 }
 
+/** A device sign-in in progress at the identity service (GET /api/kh, POST /api/kh/connect). */
+export interface KhPending {
+  verification_uri: string
+  verification_uri_complete: string | null
+  user_code: string
+  /** Seconds between checks. */
+  interval: number
+  expires_at: string
+}
+
+/** GET /api/kh: whether the connector is set up, and this user's connection. Never holds a token. */
+export interface KhStatus {
+  available: boolean
+  status: 'disconnected' | 'pending' | 'connected'
+  email: string | null
+  pending: KhPending | null
+}
+
+/** POST /api/kh/connect/poll. `interval` is the new interval while pending; `reason` explains expired or denied. */
+export interface KhPoll {
+  status: 'pending' | 'connected' | 'expired' | 'denied'
+  interval: number | null
+  email: string | null
+  reason: string | null
+}
+
 /** One app tool an agent may use; `agents` lists the agent ids that have it. */
 export interface AgentTool {
   name: string
@@ -799,6 +825,10 @@ export const api = {
     request<AgentOut>(`/api/agents/${id}/provider`, json('PUT', body)),
   saveAgentSettings: (id: string, body: { web_search: boolean }) =>
     request<AgentOut>(`/api/agents/${id}/settings`, json('PUT', body)),
+  kh: () => request<KhStatus>('/api/kh'),
+  khConnect: () => request<KhPending>('/api/kh/connect', { method: 'POST' }),
+  khPoll: () => request<KhPoll>('/api/kh/connect/poll', { method: 'POST' }),
+  khDisconnect: () => request<void>('/api/kh', { method: 'DELETE' }),
   agentTools: () => request<AgentTool[]>('/api/agents/tools'),
   areaAgents: () => request<AreaAgentSettings[]>('/api/agents/areas'),
   saveAreaAgents: (domain: string, body: { instructions: string; tools: string[] | null }) =>
@@ -943,6 +973,7 @@ export const queryKeys = {
   provider: (id: string) => ['ai-providers', id] as const,
   providerTypes: ['ai-provider-types'] as const,
   agents: ['agents'] as const,
+  kh: ['kh'] as const,
   agentTools: ['agent-tools'] as const,
   areaAgents: ['area-agents'] as const,
   /** The list of stored chats (prefix of `chatSession`). */

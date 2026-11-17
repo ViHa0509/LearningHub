@@ -72,6 +72,11 @@ class Settings(BaseSettings):
     smtp_user: str | None = None
     smtp_password: SecretStr | None = None
     smtp_from: str | None = None
+    # Knowledge Hub connector: on only when all three are set (the KH API address, the
+    # identity service's realm address and the client id registered for this app).
+    kh_url: str | None = None
+    kh_issuer: str | None = None
+    kh_client_id: str | None = None
 
 
 @lru_cache

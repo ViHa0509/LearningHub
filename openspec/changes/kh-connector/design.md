@@ -49,6 +49,36 @@ Not known yet (owner asks the KH admin): the client id, and whether KH's API acc
     - failure: the reason in the card, and Connect again.
     These are actions, not field edits, so the Save rule does not apply; nothing happens without a click.
 
+## API contract (added 2026-11-17; binding for backend, frontend and e2e)
+
+All four routes need a session; the three mutating ones need `X-LearningHub: 1`. Errors are `{"detail": "<text>"}`. No answer ever holds a token, the device code or the PKCE verifier. Times are ISO-8601 UTC strings.
+
+`Pending` object: `{"verification_uri": str, "verification_uri_complete": str | null, "user_code": str, "interval": int (seconds), "expires_at": str}`.
+
+- `GET /api/kh` -> 200 `{"available": bool, "status": "disconnected" | "pending" | "connected", "email": str | null, "pending": Pending | null}`.
+  - Not available: `{"available": false, "status": "disconnected", "email": null, "pending": null}`.
+  - `pending` is set only with status `pending` (so a reloaded page shows "Waiting" again); `email` only with `connected`.
+  - A pending row past `expires_at` is reported as `disconnected` (the row is removed by the next `connect` or `poll`; `GET` changes nothing).
+- `POST /api/kh/connect` (no body) -> 200 `Pending`. 409 when the user is connected ("disconnect first"). 502 when the identity service does not answer or refuses ("Knowledge Hub sign-in did not answer"); no row is left. 404 when not available.
+- `POST /api/kh/connect/poll` (no body) -> 200 `{"status": "pending" | "connected" | "expired" | "denied", "interval": int | null, "email": str | null, "reason": str | null}`.
+  - `pending`: `interval` is the interval to use from now on (raised by `slow_down`). Also the answer when the poll came too early, and when the identity service did not answer this time (the page tries again).
+  - `connected`: `email` set. Also the answer when the row is already connected.
+  - `expired`, `denied`: the row is gone; `reason` is a sentence for the card (for `denied` after `/auth/me` was refused: KH's reason).
+  - 404 when the user has no row ("no sign-in in progress") and when not available.
+- `DELETE /api/kh` -> 204, no body: disconnects a connected row, cancels a pending one, and is also 204 when there is no row. 404 when not available.
+
+Decided while building (2026-11-17):
+
+- The table also has `verification_uri_complete` (nullable), so `GET /api/kh` returns the full link for a pending sign-in after a reload. `connect` refuses (502) a device answer whose `verification_uri` or `verification_uri_complete` is not an `http://` or `https://` address.
+- After a successful device sign-in, anything that stops the link from being kept (`/auth/me` unreachable or refused, no refresh token issued, the row cancelled meanwhile) deletes the row, revokes the new refresh token (best effort) and answers `denied` with a short reason. Any other identity error answers `denied` with its description (at most 200 characters); a 5xx from the token endpoint counts as `pending`.
+- Refresh with rotation is safe against two calls at once: the new refresh token is saved only if the stored one is still the one that was sent; on `invalid_grant` the row is read again, and if its token changed meanwhile the refresh is tried once more with the new one; the row is deleted only if the refused token is still the stored one.
+
+- `kh_search`: a `query` longer than 500 characters is refused as a tool error (not cut); a `project` from the model must match `[A-Za-z0-9._-]{1,100}`. The result also says `truncated` when the text was cut at 6,000 characters.
+- A refresh token that cannot be decrypted makes the tool say "connect again" but does not delete the row (a process with another key must not wipe a valid sign-in); Disconnect clears it.
+- Known limit: the Claude Code MCP server is not given `LH_SECRET_KEY`. On a server that keeps the key in `LH_SECRET_KEY` (not the key file in storage) and uses the Claude Code provider, `kh_search` is offered but answers "connect again". The hosted app does not use the Claude Code provider.
+
+The page stops polling on `connected`, `expired`, `denied`, a 404, Cancel and on leaving the page; it does not judge `expires_at` itself.
+
 ## Not in this change
 
 - Writing to KH, choosing default projects per area, showing KH rows in the app.

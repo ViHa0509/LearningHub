@@ -3,14 +3,14 @@
 import uuid
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.agent.agents import AGENTS, AgentDef
 from app.agent.resolve import assignments, effective, web_search_enabled
-from app.agent.tools import ASSISTANT_SPECS, OUTLINE_SPECS, SPECS
+from app.agent.tools import ASSISTANT_SPECS, KH_TOOL, OUTLINE_SPECS, SPECS
 from app.auth.current import CurrentUser
 from app.db import AgentProvider, AgentSetting, AIProvider, AreaAgentSetting, get_session
 from app.learning.catalog import UserCatalog
@@ -103,8 +103,9 @@ def list_agents(
     return [agent_out(session, user.id, agent) for agent in AGENTS.values()]
 
 
-def tool_catalog() -> list[AgentToolOut]:
-    """Every app tool with the agents that get it (order as in the specs)."""
+def tool_catalog(kh_available: bool = False) -> list[AgentToolOut]:
+    """Every app tool with the agents that get it (order as in the specs); ``kh_search`` only
+    on a server where the Knowledge Hub connector is available."""
     groups = (
         (SPECS, ["assistant", "lesson-writer", "outline"]),
         (ASSISTANT_SPECS, ["assistant"]),
@@ -118,12 +119,13 @@ def tool_catalog() -> list[AgentToolOut]:
         )
         for specs, agents in groups
         for spec in specs
+        if kh_available or spec.name != KH_TOOL
     ]
 
 
 @router.get("/tools", response_model=list[AgentToolOut])
-def list_tools(user: CurrentUser) -> list[AgentToolOut]:
-    return tool_catalog()
+def list_tools(request: Request, user: CurrentUser) -> list[AgentToolOut]:
+    return tool_catalog(request.app.state.kh.available)
 
 
 @router.get("/areas", response_model=list[AreaAgentOut])
@@ -147,6 +149,7 @@ def list_areas(
 def save_area(
     domain_id: str,
     payload: AreaAgentIn,
+    request: Request,
     catalog: UserCatalog,
     session: Annotated[Session, Depends(get_session)],
     user: CurrentUser,
@@ -157,7 +160,7 @@ def save_area(
         raise HTTPException(status_code=404, detail=f"unknown domain '{domain_id}'")
     tools: list[str] | None = None
     if payload.tools is not None:
-        known = {tool.name for tool in tool_catalog()}
+        known = {tool.name for tool in tool_catalog(request.app.state.kh.available)}
         for name in payload.tools:
             if name not in known:
                 raise HTTPException(status_code=422, detail=f"unknown tool: {name}")

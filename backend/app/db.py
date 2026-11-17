@@ -143,6 +143,31 @@ class AreaAgentSetting(Base):
     )
 
 
+class KhConnection(Base):
+    """A user's Knowledge Hub sign-in: a pending device sign-in or a connected account.
+
+    The device code, PKCE verifier and refresh token are SecretBox-encrypted; no access token
+    is stored. The device fields are cleared once the sign-in succeeded.
+    """
+
+    __tablename__ = "kh_connections"
+
+    user_id: Mapped[uuid.UUID] = user_fk(primary_key=True)
+    status: Mapped[str] = mapped_column(Text)  # pending | connected
+    device_code_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    verifier_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    user_code: Mapped[str | None] = mapped_column(Text, nullable=True)
+    verification_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
+    verification_uri_complete: Mapped[str | None] = mapped_column(Text, nullable=True)
+    interval: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_poll_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    refresh_token_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    kh_email: Mapped[str | None] = mapped_column(Text, nullable=True)
+    personal_project: Mapped[str | None] = mapped_column(Text, nullable=True)
+    connected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class AppSetting(Base):
     """A setting saved in the app; ``secret_enc`` holds a SecretBox-encrypted secret."""
 

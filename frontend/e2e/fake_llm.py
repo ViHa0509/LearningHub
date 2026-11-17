@@ -11,6 +11,13 @@ with the number of user messages received and the first one; [[learn:<title>]] m
 with the tool names offered to the model; [[echo]] answers
 with one line per fact about what the model received (system prompt and last user message),
 so the UI tests can observe effort lines and attachment wrapping without a real provider.
+[[kh:<query>]] or [[kh:<query>|<project>]] makes the assistant call kh_search (when it is offered) and
+then answer "KH ok project=<id> truncated=<bool> <text>" or "KH error <message>" from the tool result,
+with "<" and ">" shown as "[" and "]" and line breaks as " / ".
+
+It also fakes the Knowledge Hub (design 9 of kh-connector): an identity service under /kh-idp
+(device grant, token, revoke) and the KH API under /kh-api (auth/me, the search flow), driven by
+POST /kh-control (see KH_DEFAULTS); GET /kh-control shows what the fake saw. Tokens are made-up strings.
 
 When the request offers the tool propose_topics (only the outline agent gets it) and the
 conversation has no tool result yet, the model answers with one propose_topics tool call for the
@@ -136,6 +143,166 @@ def roadmap_raw(commit: str, path: str) -> PlainTextResponse:
         return PlainTextResponse("404: Not Found", status_code=404)
     return PlainTextResponse(text)
 
+# --- fake Knowledge Hub: identity service (/kh-idp) and API (/kh-api) -----------------------------
+KH_DEFAULTS: dict = {
+    "decision": "pending",  # pending | approved | denied | expired: what the device code is
+    "device_code": None,  # the code handed out by the last device request
+    "answer": "Redis evicts keys by the policy in maxmemory-policy.",  # text of the search answer
+    "search_status": 200,  # HTTP status of the search; 403/404 to simulate a refusal
+    "search_message": "You may not read this project.",
+    "email": "kh-user@example.test",
+    "personal_project": "personal-e2e",
+    "me_refuse": False,  # /auth/me answers 403: KH does not know the account
+    "refresh_valid": [],  # refresh tokens the identity service accepts
+    "access_valid": [],
+    "revoked": [],  # refresh tokens that were revoked
+    "device_requests": 0,
+    "token_requests": 0,  # device-grant token requests (the polls that reached the service)
+    "searches": [],  # {"project", "text", "bearer_ok"} of every search that arrived
+    "counter": 0,
+}
+kh_state: dict = json.loads(json.dumps(KH_DEFAULTS))
+KH_PUBLIC = "http://127.0.0.1:8002"
+
+
+async def _form(request: Request) -> dict[str, str]:
+    return {k: v[0] for k, v in parse_qs((await request.body()).decode("utf-8")).items()}
+
+
+def _kh_tokens() -> dict:
+    kh_state["counter"] += 1
+    n = kh_state["counter"]
+    access, refresh = f"fake-kh-access-{n}", f"fake-kh-refresh-{n}"
+    kh_state["access_valid"].append(access)
+    kh_state["refresh_valid"].append(refresh)
+    return {"access_token": access, "refresh_token": refresh, "token_type": "Bearer", "expires_in": 300}
+
+
+@app.post("/kh-control")
+def kh_control(payload: dict) -> dict:
+    """{"action": "approve" | "deny" | "expire" | "reset" | "end-signin"} plus optional settings:
+    answer, search_status, search_message, email, personal_project, me_refuse."""
+    action = payload.get("action")
+    if action == "reset":
+        kh_state.clear()
+        kh_state.update(json.loads(json.dumps(KH_DEFAULTS)))
+    elif action == "approve":
+        kh_state["decision"] = "approved"
+    elif action == "deny":
+        kh_state["decision"] = "denied"
+    elif action == "expire":
+        kh_state["decision"] = "expired"
+    elif action == "end-signin":  # the identity service no longer accepts the refresh tokens
+        kh_state["refresh_valid"] = []
+    for key in ("answer", "search_status", "search_message", "email", "personal_project", "me_refuse"):
+        if key in payload:
+            kh_state[key] = payload[key]
+    return kh_state
+
+
+@app.get("/kh-control")
+def kh_control_state() -> dict:
+    return kh_state
+
+
+@app.post("/kh-idp/protocol/openid-connect/auth/device")
+async def kh_device(request: Request) -> JSONResponse:
+    form = await _form(request)
+    if not form.get("client_id") or not form.get("code_challenge"):
+        return JSONResponse({"error": "invalid_request"}, status_code=400)
+    kh_state["counter"] += 1
+    kh_state["device_requests"] += 1
+    kh_state["decision"] = "pending"
+    code = f"fake-kh-device-{kh_state['counter']}"
+    kh_state["device_code"] = code
+    user_code = f"KHE2E-{kh_state['counter']:04d}"
+    page = f"{KH_PUBLIC}/kh-idp/device"
+    return JSONResponse(
+        {
+            "device_code": code,
+            "user_code": user_code,
+            "verification_uri": page,
+            "verification_uri_complete": f"{page}?user_code={user_code}",
+            "expires_in": 600,
+            "interval": 1,
+        }
+    )
+
+
+@app.get("/kh-idp/device")
+def kh_device_page(user_code: str = "") -> PlainTextResponse:
+    return PlainTextResponse(f"Fake Knowledge Hub sign-in page. Code: {user_code}")
+
+
+@app.post("/kh-idp/protocol/openid-connect/token")
+async def kh_token(request: Request) -> JSONResponse:
+    form = await _form(request)
+    grant = form.get("grant_type", "")
+    if grant.endswith("device_code"):
+        kh_state["token_requests"] += 1
+        if form.get("device_code") != kh_state["device_code"] or not form.get("code_verifier"):
+            return JSONResponse({"error": "invalid_grant", "error_description": "Bad device code"}, status_code=400)
+        decision = kh_state["decision"]
+        if decision == "pending":
+            return JSONResponse({"error": "authorization_pending"}, status_code=400)
+        if decision == "denied":
+            return JSONResponse({"error": "access_denied", "error_description": "The user refused."}, status_code=400)
+        if decision == "expired":
+            return JSONResponse({"error": "expired_token", "error_description": "Code expired."}, status_code=400)
+        kh_state["device_code"] = None
+        return JSONResponse(_kh_tokens())
+    if grant == "refresh_token":
+        token = form.get("refresh_token", "")
+        if token not in kh_state["refresh_valid"]:
+            return JSONResponse({"error": "invalid_grant", "error_description": "Token is not active"}, status_code=400)
+        kh_state["refresh_valid"].remove(token)  # rotated: the old one is used up
+        return JSONResponse(_kh_tokens())
+    return JSONResponse({"error": "unsupported_grant_type"}, status_code=400)
+
+
+@app.post("/kh-idp/protocol/openid-connect/revoke")
+async def kh_revoke(request: Request) -> PlainTextResponse:
+    form = await _form(request)
+    token = form.get("token", "")
+    kh_state["revoked"].append(token)
+    if token in kh_state["refresh_valid"]:
+        kh_state["refresh_valid"].remove(token)
+    return PlainTextResponse("")
+
+
+def _kh_bearer_ok(request: Request) -> bool:
+    return request.headers.get("authorization", "").removeprefix("Bearer ") in kh_state["access_valid"]
+
+
+@app.get("/kh-api/auth/me")
+def kh_me(request: Request) -> JSONResponse:
+    if not _kh_bearer_ok(request):
+        return JSONResponse({"detail": "Not signed in"}, status_code=401)
+    if kh_state["me_refuse"]:
+        return JSONResponse({"detail": "No Knowledge Hub account for this person."}, status_code=403)
+    return JSONResponse(
+        {
+            "email": kh_state["email"],
+            "personal_project": kh_state["personal_project"],
+            "role": "member",
+            "projects": {kh_state["personal_project"]: ["read"]},
+        }
+    )
+
+
+@app.post("/kh-api/flows/task.full-retrieve/run")
+def kh_search(request: Request, payload: dict) -> JSONResponse:
+    given = payload.get("input") or {}
+    kh_state["searches"].append(
+        {"project": given.get("space"), "text": given.get("text"), "bearer_ok": _kh_bearer_ok(request)}
+    )
+    if not _kh_bearer_ok(request):
+        return JSONResponse({"detail": "Not signed in"}, status_code=401)
+    if kh_state["search_status"] != 200:
+        return JSONResponse({"detail": kh_state["search_message"]}, status_code=int(kh_state["search_status"]))
+    return JSONResponse({"status": "done", "text": kh_state["answer"]})
+
+
 MODELS = ["fake-ok", "fake-401", "fake-404", "fake-429", "fake-500", "fake-slow"]
 
 ERRORS = {
@@ -257,6 +424,35 @@ def _learn(payload: dict) -> tuple[dict | None, str | None]:
     return call, None
 
 
+KH_RE = re.compile(r"\[\[kh:([^\]|]+)(?:\|([^\]]+))?\]\]")
+
+
+def _kh(payload: dict) -> tuple[dict | None, str | None]:
+    """[[kh:<query>]] / [[kh:<query>|<project>]] in the last user message: one kh_search call (only
+    when the tool is offered), then a text answer built from the tool result."""
+    names = {(t.get("function") or {}).get("name") for t in payload.get("tools") or []}
+    messages = payload.get("messages") or []
+    last_user = max((i for i, m in enumerate(messages) if m.get("role") == "user"), default=-1)
+    found = KH_RE.search(_text(messages[last_user].get("content"))) if last_user >= 0 else None
+    if not found or "kh_search" not in names:
+        return None, None
+    results = [_text(m.get("content")) for m in messages[last_user + 1 :] if m.get("role") == "tool"]
+    if results:
+        try:
+            data = json.loads(results[-1])
+        except ValueError:
+            return None, "KH error unreadable result"
+        if "error" in data:
+            return None, f"KH error {data['error']}"
+        shown = str(data.get("text", "")).replace("<", "[").replace(">", "]").replace("\n", " / ")
+        return None, f"KH ok project={data.get('project')} truncated={str(data.get('truncated')).lower()} {shown}"
+    args: dict = {"query": found.group(1).strip()}
+    if found.group(2):
+        args["project"] = found.group(2).strip()
+    call = {"id": "call_kh", "type": "function", "function": {"name": "kh_search", "arguments": json.dumps(args)}}
+    return call, None
+
+
 def _cut(payload: dict) -> tuple[dict | None, str | None, bool]:
     """[[cut]] / [[cut-text]] in the last user message: answers cut by the output limit.
 
@@ -304,7 +500,14 @@ async def chat_completions(payload: dict) -> JSONResponse:
     call = _outline_call(payload)
     learn_call, learn_text = _learn(payload)
     cut_call, cut_text, cut = _cut(payload)
-    if cut_call is not None:
+    kh_call, kh_text = _kh(payload)
+    if kh_call is not None:
+        message = {"role": "assistant", "content": None, "tool_calls": [kh_call]}
+        finish = "tool_calls"
+    elif kh_text is not None:
+        message = {"role": "assistant", "content": kh_text}
+        finish = "stop"
+    elif cut_call is not None:
         message = {"role": "assistant", "content": None, "tool_calls": [cut_call]}
         finish = "length"
     elif cut_text is not None:

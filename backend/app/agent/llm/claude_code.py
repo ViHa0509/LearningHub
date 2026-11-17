@@ -252,6 +252,10 @@ class ClaudeCodeSetup:
     storage_dir: Path
     claude_bin: str | None = None
     python: str = sys.executable
+    # The Knowledge Hub connector's settings, passed on so the tool server can offer kh_search.
+    kh_url: str | None = None
+    kh_issuer: str | None = None
+    kh_client_id: str | None = None
 
     @classmethod
     def from_settings(cls, settings: "Settings") -> "ClaudeCodeSetup":
@@ -260,6 +264,9 @@ class ClaudeCodeSetup:
             roadmaps_dir=Path(settings.roadmaps_dir).resolve(),
             storage_dir=Path(settings.storage_dir).resolve(),
             claude_bin=settings.claude_bin or None,
+            kh_url=settings.kh_url,
+            kh_issuer=settings.kh_issuer,
+            kh_client_id=settings.kh_client_id,
         )
 
 
@@ -298,6 +305,13 @@ def mcp_config(
         "LH_STORAGE_DIR": str(setup.storage_dir),
         "PYTHONPATH": str(BACKEND_DIR),
     }
+    for variable, value in (
+        ("LH_KH_URL", setup.kh_url),
+        ("LH_KH_ISSUER", setup.kh_issuer),
+        ("LH_KH_CLIENT_ID", setup.kh_client_id),
+    ):
+        if value:
+            env[variable] = value
     if user_id is not None:
         env["LH_AGENT_USER_ID"] = str(user_id)
     if allowed is not None:

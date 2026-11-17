@@ -43,6 +43,10 @@ export const E2E_ENV = {
   LH_GITHUB_API_BASE: 'http://127.0.0.1:8002/github-api',
   LH_GOOGLE_CLIENT_ID: '',
   LH_GOOGLE_CLIENT_SECRET: '',
+  // The Knowledge Hub connector talks to the fake identity service and KH on the fake server.
+  LH_KH_URL: 'http://127.0.0.1:8002/kh-api',
+  LH_KH_ISSUER: 'http://127.0.0.1:8002/kh-idp',
+  LH_KH_CLIENT_ID: 'e2e-kh-client',
   // No SMTP: emails land in <storage>/outbox, where the tests read the links.
   LH_SMTP_HOST: '',
 }

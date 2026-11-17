@@ -198,6 +198,7 @@ def chat(
                 agent_id=agent.id,
                 store=request.app.state.store,
                 allowed=allowed,
+                kh_search=request.app.state.kh.search_for(user.id),
             ),
             catalog,
             page,
