@@ -6,7 +6,8 @@
       "on": [
         "commit"
       ],
-      "cmd": "cd backend && .venv/Scripts/python -m pytest"
+      "cmd": "cd backend && .venv/Scripts/python -m pytest",
+      "timeout": 1800
     },
     {
       "name": "backend-lint",

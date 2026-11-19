@@ -16,6 +16,97 @@ It is also built as a showcase of an **AI-native SDLC**: every change goes spec 
 - **Agent chat** on the configured providers: tools to search and read notes, list roadmaps, read and write lessons. Note text is treated as untrusted data; the agent never overwrites a lesson you wrote.
 - Light, dark or system theme; every page has its own address (`#/lesson/backend/caching`).
 
+## Infrastructure
+
+### Production
+
+The public address is a Cloudflare Worker on `workers.dev`. It forwards every request to Vercel, which serves the built app and runs the backend as a serverless function. Data lives in Supabase.
+
+```mermaid
+flowchart LR
+    user(["Browser"])
+
+    subgraph cf["Cloudflare (free)"]
+        worker["Worker learninghub<br/>workers.dev, fixed public address<br/>deploy/worker"]
+    end
+
+    subgraph vercel["Vercel Hobby, region icn1 (vercel.json)"]
+        router{"rewrites"}
+        web["web service<br/>frontend/ built by Vite<br/>static SPA"]
+        api["api service<br/>backend/ FastAPI app.main:app<br/>serverless, LH_SERVERLESS=true<br/>/tmp: outbox, restore backups"]
+    end
+
+    subgraph supa["Supabase"]
+        pg[("Postgres<br/>Transaction pooler :6543<br/>RLS on every table")]
+        bucket[("Storage bucket learninghub<br/>private, note files")]
+    end
+
+    subgraph ext["Outside services, called by the backend"]
+        llm["AI providers<br/>OpenAI, Anthropic, Gemini,<br/>Local, Custom"]
+        oauth["GitHub and Google OAuth"]
+        smtp["SMTP server, optional"]
+        rss["News RSS and Atom feeds<br/>news/sources.yaml"]
+        kh["Knowledge Hub API<br/>and its Keycloak, optional"]
+    end
+
+    user -- HTTPS --> worker
+    worker -- "every request,<br/>unchanged" --> router
+    router -- "/api/*" --> api
+    router -- "everything else" --> web
+    api --> pg
+    api --> bucket
+    api --> llm
+    api --> oauth
+    api -.-> smtp
+    api --> rss
+    api -.-> kh
+```
+
+The Vercel project has one domain: `vercel.json` sends `/api/*` to `api` and everything else to `web`. The Worker only changes the address: it passes requests and answers through unchanged, so cookies, redirects and uploads behave as if the app were served there. `deploy/worker/set-origin.ps1` sets where it points. Provider keys are encrypted with `LH_SECRET_KEY` before they reach Postgres.
+
+### Delivery
+
+```mermaid
+flowchart LR
+    dev(["git push main"]) --> ci
+    tag(["git push tag v*"]) --> rel
+
+    subgraph gha["GitHub Actions"]
+        ci["ci.yml<br/>backend: pytest, ruff, mypy<br/>frontend: vitest, lint, build<br/>e2e: Playwright on Edge<br/>Postgres service pgvector pg17"]
+        deploy["deploy job<br/>main only, needs all checks"]
+        rel["release.yml<br/>every check, then docker build"]
+    end
+
+    ci --> deploy
+    deploy -- "alembic upgrade head<br/>Session pooler :5432" --> pg[("Supabase Postgres")]
+    deploy -- "Deploy Hook" --> vercel["Vercel production"]
+    rel --> out[("ghcr.io/viha0509/learninghub :version and :latest<br/>+ GitHub Release with docker-compose.release.yml")]
+```
+
+Vercel's own deploys from `main` are off. CI migrates the database first and then calls the Deploy Hook, so the new code never runs on an old schema. Without the secrets `LH_MIGRATE_DATABASE_URL` and `VERCEL_DEPLOY_HOOK_URL`, the deploy job does nothing.
+
+### Other ways to run it
+
+```mermaid
+flowchart LR
+    subgraph local["Local development (Run it)"]
+        b1(["Browser"]) --> vite["Vite dev server :5173<br/>proxies /api"]
+        vite --> uv["uvicorn FastAPI :8000"]
+        uv --> pgl[("Postgres in Docker :5434<br/>learninghub, learninghub_test")]
+        uv --> st["storage/<br/>note files, secret.key, outbox"]
+        uv -.-> cc["claude CLI<br/>Claude Code provider, admin only"]
+    end
+
+    subgraph image["Released image (Run a released version)"]
+        b2(["Browser"]) --> app["app container :8080<br/>FastAPI and the built SPA<br/>runs migrations on start"]
+        app --> pgi[("db container<br/>pgvector pg17, volume db-data")]
+        app --> vol["volume app-data<br/>/data"]
+        tun["Cloudflare Tunnel or Quick Tunnel,<br/>optional, behind the Worker"] -.-> app
+    end
+```
+
+Each copy has its own database and files. **Settings -> Data & sync** copies data from one copy to another (provider keys are never copied).
+
 ## Run it
 
 Needs Docker Desktop, Python 3.12 and Node 24+. Commands are for Git Bash on Windows, run from the repo folder.
@@ -227,6 +318,9 @@ GitHub and Google callbacks then stay `https://<worker>.<subdomain>.workers.dev/
 backend/    FastAPI app (app/), Alembic migrations, pytest tests, agent evals (evals/)
 frontend/   Vite + React + TypeScript (src/), Vitest tests, Playwright e2e (e2e/)
 roadmaps/   hand-written roadmap YAML, one file per domain
+news/       news feed sources (sources.yaml)
+deploy/     Cloudflare Worker (worker/) and tunnel scripts (cloudflared/)
+docker/     Postgres init script and the image entrypoint
 openspec/   specs and changes
 docs/       VISION.md - the confirmed scope
 ideas/      BACKLOG.md - ideas waiting for a decision
