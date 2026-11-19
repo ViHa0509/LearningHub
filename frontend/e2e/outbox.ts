@@ -26,9 +26,9 @@ export function outboxToken(kind: LinkKind): string {
 }
 
 /**
- * Waits for a new token link of one kind: the backend writes the email in a background task
- * after it has answered, so the file can appear a moment later. `previous` is the newest token
- * before the request (or null), so an older email is never taken for the new one.
+ * Returns a new token link of one kind: the backend writes the email before it answers, so the
+ * file is already there when the request has returned. `previous` is the newest token before the
+ * request (or null), so an older email is never taken for the new one.
  */
 export async function nextOutboxToken(kind: LinkKind, previous: string | null = null): Promise<string> {
   const deadline = Date.now() + 10_000

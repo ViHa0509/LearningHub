@@ -1,0 +1,22 @@
+# Design: send email inside the request
+
+1. **Why inline.** Vercel's guide for serverless functions and SMTP says the send must complete before the function returns; a FastAPI `BackgroundTasks` task runs after the answer, the instance is frozen, and the SMTP socket is dead when it resumes (`SMTPServerDisconnected` in the hosted log, 2026-11-16). SMTP has a 15 s timeout (`SMTP_TIMEOUT` in `app/auth/mail.py`), so the request stays well inside the function limit, and the routes are plain `def` (threadpool), so one slow send blocks nothing else.
+
+2. **`app/auth/mail.py`.** Keep `send_quietly(mailer, mail)` (logs the purpose and the exception class, returns nothing) for the public auth routes. Add `try_send(mailer, mail) -> str | None`: same send, same log line, returns the exception class name on failure (`type(error).__name__`) and `None` on success. Both catch only `OSError` and `smtplib.SMTPException`, as today. No log line ever holds the address, the link or the token (unchanged).
+
+3. **`app/routes/auth.py`.** `queue_mail(request, background, mail)` becomes `send_mail(request, mail) -> None`, which calls `send_quietly(request.app.state.mailer, mail)`. The `BackgroundTasks` parameter goes from `signup`, `forgot`, `magic`, `verify_resend` and from the `BackgroundTasks` import. The answers of these routes are unchanged on failure: `signup` still answers 201 with the session, `forgot` and `magic` still answer their fixed message, `verify_resend` still answers `VERIFY_SENT`. Order inside each route stays: token issued and committed, then the send, then the answer.
+
+4. **`app/routes/admin.py`.** `invite_user` issues the invitation, commits, builds the mail, then `failure = try_send(mailer, mail)`. When `failure` is not `None`: `raise HTTPException(status_code=502, detail=f"{INVITE_MAIL_FAILED} ({failure})")` with `INVITE_MAIL_FAILED = "The invitation was created but the email could not be sent"`. The invitation row stays (already committed), so it is listed under Pending invitations and can be revoked; a second invite for the same email replaces it as today. In outbox mode the answer still carries `invite_url` (unchanged). `BackgroundTasks` goes from the route and the import.
+
+5. **Frontend `UsersSettings.tsx`.** In `send`, the catch shows `failure.message` when `failure instanceof ApiError && failure.status === 502`, else `authErrorMessage(failure)` as today (`authErrorMessage` maps every 5xx to a generic text, which would hide the reason). After the catch, `invalidateQueries(adminInvitations)` runs as well, so the pending list shows the new row. `sent` stays `null`, so "Invitation sent" is not shown. No new strings besides what the server sends.
+
+6. **Tests.**
+   - `tests/auth_fakes.py`: `FailingMailer` whose `send` raises `smtplib.SMTPServerDisconnected("Connection unexpectedly closed")` and counts calls; a helper on `AuthKit` or a fixture `failing_kit` that installs it on `app.state.mailer`.
+   - `tests/test_admin_users.py`: invite with the failing mailer answers 502 with the exact detail, the invitation is in `GET /api/admin/invitations`, and `caplog` holds `could not send the invitation email (SMTPServerDisconnected)` and no address or link.
+   - `tests/test_auth_email.py` (or `test_auth_links.py`): with the failing mailer, `signup` answers 201 with a session, `forgot` and `magic` answer their usual messages, `verify/resend` answers `VERIFY_SENT`, and the log has no address or token.
+   - A test that the mail is sent before the answer: `CapturingMailer` already receives the message synchronously under `TestClient`; assert the token is available right after the call without any wait (this is what the e2e `nextOutboxToken` wait used to cover).
+   - Vitest `Users.test.tsx`: `api.invite` rejects with `ApiError(502, "The invitation was created but the email could not be sent (SMTPServerDisconnected)")`; the text is shown with `role="alert"`, "Invitation sent" is absent, and the invitations query is refetched.
+
+7. **E2E.** The e2e backend runs in outbox mode (`LH_SMTP_HOST: ''`), so the failure path is covered by the backend and Vitest tests only. `e2e/outbox.ts`: `nextOutboxToken` keeps its signature but the comment about the background task is replaced by "the backend writes the email before it answers"; `members.e2e.ts` asserts that the invite mail is in the outbox right after the answer (no polling). No new screenshot.
+
+8. **Out of scope.** A retry or a queue for mail; a status page for mail; showing SMTP failures to non-admin users; changing outbox mode.

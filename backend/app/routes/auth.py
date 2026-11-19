@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import RedirectResponse
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
@@ -180,9 +180,10 @@ def link(request: Request, kind: str, token: str) -> str:
     return f"{base}/#/auth/{kind}?token={token}"
 
 
-def queue_mail(request: Request, background: BackgroundTasks, mail: Mail) -> None:
+def send_mail(request: Request, mail: Mail) -> None:
+    """Send inside the request, before the answer; a failure is logged and never raised."""
     mailer: Mailer = request.app.state.mailer
-    background.add_task(send_quietly, mailer, mail)
+    send_quietly(mailer, mail)
 
 
 def verify_mail(request: Request, user: User, token: str) -> Mail:
@@ -241,7 +242,6 @@ def signup(
     body: SignupIn,
     request: Request,
     response: Response,
-    background: BackgroundTasks,
     db: DbDep,
 ) -> MeOut:
     email = normalize_email(body.email)
@@ -273,7 +273,7 @@ def signup(
         raise HTTPException(status_code=409, detail=EMAIL_TAKEN) from None
     verify_token = tokens.issue(db, "verify_email", user, clock_of(request)())
     start_session(db, user, request, response)
-    queue_mail(request, background, verify_mail(request, user, verify_token))
+    send_mail(request, verify_mail(request, user, verify_token))
     return me_out(db, user)
 
 
@@ -288,9 +288,7 @@ def invitation_info(
 
 
 @router.post("/invitation/accept", response_model=MeOut, status_code=201, dependencies=guarded)
-def accept_invitation(
-    body: AcceptIn, request: Request, response: Response, background: BackgroundTasks, db: DbDep
-) -> MeOut:
+def accept_invitation(body: AcceptIn, request: Request, response: Response, db: DbDep) -> MeOut:
     limit(request, "invitation")
     now = clock_of(request)()
     found = invitations.find_pending_by_token(db, body.token, now)
@@ -350,7 +348,7 @@ def change_password(body: PasswordChangeIn, request: Request, signed: SignedDep,
 
 
 @router.post("/forgot", response_model=MessageOut, dependencies=guarded)
-def forgot(body: EmailIn, request: Request, background: BackgroundTasks, db: DbDep) -> MessageOut:
+def forgot(body: EmailIn, request: Request, db: DbDep) -> MessageOut:
     email = normalize_email(body.email)
     limit(request, "forgot", email)
     user = owner_by_email(db, email)
@@ -367,7 +365,7 @@ def forgot(body: EmailIn, request: Request, background: BackgroundTasks, db: DbD
             ),
             purpose="reset-password",
         )
-        queue_mail(request, background, mail)
+        send_mail(request, mail)
     return MessageOut(message=FORGOT_SENT)
 
 
@@ -395,7 +393,7 @@ def reset(body: ResetIn, request: Request, response: Response, db: DbDep) -> MeO
 
 
 @router.post("/magic", response_model=MessageOut, dependencies=guarded)
-def magic(body: EmailIn, request: Request, background: BackgroundTasks, db: DbDep) -> MessageOut:
+def magic(body: EmailIn, request: Request, db: DbDep) -> MessageOut:
     email = normalize_email(body.email)
     limit(request, "magic", email)
     user = owner_by_email(db, email)
@@ -412,7 +410,7 @@ def magic(body: EmailIn, request: Request, background: BackgroundTasks, db: DbDe
             ),
             purpose="magic-link",
         )
-        queue_mail(request, background, mail)
+        send_mail(request, mail)
     return MessageOut(message=MAGIC_SENT)
 
 
@@ -444,16 +442,14 @@ def verify(body: TokenIn, request: Request, db: DbDep) -> VerifiedOut:
 
 
 @router.post("/verify/resend", response_model=MessageOut, dependencies=guarded)
-def verify_resend(
-    request: Request, background: BackgroundTasks, signed: SignedDep, db: DbDep
-) -> MessageOut:
+def verify_resend(request: Request, signed: SignedDep, db: DbDep) -> MessageOut:
     user = signed.user
     limit(request, "verify-resend", user.email)
     if user.email_verified_at is not None:
         return MessageOut(message=ALREADY_VERIFIED)
     token = tokens.issue(db, "verify_email", user, clock_of(request)())
     db.commit()
-    queue_mail(request, background, verify_mail(request, user, token))
+    send_mail(request, verify_mail(request, user, token))
     return MessageOut(message=VERIFY_SENT)
 
 

@@ -2,6 +2,7 @@
 
 import json
 import re
+import smtplib
 import threading
 import urllib.parse
 from collections.abc import Iterator
@@ -30,6 +31,19 @@ class CapturingMailer:
         found = re.search(r"\?token=([A-Za-z0-9_-]+)", mail.body)
         assert found, "no link in the mail"
         return found.group(1)
+
+
+class FailingMailer:
+    """A configured mail server that closes the connection: every send raises."""
+
+    mode: MailMode = "smtp"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def send(self, mail: Mail) -> None:
+        self.calls += 1
+        raise smtplib.SMTPServerDisconnected("Connection unexpectedly closed")
 
 
 class FakeClock:
@@ -158,6 +172,12 @@ class AuthKit:
     client: Any
     mailer: CapturingMailer
     clock: FakeClock
+
+    def fail_mail(self) -> FailingMailer:
+        """Install a mailer whose sends fail; returns it."""
+        failing = FailingMailer()
+        self.app.state.mailer = failing
+        return failing
 
     def browser(self) -> Any:
         """Another browser: the same app, its own cookie jar."""

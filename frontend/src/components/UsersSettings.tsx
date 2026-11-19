@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
-import { api, queryKeys, type AdminUser, type Invitation } from '../api'
+import { api, ApiError, queryKeys, type AdminUser, type Invitation } from '../api'
 import { authErrorMessage, useMe } from '../lib/auth'
 import { useUnsavedGuard } from '../lib/unsavedGuard'
 import { ActionMenu } from './ActionMenu'
@@ -63,7 +63,9 @@ function InviteForm() {
       setEmail('')
       await client.invalidateQueries({ queryKey: queryKeys.adminInvitations })
     } catch (failure) {
-      setError(authErrorMessage(failure))
+      // A 502 means the invitation exists but the email failed: show the server's reason, not the generic 5xx text.
+      setError(failure instanceof ApiError && failure.status === 502 ? failure.message : authErrorMessage(failure))
+      await client.invalidateQueries({ queryKey: queryKeys.adminInvitations })
     } finally {
       setBusy(false)
     }

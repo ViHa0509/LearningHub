@@ -96,8 +96,18 @@ def mailer_from_settings(settings: Settings) -> Mailer:
 
 
 def send_quietly(mailer: Mailer, mail: Mail) -> None:
-    """Send in the background; a failure is logged by purpose only (no address, no link)."""
+    """Send now; a failure is logged by purpose only (no address, no link)."""
     try:
         mailer.send(mail)
     except (OSError, smtplib.SMTPException) as error:
         log.warning("could not send the %s email (%s)", mail.purpose, type(error).__name__)
+
+
+def try_send(mailer: Mailer, mail: Mail) -> str | None:
+    """Like ``send_quietly``, but returns the exception class name on failure, else None."""
+    try:
+        mailer.send(mail)
+    except (OSError, smtplib.SMTPException) as error:
+        log.warning("could not send the %s email (%s)", mail.purpose, type(error).__name__)
+        return type(error).__name__
+    return None

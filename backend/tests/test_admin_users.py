@@ -1,5 +1,6 @@
 """Spec: accounts - Invite only (the invitation routes) and Users page."""
 
+import logging
 from typing import Any
 
 import pytest
@@ -440,3 +441,34 @@ def test_invite_url_is_answered_only_without_smtp(kit: AuthKit) -> None:
     assert with_smtp.status_code == 201
     assert "invite_url" not in with_smtp.json()
     assert kit.mailer.token("invitation") not in with_smtp.text
+
+
+# Scenario: Mail sent before the answer - the mail is there when the call returns
+def test_the_invitation_mail_is_sent_before_the_answer(kit: AuthKit) -> None:
+    admin_kit(kit)
+    assert invite(kit).status_code == 201
+    assert kit.mailer.token("invitation")  # no waiting: the send is part of the request
+
+
+# Scenario: Mail server refuses the invitation email
+def test_a_refused_invitation_mail_answers_502_and_keeps_the_invitation(
+    kit: AuthKit, caplog: pytest.LogCaptureFixture
+) -> None:
+    admin_kit(kit)
+    failing = kit.fail_mail()
+    caplog.set_level(logging.DEBUG)
+    answer = invite(kit)
+    assert answer.status_code == 502
+    assert answer.json()["detail"] == (
+        "The invitation was created but the email could not be sent (SMTPServerDisconnected)"
+    )
+    assert "invite_url" not in answer.text
+    assert failing.calls == 1
+    pending = kit.client.get("/api/admin/invitations").json()
+    assert [item["email"] for item in pending] == [ANA]
+    assert "could not send the invitation email (SMTPServerDisconnected)" in caplog.text
+    assert ANA not in caplog.text
+    assert "#/auth/invite" not in caplog.text and "token=" not in caplog.text
+    revoked = kit.client.delete(f"/api/admin/invitations/{pending[0]['id']}")
+    assert revoked.status_code in (200, 204)
+    assert kit.client.get("/api/admin/invitations").json() == []

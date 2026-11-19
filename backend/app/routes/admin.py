@@ -7,18 +7,18 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.auth import invitations
 from app.auth.current import AdminUser
-from app.auth.mail import Mail
+from app.auth.mail import Mail, try_send
 from app.auth.schemas import Email
 from app.auth.sessions import clock_of, end_sessions
 from app.db import Invitation, Note, User, UserSession, get_session
-from app.routes.auth import BAD_EMAIL, EMAIL_RE, link, normalize_email, queue_mail
+from app.routes.auth import BAD_EMAIL, EMAIL_RE, link, normalize_email
 from app.routes.guard import require_app_header
 from app.storage import FileStore
 
@@ -26,6 +26,7 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 guarded = [Depends(require_app_header)]
 DbDep = Annotated[Session, Depends(get_session)]
 
+INVITE_MAIL_FAILED = "The invitation was created but the email could not be sent"
 HAS_ACCOUNT = "That email already has an account"
 OWN_DISABLE = "You cannot disable your own account"
 OWN_DELETE = "You cannot delete your own account"
@@ -104,9 +105,7 @@ def real_user(db: Session, user_id: UUID) -> User:
     status_code=201,
     dependencies=guarded,
 )
-def invite(
-    body: InviteIn, request: Request, background: BackgroundTasks, admin: AdminUser, db: DbDep
-) -> InvitationCreated:
+def invite(body: InviteIn, request: Request, admin: AdminUser, db: DbDep) -> InvitationCreated:
     email = normalize_email(body.email)
     if not EMAIL_RE.match(email):
         raise HTTPException(status_code=400, detail=BAD_EMAIL)
@@ -126,7 +125,9 @@ def invite(
         ),
         purpose="invitation",
     )
-    queue_mail(request, background, mail)
+    failure = try_send(request.app.state.mailer, mail)
+    if failure is not None:
+        raise HTTPException(status_code=502, detail=f"{INVITE_MAIL_FAILED} ({failure})")
     created = InvitationCreated(**invitation_out(invitation).model_dump())
     if request.app.state.mailer.mode == "outbox":
         created.invite_url = invite_link

@@ -162,7 +162,15 @@ test('the admin invites a member from Settings -> Users; the link shows with Cop
   await expect(send).toBeDisabled()
   await invite.getByLabel('Email', { exact: true }).fill(MEMBER.email)
   await expect(send).toBeEnabled()
+  const answered = page.waitForResponse(
+    (r) => r.url().endsWith('/api/admin/invitations') && r.request().method() === 'POST',
+  )
   await send.click()
+  expect((await answered).ok()).toBe(true)
+  // The backend writes the mail before it answers: it is in the outbox now, with no waiting.
+  const mailed = latestOutboxToken('invite')
+  expect(mailed).not.toBeNull()
+  expect(mailed).not.toBe(previous)
 
   const sent = invite.getByRole('status')
   await expect(sent).toContainText(`Invitation sent to ${MEMBER.email}`)
@@ -181,9 +189,8 @@ test('the admin invites a member from Settings -> Users; the link shows with Cop
   await shot(page, 'users-invited')
 
   // The mail went to the outbox (no SMTP) and carries the same link.
-  const token = await nextOutboxToken('invite', previous)
-  expect(link.endsWith(`token=${token}`)).toBe(true)
-  state.inviteToken = token
+  expect(link.endsWith(`token=${mailed}`)).toBe(true)
+  state.inviteToken = mailed
 
   // Inviting an email that already has an account is refused.
   const taken = await page.request.post('/api/admin/invitations', { headers: H, data: { email: OWNER.email } })

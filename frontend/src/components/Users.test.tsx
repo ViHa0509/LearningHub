@@ -1,7 +1,7 @@
 /** Spec: accounts - Admin and members, Invite only, Users page, Admin-only features (as far as the UI shows them). */
 import { screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { AdminUser } from '../api'
+import { api, ApiError, type AdminUser } from '../api'
 import { installFakeApi, OWNER, requireLogin, type FakeState } from '../test/fakeApi'
 import { renderApp, renderAppReady } from '../test/render'
 
@@ -197,6 +197,26 @@ describe('users page', () => {
     expect(await within(page).findByRole('alert')).toHaveTextContent('That email already has an account')
     expect(within(page).queryByText(/Invitation sent/)).not.toBeInTheDocument()
     expect(state.admin.invitations).toEqual([])
+  })
+
+  it('shows the 502 reason when the invitation email could not be sent, and refetches the pending list', async () => {
+    const state = adminState()
+    const detail = 'The invitation was created but the email could not be sent (SMTPServerDisconnected)'
+    vi.spyOn(api, 'invite').mockImplementation(async (email: string) => {
+      state.admin.invitations = [
+        { id: 'inv-502', email, created_at: '2026-11-09T09:00:00Z', expires_at: '2026-11-16T09:00:00Z' },
+      ]
+      throw new ApiError(502, detail)
+    })
+    const { user, page } = await openUsers()
+    const pending = within(page).getByRole('region', { name: 'Pending invitations' })
+    expect(await within(pending).findByText('No pending invitations.')).toBeInTheDocument()
+    await user.type(within(page).getByLabelText('Email'), 'bo@example.test')
+    await user.click(within(page).getByRole('button', { name: 'Send invitation' }))
+    const invite = within(page).getByRole('region', { name: 'Invite' })
+    expect(await within(invite).findByRole('alert')).toHaveTextContent(detail)
+    expect(within(page).queryByText(/Invitation sent/)).not.toBeInTheDocument()
+    expect(await within(pending).findByText('bo@example.test')).toBeInTheDocument()
   })
 
   it('cancels the invite form with Escape', async () => {

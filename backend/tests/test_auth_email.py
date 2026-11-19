@@ -299,3 +299,51 @@ def test_no_password_or_token_in_answers_or_logs(
         for answer in answers:
             assert secret not in answer
     assert "token_hash" not in answers[-2] and "password_hash" not in "".join(answers)
+
+
+# Scenario: Mail written before the answer
+def test_the_reset_mail_is_sent_before_the_answer(kit: AuthKit) -> None:
+    kit.signup()
+    assert kit.client.post("/api/auth/forgot", json={"email": EMAIL}).status_code == 200
+    assert kit.mailer.token("reset-password")  # no waiting: the send is part of the request
+
+
+# Scenario: Mail server refuses the message
+def test_a_refused_mail_does_not_change_the_public_answers(
+    kit: AuthKit, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    ok_signup = kit.signup()
+    ok_forgot = kit.browser().post("/api/auth/forgot", json={"email": EMAIL})
+    ok_magic = kit.browser().post("/api/auth/magic", json={"email": EMAIL})
+    ok_resend = kit.client.post("/api/auth/verify/resend")
+    assert ok_signup.status_code == 201
+
+    other = AuthKit(app=kit.app, client=kit.browser(), mailer=kit.mailer, clock=kit.clock)
+    failing = other.fail_mail()
+    caplog.clear()
+    forgot = other.client.post("/api/auth/forgot", json={"email": EMAIL})
+    magic = other.client.post("/api/auth/magic", json={"email": EMAIL})
+    assert other.login().status_code == 200
+    resend = other.client.post("/api/auth/verify/resend")
+    assert (forgot.status_code, forgot.json()) == (ok_forgot.status_code, ok_forgot.json())
+    assert (magic.status_code, magic.json()) == (ok_magic.status_code, ok_magic.json())
+    assert (resend.status_code, resend.json()) == (ok_resend.status_code, ok_resend.json())
+    assert failing.calls >= 2
+    assert "could not send the" in caplog.text and "(SMTPServerDisconnected)" in caplog.text
+    assert EMAIL not in caplog.text and "token=" not in caplog.text
+
+
+def test_signup_still_creates_the_account_and_session_when_the_mail_fails(
+    settings_factory: Callable[..., Settings], caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    with auth_kit(settings_factory()) as kit:
+        failing = kit.fail_mail()
+        answer = kit.signup()
+        assert answer.status_code == 201
+        assert kit.client.cookies.get("lh_session")
+        assert kit.client.get("/api/auth/me").status_code == 200
+        assert failing.calls == 1
+        assert "could not send the" in caplog.text
+        assert EMAIL not in caplog.text and PASSWORD not in caplog.text
