@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vercel Deploy Flow</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --card: #ffffff; --ink: #1d1f23; --muted: #5d636e; --line: #d9dbe0;
+    --pc: #3b6fd8; --gh: #7a4fd0; --vc: #111111; --rt: #0f8a6a; --stop: #c2412d;
+    --pc-bg: #eef3fd; --gh-bg: #f4effc; --vc-bg: #f1f1f1; --rt-bg: #eaf7f2; --stop-bg: #fcefec;
+    --code-bg: #f0f1f3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141518; --card: #1d1f24; --ink: #e8e9ec; --muted: #a0a6b1; --line: #33363d;
+      --pc: #7ea4f0; --gh: #b69af0; --vc: #e8e8e8; --rt: #4cc9a3; --stop: #f08a76;
+      --pc-bg: #1b2335; --gh-bg: #251e35; --vc-bg: #26272b; --rt-bg: #15302a; --stop-bg: #36201c;
+      --code-bg: #2a2d33;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #141518; --card: #1d1f24; --ink: #e8e9ec; --muted: #a0a6b1; --line: #33363d;
+    --pc: #7ea4f0; --gh: #b69af0; --vc: #e8e8e8; --rt: #4cc9a3; --stop: #f08a76;
+    --pc-bg: #1b2335; --gh-bg: #251e35; --vc-bg: #26272b; --rt-bg: #15302a; --stop-bg: #36201c;
+    --code-bg: #2a2d33;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 980px; margin: 0 auto; padding: 32px 16px 56px; }
+  h1 { font-size: 26px; margin: 0 0 6px; }
+  .lead { color: var(--muted); margin: 0 0 28px; max-width: 70ch; }
+  code { font: 13px/1.4 ui-monospace, "Cascadia Code", Consolas, monospace; background: var(--code-bg);
+         padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+
+  .lane { border-left: 4px solid var(--c); background: var(--cbg); border-radius: 10px; padding: 16px 18px 18px; }
+  .lane h2 { margin: 0 0 4px; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--c); }
+  .lane h2 code { text-transform: none; letter-spacing: 0; }
+  .lane .where { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+  .pc { --c: var(--pc); --cbg: var(--pc-bg); }
+  .gh { --c: var(--gh); --cbg: var(--gh-bg); }
+  .vc { --c: var(--vc); --cbg: var(--vc-bg); }
+  .rt { --c: var(--rt); --cbg: var(--rt-bg); }
+
+  .steps { display: grid; gap: 10px; }
+  .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+  .step { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+  .step b { display: block; margin-bottom: 2px; }
+  .step .num { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
+               background: var(--c); color: var(--bg); font-size: 12px; font-weight: 700; margin-right: 6px; }
+  .step p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+  .step.stop { border-color: var(--stop); background: var(--stop-bg); }
+  .step.stop b { color: var(--stop); }
+  .key { border-style: dashed; border-color: var(--c); }
+
+  .arrow { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; padding: 8px 0 8px 22px; }
+  .arrow::before { content: ""; width: 2px; height: 26px; background: var(--line); }
+  .arrow span::before { content: "↓ "; color: var(--ink); }
+  .down { text-align: center; color: var(--muted); font-size: 18px; line-height: 1; margin: 2px 0; }
+
+  section.notes { margin-top: 30px; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+  .box { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .box h3 { margin: 0 0 8px; font-size: 15px; }
+  .box ul { margin: 0; padding-left: 18px; }
+  .box li { margin: 4px 0; }
+  .box.stopbox { border-color: var(--stop); }
+  .box.stopbox h3 { color: var(--stop); }
+  footer { margin-top: 28px; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Vercel deploy flow</h1>
+  <p class="lead">How a change reaches the hosted Learning Hub: local gates, GitHub Actions, a database migration, the Vercel Deploy Hook, then the public address. Vercel does not deploy <code>main</code> on its own (<code>vercel.json</code>: <code>git.deploymentEnabled.main = false</code>); only CI starts a production deploy, and only after the migration.</p>
+
+  <div class="lane pc">
+    <h2>1 · Your PC</h2>
+    <p class="where">Claude Code hooks from <code>ai-sdlc-kit</code>, configured in <code>.sdlc/gates.json</code></p>
+    <div class="row">
+      <div class="step"><b><span class="num">1</span>git commit</b>
+        <p>Commit gate runs backend <code>pytest</code> (timeout 1800 s), <code>ruff</code>, <code>mypy</code>, frontend <code>npm test</code>, <code>lint</code>, <code>build</code>. Any failure blocks the commit.</p></div>
+      <div class="step"><b><span class="num">2</span>git push origin main</b>
+        <p>Push gate runs the full e2e suite (<code>npm run e2e</code>, timeout 1500 s). A failure blocks the push.</p></div>
+    </div>
+  </div>
+  <div class="down">↓</div>
+
+  <div class="lane gh">
+    <h2>2 · GitHub Actions — <code>.github/workflows/ci.yml</code></h2>
+    <p class="where">Runs on every push to <code>main</code> and every pull request; a newer push to the same ref cancels the older CI run</p>
+    <div class="steps">
+      <div class="row">
+        <div class="step"><b><span class="num">3</span>backend job</b>
+          <p>Postgres service <code>pgvector/pgvector:pg17</code>; <code>pytest</code>, <code>ruff</code>, <code>mypy</code>.</p></div>
+        <div class="step"><b><span class="num">3</span>frontend job</b>
+          <p><code>npm test</code>, <code>npm run lint</code>, <code>npm run build</code>.</p></div>
+      </div>
+      <div class="arrow"><span>both pass</span></div>
+      <div class="step"><b><span class="num">4</span>e2e job</b>
+        <p>Playwright on Edge with its own Postgres; screenshots kept as a run artifact for 14 days.</p></div>
+      <div class="arrow"><span>all three pass, and the event is a push to <code>main</code> (never a pull request or a tag)</span></div>
+      <div class="step key"><b><span class="num">5</span>deploy job</b>
+        <p>One deploy at a time (<code>concurrency: deploy-production</code>, never cancelled mid-migration), 15-minute limit.</p></div>
+      <div class="row">
+        <div class="step"><b>5a · Check the secrets</b>
+          <p><code>LH_MIGRATE_DATABASE_URL</code> and <code>VERCEL_DEPLOY_HOOK_URL</code> both set? If not: prints “Deploy secrets are not set; skipping the production deploy.” and stops (job still green).</p></div>
+        <div class="step"><b>5b · Install</b>
+          <p>Checkout, Python 3.12, <code>pip install -r requirements.txt</code>.</p></div>
+        <div class="step"><b>5c · Migrate production DB</b>
+          <p><code>alembic upgrade head</code> against Supabase <b>Session pooler :5432</b>. A failure fails the job; the hook is never called.</p></div>
+        <div class="step key"><b>5d · Trigger Vercel</b>
+          <p><code>curl --fail -X POST "$VERCEL_DEPLOY_HOOK_URL"</code></p></div>
+      </div>
+    </div>
+  </div>
+  <div class="down">↓</div>
+
+  <div class="lane vc">
+    <h2>3 · Vercel — <code>vercel.json</code></h2>
+    <p class="where">The Deploy Hook (Project Settings → Git → Deploy Hooks, branch <code>main</code>) starts a production build of <code>main</code> · region <code>icn1</code> · Hobby plan</p>
+    <div class="row">
+      <div class="step"><b><span class="num">6</span>Build service <code>web</code></b>
+        <p>Root <code>frontend/</code>, framework Vite; SPA rewrite of every path to <code>/index.html</code>.</p></div>
+      <div class="step"><b><span class="num">6</span>Build service <code>api</code></b>
+        <p>Root <code>backend/</code>, entrypoint <code>app.main:app</code>; packages from <code>pyproject.toml</code>; build copies <code>roadmaps/</code> and <code>news/</code> into <code>_data/</code>.</p></div>
+      <div class="step"><b><span class="num">7</span>Production deployment</b>
+        <p>Environment values (Production only): <code>LH_SERVERLESS</code>, <code>LH_DATABASE_URL</code>, <code>LH_SECRET_KEY</code>, <code>LH_SUPABASE_*</code>, <code>LH_PUBLIC_URL</code>… Live at <code>&lt;project&gt;.vercel.app</code>.</p></div>
+    </div>
+  </div>
+  <div class="down">↓</div>
+
+  <div class="lane rt">
+    <h2>4 · Serving requests</h2>
+    <p class="where">The public address stays the same across deploys</p>
+    <div class="row">
+      <div class="step"><b>Browser</b>
+        <p>Opens the <code>workers.dev</code> address (<code>LH_PUBLIC_URL</code>; OAuth callbacks use it too).</p></div>
+      <div class="step"><b>Cloudflare Worker <code>learninghub</code></b>
+        <p>Forwards every request unchanged to <code>ORIGIN</code>, set once with <code>deploy/worker/set-origin.ps1 https://&lt;project&gt;.vercel.app</code>.</p></div>
+      <div class="step"><b>Vercel rewrites</b>
+        <p><code>/api/*</code> → <code>api</code> (serverless FastAPI); everything else → <code>web</code>.</p></div>
+      <div class="step"><b>Supabase</b>
+        <p>Postgres via <b>Transaction pooler :6543</b> (runtime); note files in the private Storage bucket <code>learninghub</code>.</p></div>
+    </div>
+  </div>
+
+  <section class="notes">
+    <div class="box stopbox">
+      <h3>Where a deploy stops</h3>
+      <ul>
+        <li>A commit or push gate fails: nothing leaves your PC.</li>
+        <li>Any CI job fails: the deploy job does not run.</li>
+        <li>Secrets missing: deploy skipped, CI still green.</li>
+        <li>Migration fails: the hook is not called; the old code keeps running.</li>
+        <li>Vercel build fails: the previous deployment stays live.</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>Where the two secrets come from</h3>
+      <ul>
+        <li><code>VERCEL_DEPLOY_HOOK_URL</code>: Vercel → Project Settings → Git → Deploy Hooks → create for <code>main</code>, copy the URL.</li>
+        <li><code>LH_MIGRATE_DATABASE_URL</code>: Supabase → Connect → Session pooler (port 5432) as <code>postgresql+psycopg://…?sslmode=require</code>.</li>
+        <li>Both go in GitHub → Settings → Secrets and variables → Actions.</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>Not a Vercel deploy</h3>
+      <ul>
+        <li>Pull requests: checks only.</li>
+        <li>Tag <code>v*</code>: <code>release.yml</code> builds the Docker image to <code>ghcr.io</code> and a GitHub Release.</li>
+        <li>Changing where the Worker points: run <code>set-origin.ps1</code> by hand.</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer>Drawn from <code>.sdlc/gates.json</code>, <code>.github/workflows/ci.yml</code>, <code>vercel.json</code>, <code>deploy/worker/</code> and the README “Run on Vercel” section, 2026-11-19.</footer>
+</main>
+</body>
+</html>

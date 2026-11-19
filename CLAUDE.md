@@ -80,6 +80,7 @@ Plugin `ai-sdlc-kit` 0.4.0 (hooks: secret and command guards; gates from `.sdlc/
 - `brainstormer` (sonnet): in-scope ideas into `ideas/BACKLOG.md`.
 - Main session (opus): specs, design, migrations, security (sandboxing, agent tools), blocked tasks, final review.
 - Pushing to `main` on GitHub is authorized for this repo (no PR tool here yet); never force-push.
+- When everything is okay, commit and push to `main` without waiting for the owner's go-ahead (a push deploys to Vercel through CI). "Okay" means: every check in Commands passes, the change's tasks are checked, the verifier passed, and the e2e suite passes (the push gate runs it). Still ask first when a check fails or is skipped, when a migration drops or rewrites existing data, or before any force-push or history rewrite.
 
 ### Token use
 
