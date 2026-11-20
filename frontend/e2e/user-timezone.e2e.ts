@@ -215,7 +215,12 @@ async function chatOnce(page: Page): Promise<string> {
   expect(made.status(), await made.text()).toBe(201)
   await page.goto('/')
   // A member without a zone is asked first: "Not now" keeps it without one.
-  if (await dialogOf(page).isVisible()) await dialogOf(page).getByRole('button', { name: 'Not now' }).click()
+  // Wait for the dialog instead of looking once: on a fast machine it appears after the first look.
+  if ((await meOf(page)).timezone === null) {
+    await expect(dialogOf(page)).toBeVisible()
+    await dialogOf(page).getByRole('button', { name: 'Not now' }).click()
+    await expect(dialogOf(page)).toBeHidden()
+  }
   const agent = page.getByRole('complementary', { name: 'Agent' })
   const box = agent.getByRole('textbox', { name: 'Message the agent' })
   await expect(box).toBeVisible()
