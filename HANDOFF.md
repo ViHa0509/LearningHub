@@ -1,8 +1,35 @@
-# Hand-off (updated 2026-11-17, main PC, written by Claude Code for the next session)
+# Hand-off (updated 2026-11-20, main PC, written by Claude Code for the next session)
 
 Repo: `D:\Learning-hub` on the owner's main PC, `C:\Users\Petrus\Documents\Learning-hub` on the second PC (GitHub `ViHa0509/LearningHub`, branch `main`). Read `CLAUDE.md` first.
 
 Start Claude Code in the repo folder: the `ai-sdlc-kit` plugin (agents `implementer`, `verifier`, `qc-ui`, `qc-e2e`, `scout`, `brainstormer`; hooks; commit and push gates) loads from `.claude/settings.json`. On the main PC (2026-11-16) the `ai-sdlc-kit:qc-e2e` agent type exists and was used; if a session does not list it, run the e2e pass on a `general-purpose` Sonnet agent with the qc-e2e brief (write black-box Playwright tests from the change's specs, run `npm run e2e`, report product bugs, never touch `src/`).
+
+## Latest state (2026-11-20)
+
+`main` = `26de31d`, CI green (frontend 620, backend 1219, e2e 346), deployed to Vercel; production database at migration `0022`.
+
+Shipped this session (one verifier run for all four, a `verifier-report.md` in each change folder, every task checked):
+
+| Change | What |
+|---|---|
+| user-timezone | `users.timezone` (migration 0022), `PUT /api/auth/timezone`, the "Your time zone" dialog after sign-in ("Not now" lasts for the browser session), Settings -> Account, every time shown in the user's zone |
+| shared-providers | The admin marks a provider "Shared with all users" (migration 0021); a member with no usable provider of their own runs on it, 10 requests a day (UTC, `LH_SHARED_DAILY_LIMIT`), the admin is never counted; when sharing is withdrawn the member sees a warning. Read-only for members; copying is out of scope |
+| chat-pet | A 32 px pixel pet on the chat composer with four fixed lines (greeting, thinking, done, error); "Pet" in the composer's options menu switches it off (`localStorage` key `learninghub.pet`); hidden on phones; still under reduced motion |
+| global-search | `GET /api/search?q=` and a top-bar search box over the user's own topics, lessons and notes (limits 5/5/8); a search button and row on phones |
+
+Also: `mail-send-inline` and the README diagrams came in from the second PC (`6782a0c`).
+
+Incident (fixed): local `backend/.env` and `.env` pointed `LH_DATABASE_URL` at the production Supabase database, so a local `alembic upgrade head` put the uncommitted migrations 0021 and 0022 on production and the CI deploy failed with "Can't locate revision identified by '0022'". Production was downgraded to 0020 (no data in the new columns), the deploy was rerun, and both `.env` files now leave `LH_DATABASE_URL` commented out, so local work uses the Docker Postgres (`localhost:5434/learninghub`, empty, at 0022). Production changes only through CI.
+
+Open from this session:
+
+- Owner's wish, not planned yet: a member sees the admin's shared provider as an extra entry with a "Public" status in their provider list (today it is one line of text). Waiting for the owner to confirm the reading, and whether the admin's tag changes from "Shared" to "Public". Needs its own OpenSpec change.
+- Pet size stays 32 px on trial; a setting for the pet (size) may follow.
+- The shared reference a member gets from the API carries the provider's `id` and type besides name and model (harmless: every route with that id answers 404 for a member; noted in the proposal).
+- FPT AI (`https://token-api.fpt.ai/v1`) needs no code: add it in Settings as "Custom (OpenAI-compatible)". Not tested against the real endpoint.
+- The hosted app was not clicked through after the deploy (only `/api/health` 200 and `/api/search` 401 without a session).
+- This PC: the full e2e in one background run gets killed for low memory; run it in foreground batches of files. `git push` uses the work account from the Windows credential manager and is refused; push with `git -c credential.helper= -c credential.helper='!gh auth git-credential' push origin main` (gh is signed in as the repo owner).
+- The kit's agents did not load in the `.claude-pet` profile; general-purpose agents read the definitions under `plugins/cache/petrus-sdlc/ai-sdlc-kit/0.4.0/agents/`.
 
 ## Latest state (2026-11-17)
 
