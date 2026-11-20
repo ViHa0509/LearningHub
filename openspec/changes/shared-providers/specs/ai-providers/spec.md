@@ -5,7 +5,7 @@ The admin SHALL be able to mark a provider configuration as shared with every si
 
 #### Scenario: Admin shares
 - **WHEN** the admin ticks "Shared with all users" on "Claude main" and saves
-- **THEN** the list shows "Claude main" with a Shared badge
+- **THEN** the list shows "Claude main" with a Public badge
 
 #### Scenario: Member cannot share
 - **WHEN** a member saves one of their configurations as shared

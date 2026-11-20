@@ -33,7 +33,7 @@ const putOf = (state: FakeState, url: string) =>
 
 describe('share a configuration (admin)', () => {
   // Scenario: Admin shares
-  it('ticks Shared with all users, saves, and the list shows a Shared badge', async () => {
+  it('ticks Shared with all users, saves, and the list shows a Public badge', async () => {
     const state = installFakeApi()
     state.providers = twoProviders()
     state.shared.limit = 7
@@ -52,8 +52,8 @@ describe('share a configuration (admin)', () => {
 
     window.location.hash = '#/settings'
     const card = await screen.findByRole('article', { name: 'Claude main' })
-    expect(within(card).getByText('Shared')).toBeInTheDocument()
-    expect(within(await screen.findByRole('article', { name: 'Local qwen' })).queryByText('Shared')).not.toBeInTheDocument()
+    expect(within(card).getByText('Public')).toBeInTheDocument()
+    expect(within(await screen.findByRole('article', { name: 'Local qwen' })).queryByText('Public')).not.toBeInTheDocument()
   })
 
   // Scenario: Unshare
@@ -100,13 +100,13 @@ describe('share a configuration (admin)', () => {
     expect(screen.queryByRole('checkbox', { name: 'Shared with all users' })).not.toBeInTheDocument()
   })
 
-  it('shows no Shared badge on a member own configuration', async () => {
+  it('shows no Public badge on a member own configuration', async () => {
     const state = installFakeApi()
     asMember(state)
     state.providers = twoProviders()
     await renderAppReady('#/settings')
     await screen.findByRole('article', { name: 'Claude main' })
-    expect(screen.queryByText('Shared')).not.toBeInTheDocument()
+    expect(screen.queryByText('Public')).not.toBeInTheDocument()
   })
 })
 
@@ -147,13 +147,31 @@ describe('a member on the shared provider', () => {
     expect(within(assistant).getByText('Uses Claude main (claude-sonnet-5-5), shared by the admin')).toBeInTheDocument()
   })
 
-  it('shows the same line and count above the empty list on the providers page', async () => {
+  // Scenario: Member sees the shared provider as an entry; The entry is read-only
+  it('lists the shared provider as a read-only Public entry on the providers page', async () => {
     const state = sharedMember()
     state.shared.used = 4
     await renderAppReady('#/settings')
-    expect(await screen.findByText('Uses Claude main (claude-sonnet-5-5), shared by the admin')).toBeInTheDocument()
-    expect(screen.getByText('4 of 10 requests used today')).toBeInTheDocument()
+    const card = await screen.findByRole('article', { name: 'Claude main' })
+    expect(within(card).getByRole('heading', { name: 'Claude main' })).toBeInTheDocument()
+    expect(within(card).getByText('claude-sonnet-5-5')).toBeInTheDocument()
+    expect(within(card).getByText('Public')).toBeInTheDocument()
+    expect(within(card).getByText('Shared by the admin')).toBeInTheDocument()
+    expect(within(card).getByText('4 of 10 requests used today')).toBeInTheDocument()
+    expect(within(card).queryByRole('link')).not.toBeInTheDocument()
+    expect(within(card).queryByRole('button')).not.toBeInTheDocument()
+    expect(card).not.toHaveTextContent(/anthropic|Active|Inactive|Not tested|…\d/i)
     expect(screen.queryByText(WITHDRAWN)).not.toBeInTheDocument()
+  })
+
+  // Scenario: Member with their own provider
+  it('shows no Public entry when the member has an own active configuration', async () => {
+    const state = sharedMember()
+    state.providers = [makeProvider('My key', 'anthropic', 'claude-sonnet-5-5')]
+    await renderAppReady('#/settings')
+    await screen.findByRole('article', { name: 'My key' })
+    expect(screen.queryByText('Public')).not.toBeInTheDocument()
+    expect(screen.queryByText('Shared by the admin')).not.toBeInTheDocument()
   })
 
   // Scenario: Shared configuration for a user without one (the chat answers)
@@ -228,6 +246,7 @@ describe('the shared provider is withdrawn', () => {
     const warning = text.closest('p') as HTMLElement
     expect(within(warning).getByRole('link', { name: 'Go to AI providers' })).toHaveAttribute('href', '#/settings')
     expect(screen.getByText('No providers yet. Add one to use the agent.')).toBeInTheDocument()
+    expect(screen.queryByText('Public')).not.toBeInTheDocument()
   })
 
   it('warns in the chat hint', async () => {

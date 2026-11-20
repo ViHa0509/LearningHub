@@ -1,9 +1,9 @@
-import type { ProviderOut } from '../api'
+import type { ProviderOut, ProviderRef } from '../api'
 import { useAgents, useProviders, useProviderTypes, useSharedStatus } from '../hooks'
 import { typeLabel } from '../lib/providers'
 import { SettingsNav } from './SettingsNav'
 import { WithdrawnWarning } from './SharedProvider'
-import { sharedLine, sharedProviders, usageLine } from '../lib/shared'
+import { sharedProviders, usageLine } from '../lib/shared'
 import { StatusBadge } from './StatusBadge'
 
 export function SettingsPage() {
@@ -27,14 +27,6 @@ export function SettingsPage() {
       </p>
       {providers.isError && <p className="error">Could not load the providers.</p>}
       {shared?.withdrawn && <WithdrawnWarning />}
-      {providers.data && providers.data.length === 0 && shared?.mode === 'shared' && (
-        <div>
-          {sharedOn.map((p) => (
-            <p key={p.id}>{sharedLine(p)}</p>
-          ))}
-          <p className="shared-usage">{usageLine(shared)}</p>
-        </div>
-      )}
       {providers.data && providers.data.length === 0 && (
         <p className="muted" role="status">
           {shared?.mode === 'shared'
@@ -43,6 +35,8 @@ export function SettingsPage() {
         </p>
       )}
       <div className="provider-cards">
+        {shared?.mode === 'shared' &&
+          sharedOn.map((p) => <SharedProviderCard key={p.id} provider={p} usage={usageLine(shared)} />)}
         {providers.data?.map((p) => (
           <ProviderCard
             key={p.id}
@@ -56,6 +50,21 @@ export function SettingsPage() {
   )
 }
 
+/** The admin's shared configuration as a member sees it: read-only, nothing secret, no link. */
+function SharedProviderCard({ provider, usage }: { provider: ProviderRef; usage: string }) {
+  return (
+    <article className="provider-card shared-card" aria-label={provider.name}>
+      <header className="provider-header">
+        <h2>{provider.name}</h2>
+        <span className="tag shared">Public</span>
+      </header>
+      <p className="provider-meta">{provider.model_name}</p>
+      <p className="muted small">Shared by the admin</p>
+      <p className="shared-usage">{usage}</p>
+    </article>
+  )
+}
+
 function ProviderCard({ provider, typeName, needsKey }: { provider: ProviderOut; typeName: string; needsKey: boolean }) {
   return (
     <article className="provider-card" aria-label={provider.name}>
@@ -65,7 +74,7 @@ function ProviderCard({ provider, typeName, needsKey }: { provider: ProviderOut;
         </h2>
         <span>
           <span className={provider.is_active ? 'tag on' : 'tag off'}>{provider.is_active ? 'Active' : 'Inactive'}</span>
-          {provider.shared && <span className="tag shared">Shared</span>}
+          {provider.shared && <span className="tag shared">Public</span>}
         </span>
       </header>
       <p className="provider-meta">

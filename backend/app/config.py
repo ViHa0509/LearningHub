@@ -13,7 +13,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="LH_", env_file=".env", extra="ignore")
 
-    database_url: str = "postgresql+psycopg://learninghub:learninghub@localhost:5434/learninghub"
+    database_url: str = "postgresql+psycopg://learninghub:learninghub@127.0.0.1:5434/learninghub"
     # Each request may reach another short-lived instance (Vercel): nothing is kept in memory
     # or on local disk between requests, and the database sits behind a transaction pooler.
     serverless: bool = False

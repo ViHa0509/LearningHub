@@ -232,8 +232,8 @@ test('Share a configuration > Admin shares: ticking "Shared with all users" and 
 
   await page.goto('/#/settings')
   const main = page.getByRole('article', { name: MAIN })
-  await expect(main.getByText('Shared', { exact: true })).toBeVisible()
-  await expect(page.getByRole('article', { name: FAST }).getByText('Shared', { exact: true })).toHaveCount(0)
+  await expect(main.getByText('Public', { exact: true })).toBeVisible()
+  await expect(page.getByRole('article', { name: FAST }).getByText('Public', { exact: true })).toHaveCount(0)
   await shotBoth(page, 'shared-provider-list')
 
   // The new-provider form has no switch once Claude Code is chosen.
@@ -341,11 +341,25 @@ test('Provider resolution > Shared configuration for a user without one: the mem
   await expect(region.getByRole('img', { name: 'Warning' })).toHaveCount(0)
   await shotBoth(page, 'shared-agents-member')
 
-  // The providers page: the same lines above the empty list.
+  // The providers page: the shared configuration is one entry of the list (Public card), read-only.
   await page.goto('/#/settings')
-  await expect(page.getByText(`Uses ${MAIN} (fake-ok), shared by the admin`).first()).toBeVisible()
-  await expect(page.getByText(`0 of ${LIMIT} requests used today`)).toBeVisible()
-  await expect(page.getByRole('article')).toHaveCount(0)
+  await expect(page.getByText(`Uses ${MAIN} (fake-ok), shared by the admin`)).toHaveCount(0)
+  const cards = page.locator('.provider-cards')
+  await expect(cards.getByRole('article')).toHaveCount(1)
+  const card = cards.getByRole('article', { name: MAIN })
+  await expect(card).toBeVisible()
+  await expect(card.getByRole('heading', { level: 2, name: MAIN })).toBeVisible()
+  await expect(card.getByText('Public', { exact: true })).toBeVisible()
+  await expect(card).toContainText('fake-ok')
+  await expect(card).toContainText('Shared by the admin')
+  await expect(card).toContainText(`0 of ${LIMIT} requests used today`)
+  // Read-only: no link, no button, no Active/Inactive tag, no type, base URL or key hint.
+  await expect(card.getByRole('link')).toHaveCount(0)
+  await expect(card.getByRole('button')).toHaveCount(0)
+  await expect(card.getByText(/Active|Inactive/)).toHaveCount(0)
+  const cardText = (await card.innerText()).replace(MAIN, '').toLowerCase()
+  for (const secret of ['key', 'local', '127.0.0.1', '8002', 'http']) expect(cardText, secret).not.toContain(secret)
+  await expect(card.getByRole('heading', { level: 2 }).getByRole('link')).toHaveCount(0)
   await shotBoth(page, 'shared-providers-member')
 
   // The chat: the normal composer, no hint, and the shared configuration answers.
@@ -371,6 +385,13 @@ test('Provider resolution > Own configuration wins over a shared one: the member
   expect((await sharedOf(member.request)).mode).toBe('own')
   expect((await chatOk(member.request)).provider.name).toBe(`SP My key ${STAMP}`)
   expect((await sharedOf(member.request)).used_today).toBe(0)
+  // Settings > AI providers: their own configuration, and no Public entry.
+  await member.page.goto('/#/settings')
+  const cards = member.page.locator('.provider-cards')
+  await expect(cards.getByRole('article', { name: `SP My key ${STAMP}` })).toBeVisible()
+  await expect(cards.getByRole('article', { name: MAIN })).toHaveCount(0)
+  await expect(cards.getByText('Public', { exact: true })).toHaveCount(0)
+  await expect(member.page.getByText('Shared by the admin')).toHaveCount(0)
   // The usual controls are back.
   await member.page.goto('/#/settings/agents')
   await expect(agentCard(member.page, 'Learning assistant').getByRole('combobox').first()).toBeVisible()
@@ -523,6 +544,8 @@ test('Warning when withdrawn > Unshared, Switched off or deleted, Shared again: 
   await expect(page).toHaveURL(/#\/settings$/)
   await expect(page.getByRole('heading', { name: 'AI providers', level: 1 })).toBeVisible()
   await expectWarning('/#/settings', 'Settings')
+  await expect(page.getByRole('article', { name: MAIN })).toHaveCount(0)
+  await expect(page.getByText('Public', { exact: true })).toHaveCount(0)
   await shotBoth(page, 'shared-withdrawn-providers')
 
   // The chat hint: "No AI provider is configured." with the same warning.

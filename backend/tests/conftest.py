@@ -21,7 +21,7 @@ from tests.auth_fakes import AuthKit, auth_kit
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 FIXTURES = Path(__file__).parent / "fixtures"
-TEST_DATABASE_URL = "postgresql+psycopg://learninghub:learninghub@localhost:5434/learninghub_test"
+TEST_DATABASE_URL = "postgresql+psycopg://learninghub:learninghub@127.0.0.1:5434/learninghub_test"
 
 
 def alembic_config() -> Config:

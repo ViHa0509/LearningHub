@@ -1253,3 +1253,4 @@ a.auth-provider:hover { border-color: var(--accent); color: var(--accent); }
 .shared-warning a { white-space: nowrap; }
 .shared-warning-icon { flex: none; margin-top: 2px; }
 .shared-usage { margin: 0 0 8px; }
+.shared-card .shared-usage { margin: 0; font-size: 13px; }

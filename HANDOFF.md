@@ -19,7 +19,7 @@ Shipped this session (one verifier run for all four, a `verifier-report.md` in e
 
 Also: `mail-send-inline` and the README diagrams came in from the second PC (`6782a0c`).
 
-Incident (fixed): local `backend/.env` and `.env` pointed `LH_DATABASE_URL` at the production Supabase database, so a local `alembic upgrade head` put the uncommitted migrations 0021 and 0022 on production and the CI deploy failed with "Can't locate revision identified by '0022'". Production was downgraded to 0020 (no data in the new columns), the deploy was rerun, and both `.env` files now leave `LH_DATABASE_URL` commented out, so local work uses the Docker Postgres (`localhost:5434/learninghub`, empty, at 0022). Production changes only through CI.
+Incident (fixed): local `backend/.env` and `.env` pointed `LH_DATABASE_URL` at the production Supabase database, so a local `alembic upgrade head` put the uncommitted migrations 0021 and 0022 on production and the CI deploy failed with "Can't locate revision identified by '0022'". Production was downgraded to 0020 (no data in the new columns), the deploy was rerun, and both `.env` files now leave `LH_DATABASE_URL` commented out, so local work uses the Docker Postgres (`127.0.0.1:5434/learninghub`, empty, at 0022). Production changes only through CI.
 
 Open from this session:
 
