@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api, queryKeys, type RestoreResult } from '../api'
+import { useTime } from '../lib/time'
 import { SettingsNav } from './SettingsNav'
 
 const COUNT_LABELS: [keyof RestoreResult['counts'], string][] = [
@@ -11,7 +12,6 @@ const COUNT_LABELS: [keyof RestoreResult['counts'], string][] = [
 ]
 
 const messageOf = (e: unknown) => (e instanceof Error ? e.message : 'The request failed')
-const localTime = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : '')
 
 function ResultSummary({ title, result }: { title: string; result: RestoreResult }) {
   const parts = COUNT_LABELS.filter(([key]) => result.counts[key] !== undefined).map(
@@ -144,6 +144,8 @@ function RestoreCard() {
 }
 
 function ReceiveCard() {
+  const t = useTime()
+  const localTime = (iso: string | null) => (iso ? t.dateTime(iso) : '')
   const client = useQueryClient()
   const status = useQuery({ queryKey: queryKeys.syncKey, queryFn: api.syncKeyStatus })
   // The key itself is shown once, from the answer of its creation; it is never read again.

@@ -274,6 +274,8 @@ async function ensureMember(browser: Browser, request: APIRequestContext): Promi
     data: { token, password: MEMBER.password, display_name: MEMBER.name },
   })
   expect(accepted.status(), await accepted.text()).toBe(201)
+  // The member has a time zone (user-timezone), so its dialog does not cover the pages under test.
+  expect((await context.request.put(`${API}/api/auth/timezone`, { headers: H, data: { timezone: 'UTC' } })).status()).toBe(200)
   member.context = context
   return context
 }

@@ -48,6 +48,8 @@ MAX_KEY = 500
 MAX_URL = 500
 MAX_MESSAGE = 500
 CLAUDE_CODE_ADMIN_ONLY = "Only the admin can use the Claude Code provider"
+SHARE_ADMIN_ONLY = "only the admin can share a provider"
+CLAUDE_CODE_NOT_SHARED = "Claude Code cannot be shared"
 TEST_SYSTEM = "You are a connection test. Answer with one word."
 TEST_PROMPT = "Reply with the word OK."
 
@@ -62,6 +64,8 @@ class ProviderIn(BaseModel):
     base_url: str | None = None
     is_active: bool = True
     config: dict[str, Any] = Field(default_factory=dict)
+    # Admin only: shared with every user. Absent: private on create, unchanged on update.
+    shared: bool | None = None
 
 
 class ProviderTestIn(ProviderIn):
@@ -91,6 +95,7 @@ class ProviderOut(BaseModel):
     key_hint: str | None
     key_kind: str | None
     has_key: bool
+    shared: bool
     base_url: str | None
     config: dict[str, Any]
     is_active: bool
@@ -174,6 +179,7 @@ def to_out(row: AIProvider, uses: list[UsedBy]) -> ProviderOut:
         key_hint=row.key_hint,
         key_kind=(row.key_kind or "api_key") if row.api_key_enc is not None else None,
         has_key=row.api_key_enc is not None,
+        shared=row.shared,
         base_url=row.base_url,
         config=dict(row.config or {}),
         is_active=row.is_active,
@@ -283,6 +289,14 @@ def require_claude_code_access(user: User, provider_type: str) -> None:
     """The Claude Code type runs the admin's own subscription: members cannot use it."""
     if provider_type == CLAUDE_CODE_TYPE and user.role != "admin":
         raise HTTPException(status_code=403, detail=CLAUDE_CODE_ADMIN_ONLY)
+
+
+def check_sharing(user: User, shared: bool | None, provider_type: str) -> None:
+    """``shared: true`` only from the admin (403), never on Claude Code (422)."""
+    if shared and user.role != "admin":
+        raise HTTPException(status_code=403, detail=SHARE_ADMIN_ONLY)
+    if shared and provider_type == CLAUDE_CODE_TYPE:
+        raise HTTPException(status_code=422, detail=CLAUDE_CODE_NOT_SHARED)
 
 
 def name_taken(session: Session, user: User, name: str, exclude: uuid.UUID | None = None) -> None:
@@ -443,10 +457,12 @@ def create_provider(
     user: CurrentUser,
 ) -> ProviderOut:
     require_claude_code_access(user, payload.provider_type.strip())
+    check_sharing(user, payload.shared, payload.provider_type.strip())
     values = check(payload, resolver_of(request), has_stored_key=False)
     name_taken(session, user, values.name)
     row = AIProvider(id=uuid.uuid4(), user_id=user.id)
     apply(row, values, box_of(request), payload.is_active)
+    row.shared = bool(payload.shared)
     session.add(row)
     commit_or_conflict(session, values.name)
     return out_of(session, user, row)
@@ -463,6 +479,11 @@ def update_provider(
     row = get_row(session, user, provider_id)
     require_claude_code_access(user, row.provider_type)
     require_claude_code_access(user, payload.provider_type.strip())
+    check_sharing(user, payload.shared, payload.provider_type.strip())
+    shared = row.shared if payload.shared is None else payload.shared
+    # A shared row cannot become Claude Code while it stays shared.
+    if shared and payload.provider_type.strip() == CLAUDE_CODE_TYPE:
+        raise HTTPException(status_code=422, detail=CLAUDE_CODE_NOT_SHARED)
     values = check(
         payload,
         resolver_of(request),
@@ -471,6 +492,7 @@ def update_provider(
     )
     name_taken(session, user, values.name, exclude=row.id)
     apply(row, values, box_of(request), payload.is_active)
+    row.shared = shared
     commit_or_conflict(session, values.name)
     session.refresh(row)
     return out_of(session, user, row)

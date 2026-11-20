@@ -2,6 +2,7 @@ import { useQuery, useQueryClient, type Query } from '@tanstack/react-query'
 import { useCallback, useEffect } from 'react'
 import { ApiError, api, queryKeys, type AuthStatus, type Me } from '../api'
 import { forgetReturn, isAuthHash, returnRoute } from './authRoute'
+import { forgetTimeZoneDismissal } from './timezonePrompt'
 import { onUnauthorized } from './failures'
 import { mayLeave } from './route'
 import { confirmUnsaved } from './unsavedGuard'
@@ -101,6 +102,7 @@ export function useLogout(): () => Promise<void> {
       if (!(error instanceof ApiError) || error.status >= 500) return
     }
     forgetReturn()
+    forgetTimeZoneDismissal()
     client.setQueryData(queryKeys.me, null)
     // Nothing of the user's data stays in memory after logging out.
     client.removeQueries({ predicate: isDataQuery })

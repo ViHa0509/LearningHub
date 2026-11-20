@@ -19,7 +19,7 @@ from app.agent.history import (
 from app.agent.loop import Attachment, Effort, Page, run_agent
 from app.agent.messages import Message, ProviderError
 from app.agent.ratelimit import RateLimiter
-from app.agent.resolve import ResolveError, resolve_chain, web_search_enabled
+from app.agent.resolve import ResolveError, resolve_chain
 from app.agent.tools import AgentTools
 from app.auth.current import CurrentUser
 from app.db import AreaAgentSetting, Note, User, get_session
@@ -180,6 +180,11 @@ def chat(
             f"Try again in {wait} s.",
             headers={"Retry-After": str(wait)},
         )
+    # Shared mode: one count of the daily limit, before any model is built or called.
+    try:
+        chat_model.count(session, user.id, request.app.state.settings.shared_daily_limit)
+    except ResolveError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
     conversation = stored + [Message(role=m.role, text=m.content) for m in payload.messages]
     page = Page(**payload.page.model_dump())
@@ -206,10 +211,16 @@ def chat(
             agent.instructions,
             payload.effort,
             [Attachment(name=a.name, text=a.text) for a in payload.attachments],
-            web_search=web_search_enabled(session, user.id, agent.id),
+            web_search=chat_model.web_search,
             area_instructions=area_instructions,
         )
     except ProviderError as exc:
+        if chat_model.shared:
+            # The admin's configuration: name, model and error category only, never the
+            # provider's own message (it may quote the base URL or the request).
+            row = chat_model.provider
+            detail = f"{row.name} ({row.model_name}): {exc.category}"
+            raise HTTPException(status_code=502, detail=detail) from exc
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     answered = chat_model.provider
     steps = [StepOut(tool=s.tool, input=s.input, summary=s.summary) for s in result.steps]

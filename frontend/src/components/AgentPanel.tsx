@@ -1,7 +1,9 @@
 import { useEffect, useEffectEvent, useRef, useState, type DragEvent } from 'react'
 import type { ChatPage, Effort, ProposedTopics } from '../api'
-import { useAgents, useProviders } from '../hooks'
-import { readEffort, saveEffort } from '../lib/agentPrefs'
+import { useAgentReady, useAgents, useProviders, useSharedStatus } from '../hooks'
+import { readEffort, readPet, saveEffort, savePet } from '../lib/agentPrefs'
+import { useScreenClass } from '../lib/useScreenClass'
+import { ChatPet } from './agent/ChatPet'
 import { readAttachments, type Attachment, type ReadyAttachment } from '../lib/attachments'
 import { expandSkill } from '../lib/skills'
 import { AgentHeader } from './agent/AgentHeader'
@@ -10,6 +12,7 @@ import { Composer } from './agent/Composer'
 import { HistoryList } from './agent/HistoryList'
 import { MessageList } from './agent/MessageList'
 import { useAgentChat } from './agent/useAgentChat'
+import { WithdrawnWarning } from './SharedProvider'
 
 export interface AgentRequest {
   id: number
@@ -41,9 +44,14 @@ const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).inclu
 export function AgentPanel({ open, onToggle, page, request, drawer = false, onReviewTopics }: Props) {
   const providers = useProviders()
   const agents = useAgents()
+  const shared = useSharedStatus()
+  const ready = useAgentReady()
   const available = (providers.data ?? []).filter((p) => p.is_active)
-  const ready = available.length > 0
   const [effort, setEffort] = useState<Effort>(readEffort)
+  const [pet, setPet] = useState(readPet)
+  // The pet is decoration for tablet and desktop; a phone shows none.
+  const screenClass = useScreenClass()
+  const petShown = pet && screenClass !== 'phone'
   const [agentId, setAgentId] = useState(ASSISTANT)
   const chat = useAgentChat({ effort, page })
 
@@ -151,7 +159,9 @@ export function AgentPanel({ open, onToggle, page, request, drawer = false, onRe
         }
       />
       {open && providers.isError && <p className="agent-note error">Could not reach the backend.</p>}
-      {open && providers.data && !ready && <NotConfigured />}
+      {open && providers.data && (shared.isSuccess || shared.isError) && !ready && (
+        <NotConfigured withdrawn={shared.data?.withdrawn === true} />
+      )}
       {/* Kept mounted while collapsed, so the draft and attachments survive a collapse. */}
       {ready && (
         <div
@@ -200,6 +210,7 @@ export function AgentPanel({ open, onToggle, page, request, drawer = false, onRe
             busy={chat.busy}
             onRetry={chat.retry}
             onReview={onReviewTopics}
+            petShown={petShown}
             onStarter={(text) => {
               setDraft(text)
               inputRef.current?.focus()
@@ -214,6 +225,12 @@ export function AgentPanel({ open, onToggle, page, request, drawer = false, onRe
             onRemoveAttachment={(id) => setAttachments((current) => current.filter((a) => a.id !== id))}
             effort={effort}
             onEffort={chooseEffort}
+            pet={pet}
+            onPet={(on) => {
+              setPet(on)
+              savePet(on)
+            }}
+            decoration={petShown ? <ChatPet busy={chat.busy} entries={chat.entries} /> : null}
             busy={working}
             canSend={draft.trim() !== '' || files.length > 0}
             dropping={dropping}
@@ -226,12 +243,13 @@ export function AgentPanel({ open, onToggle, page, request, drawer = false, onRe
   )
 }
 
-function NotConfigured() {
+function NotConfigured({ withdrawn }: { withdrawn: boolean }) {
   return (
-    <div className="agent-note" role="status">
+    <div className="agent-note" role={withdrawn ? undefined : 'status'}>
       <p>
         <strong>No AI provider is configured.</strong>
       </p>
+      {withdrawn && <WithdrawnWarning />}
       <p>
         <a className="button-link primary" href="#/settings">
           Open settings

@@ -39,6 +39,10 @@ setup('create the Owner and save its session', async ({ request, page }) => {
   await create.getByRole('button', { name: 'Create account' }).click()
   await expect(page.getByRole('button', { name: `Account menu: ${OWNER.name}` })).toBeVisible({ timeout: 15_000 })
   await expect(page.getByRole('heading', { name: 'What do you want to learn?' })).toBeVisible()
+  // The owner has a time zone (user-timezone, design decision 7), so the "Your time zone" dialog does not
+  // cover the pages of the other tests. The dialog's own tests use a fresh member.
+  const zone = await page.request.put('/api/auth/timezone', { headers: H, data: { timezone: 'UTC' } })
+  expect(zone.status(), await zone.text()).toBe(200)
   // Sign-up is open (open-signup), but not with the admin's email; no second admin, no extra mail.
   const refused = await request.post('/api/auth/signup', {
     headers: H,

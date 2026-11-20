@@ -38,6 +38,7 @@ class MeOut(BaseModel):
     avatar_url: str | None
     has_password: bool
     linked: list[str]
+    timezone: str | None
 
 
 class SignupIn(BaseModel):
@@ -54,6 +55,10 @@ class LoginIn(BaseModel):
 class PasswordChangeIn(BaseModel):
     current: str = Field(default="", max_length=MAX_LENGTH)
     new: Password
+
+
+class TimezoneIn(BaseModel):
+    timezone: str
 
 
 class EmailIn(BaseModel):

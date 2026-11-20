@@ -709,3 +709,38 @@ test.describe('tablet only', () => {
     expect(px).toBeGreaterThanOrEqual(11)
   })
 })
+
+test('Search on a phone: the top bar shows a search button; it opens a full-width field with the dropdown, no sideways scroll, and a result opens', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'What do you want to learn?' })).toBeVisible()
+  const vp = page.viewportSize()!
+  const field = page.getByRole('combobox', { name: 'Search topics, lessons and notes' })
+  if (isPhone()) {
+    // The box itself is not in the top bar; a button opens it.
+    await expect(field).toHaveCount(0)
+    await page.getByRole('button', { name: 'Search', exact: true }).tap()
+  }
+  await expect(field).toBeVisible()
+  await field.fill(noteTitle)
+  const list = page.getByRole('listbox', { name: 'Search results' })
+  const option = list.getByRole('option', { name: new RegExp(noteTitle) })
+  await expect(option).toBeVisible({ timeout: 15_000 })
+  expect((await overflow(page)).html).toBeLessThanOrEqual(0)
+  expect((await overflow(page)).body).toBeLessThanOrEqual(0)
+  const dropdown = await box(list)
+  expect(dropdown.x).toBeGreaterThanOrEqual(0)
+  expect(dropdown.x + dropdown.width).toBeLessThanOrEqual(vp.width)
+  if (isPhone()) {
+    // Full width: the dropdown spans (almost) the whole phone width, and the field shares its row
+    // only with the Close search button.
+    const close = await box(page.getByRole('button', { name: 'Close search' }))
+    expect(close.x + close.width).toBeLessThanOrEqual(vp.width)
+    expect((await box(field)).width + close.width).toBeGreaterThanOrEqual(vp.width * 0.8)
+    expect(dropdown.width).toBeGreaterThanOrEqual(vp.width - 40)
+  }
+  await shotBoth(page, 'search-dropdown')
+  await option.tap()
+  await expect(page).toHaveURL(new RegExp(`#/note/${noteId}$`))
+  await expect(page.getByRole('article', { name: `Note: ${noteTitle}` })).toBeVisible({ timeout: 15_000 })
+  await expect(list).toHaveCount(0)
+})

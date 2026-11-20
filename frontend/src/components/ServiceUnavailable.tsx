@@ -1,7 +1,5 @@
 import type { ServiceHealth } from '../hooks'
-
-const pad = (n: number) => String(n).padStart(2, '0')
-const clock = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+import { useTime } from '../lib/time'
 
 /**
  * The full-page screen shown instead of the panels while the health check fails. It has no
@@ -9,6 +7,7 @@ const clock = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.
  */
 export function ServiceUnavailable({ health }: { health: ServiceHealth }) {
   const { reason, lastChecked } = health
+  const { clock } = useTime()
   return (
     <main className="outage" aria-label="Service unavailable">
       <section className="outage-card">

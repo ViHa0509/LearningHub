@@ -29,9 +29,11 @@ interface Props {
   onRetry: (entryId: number) => void
   onStarter: (text: string) => void
   onReview?: (proposed: ProposedTopics) => void
+  /** The chat pet is shown on the composer: leave room so the last message ends above it. */
+  petShown?: boolean
 }
 
-export function MessageList({ entries, busy, onRetry, onStarter, onReview }: Props) {
+export function MessageList({ entries, busy, onRetry, onStarter, onReview, petShown = false }: Props) {
   const end = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -39,7 +41,7 @@ export function MessageList({ entries, busy, onRetry, onStarter, onReview }: Pro
   }, [entries, busy])
 
   return (
-    <div className="agent-messages" role="log" aria-label="Conversation">
+    <div className={petShown ? 'agent-messages pet-room' : 'agent-messages'} role="log" aria-label="Conversation">
       {entries.length === 0 && !busy && <EmptyChat onStarter={onStarter} />}
       {entries.map((entry) =>
         entry.role === 'user' ? (

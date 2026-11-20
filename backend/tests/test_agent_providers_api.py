@@ -105,6 +105,7 @@ def test_list_agents(client: TestClient) -> None:
         "model_name": "claude-sonnet-5-5",
         "is_active": True,
         "last_test_status": None,
+        "shared": False,
     }
     assert body["fallback"]["name"] == "Local qwen"
     assert (body["effective"]["id"], body["effective_reason"]) == (claude, "primary")

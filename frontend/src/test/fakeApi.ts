@@ -27,6 +27,7 @@ import type {
   ResourceItem,
   ResourceSyncStatus,
   Roadmap,
+  SearchResult,
   TestResult,
   TopicInput,
 } from '../api'
@@ -178,6 +179,7 @@ export function makeProvider(name: string, type: ProviderType, model: string, ex
     key_hint: needsKey ? '…1234' : null,
     key_kind: needsKey ? 'api_key' : null,
     has_key: needsKey,
+    shared: false,
     base_url: null,
     config: {},
     is_active: true,
@@ -370,6 +372,8 @@ export interface FakeState {
   extractFile: (
     file: File,
   ) => ExtractedFile | { status: number; detail: string } | Promise<ExtractedFile | { status: number; detail: string }>
+  /** Answers GET /api/search?q=; the default finds nothing. Tests set it to return groups. */
+  search: (q: string) => SearchResult
   types: ProviderTypeInfo[]
   providers: ProviderOut[]
   /** Agent id -> assigned provider ids. */
@@ -378,6 +382,11 @@ export interface FakeState {
   areaAgents: Record<string, { instructions: string; tools: string[] | null }>
   /** Agent id -> Internet search switch. */
   webSearch: Record<string, boolean>
+  /**
+   * The admin's shared setup as a member without a configuration of their own sees it
+   * (spec: shared-providers). `state.providers` stays the asking user's own list.
+   */
+  shared: FakeShared
   /** What Test Connection answers. */
   test: () => Omit<TestResult, 'tested_at' | 'model'> | Promise<Omit<TestResult, 'tested_at' | 'model'>>
   models: string[] | { status: number; detail: string }
@@ -475,6 +484,21 @@ export interface FakeData {
   restoreFailPart: { index: number; status: number; detail: string } | null
 }
 
+export interface FakeShared {
+  /** The admin's shared configurations (only active, non-Claude-Code ones can be used). */
+  rows: ProviderOut[]
+  /** Agent id -> the shared row the admin assigned (the first usable row otherwise). */
+  primary: Record<string, string>
+  /** Agent id -> the admin's Internet search switch. */
+  webSearch: Record<string, boolean>
+  /** Requests used today and the server's daily limit. */
+  used: number
+  limit: number
+  resetsAt: string
+  /** The user ran on a shared configuration in the last 30 days. */
+  recentlyUsed: boolean
+}
+
 export interface FakeOwner {
   /** Defaults to admin. */
   role?: Role
@@ -483,6 +507,8 @@ export interface FakeOwner {
   display_name: string | null
   email_verified: boolean
   avatar_url: string | null
+  /** The chosen IANA time zone; null = none chosen yet (the dialog asks). Undefined = 'UTC', so tests see no dialog. */
+  timezone?: string | null
 }
 
 export interface FakeAuthToken {
@@ -505,6 +531,8 @@ export interface FakeAuth {
   tokens: FakeAuthToken[]
   /** When set, every auth POST answers 429 with this detail. */
   limited: string | null
+  /** When set, PUT /api/auth/timezone answers 422 with this detail. */
+  timezoneError?: string
 }
 
 /** The state behind the fake /api/kh routes. */
@@ -533,6 +561,7 @@ export const OWNER: FakeOwner = {
   display_name: 'Ada Lovelace',
   email_verified: true,
   avatar_url: null,
+  timezone: 'UTC',
 }
 
 /** Makes the fake API require a session; `signedIn` says whether this browser has one. */
@@ -593,7 +622,7 @@ const respond = (body: unknown, status = 200) =>
     }),
   )
 
-const ref = (p: ProviderOut | undefined): ProviderRef | null =>
+const ref = (p: ProviderOut | undefined, sharedMode = false): ProviderRef | null =>
   p
     ? {
         id: p.id,
@@ -601,7 +630,8 @@ const ref = (p: ProviderOut | undefined): ProviderRef | null =>
         provider_type: p.provider_type,
         model_name: p.model_name,
         is_active: p.is_active,
-        last_test_status: p.last_test?.status ?? null,
+        last_test_status: sharedMode ? null : (p.last_test?.status ?? null),
+        shared: sharedMode,
       }
     : null
 
@@ -647,10 +677,12 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
         ? { markdown: `Text of ${file.name}`, pages: 1, truncated: false, warning: null }
         : { status: 422, detail: 'the file is not a PDF' }
     },
+    search: (q) => ({ query: q, topics: [], lessons: [], notes: [] }),
     types: TYPES,
     providers: [],
     assignments: {},
     webSearch: {},
+    shared: { rows: [], primary: {}, webSearch: {}, used: 0, limit: 10, resetsAt: '2026-11-20T00:00:00Z', recentlyUsed: false },
     areaAgents: {},
     test: () => ({ status: 'ok', ok: true, message: 'The model answered: OK', latency_ms: 420 }),
     models: ['gpt-5.5', 'gpt-5.5-mini'],
@@ -733,6 +765,7 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
     avatar_url: owner.avatar_url,
     has_password: owner.password !== null,
     linked: [],
+    timezone: owner.timezone === undefined ? 'UTC' : owner.timezone,
   })
   const issue = (purpose: FakeAuthToken['purpose']) => {
     tokenSeq += 1
@@ -765,6 +798,12 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
       return invited
         ? respond({ email: invited, expires_at: '2026-11-17T09:00:00Z' })
         : respond({ detail: 'This invitation has expired or was already used.' }, 404)
+    }
+    if (url === '/api/auth/timezone' && method === 'PUT') {
+      if (!auth.signedIn || !auth.owner) return respond({ detail: 'Sign in to continue' }, 401)
+      if (auth.timezoneError) return respond({ detail: auth.timezoneError }, 422)
+      auth.owner.timezone = body?.timezone ?? null
+      return respond(me(auth.owner))
     }
     if (method !== 'POST') return null
     if (auth.limited) return respond({ detail: auth.limited }, 429)
@@ -971,7 +1010,16 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
       : [{ msg: 'Value error, the title must have 1 to 60 characters', field: 'title' }]
 
   const find = (id: string | null | undefined) => state.providers.find((p) => p.id === id)
+  const usableShared = () => state.shared.rows.filter((p) => p.shared && p.is_active && p.provider_type !== 'claude-code')
+  /** own: an active configuration of the user's own; shared: the admin's; none: neither. */
+  const mode = (): 'own' | 'shared' | 'none' =>
+    state.providers.some((p) => p.is_active) ? 'own' : usableShared().length > 0 ? 'shared' : 'none'
   const effective = (agentId: string): { provider?: ProviderOut; reason: AgentOut['effective_reason'] } => {
+    if (mode() === 'shared') {
+      const rows = usableShared()
+      const chosen = rows.find((p) => p.id === (state.shared.primary[agentId] ?? state.shared.primary.assistant))
+      return { provider: chosen ?? rows[0], reason: 'shared' }
+    }
     // Like the backend: an agent without any assignment of its own uses the assistant's.
     const own = state.assignments[agentId]
     const hasOwn = !!(own?.primary || own?.fallback)
@@ -996,6 +1044,16 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
   }
   const agentOut = (def: (typeof AGENT_DEFS)[number]): AgentOut => {
     const eff = effective(def.id)
+    if (eff.reason === 'shared') {
+      return {
+        ...def,
+        primary: null,
+        fallback: null,
+        effective: ref(eff.provider, true),
+        effective_reason: 'shared',
+        web_search: state.shared.webSearch[def.id] ?? state.shared.webSearch.assistant ?? false,
+      }
+    }
     return {
       ...def,
       primary: ref(find(state.assignments[def.id]?.primary)),
@@ -1178,6 +1236,11 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
           return respond(null, 204)
         }
         return respond({ active: !!state.data.syncKey, expires_at: state.data.syncKey?.expires_at ?? null })
+      }
+
+      if (url.startsWith('/api/search?q=') && method === 'GET') {
+        const q = decodeURIComponent(url.slice('/api/search?q='.length))
+        return respond(state.search(q))
       }
 
       if (url === '/api/domains') {
@@ -1432,7 +1495,17 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
       }
       if (url === '/api/ai-providers/types') return respond(state.types)
       if (url === '/api/ai-providers' && method === 'GET') return respond(state.providers.map(withUse))
+      const sharingProblem = (b: ProviderIn, current?: ProviderOut) => {
+        const willShare = b.shared ?? current?.shared ?? false
+        if (b.shared && state.auth.owner?.role === 'member') {
+          return { status: 403, detail: 'only the admin can share a provider' }
+        }
+        if (willShare && b.provider_type === 'claude-code') return { status: 422, detail: 'Claude Code cannot be shared' }
+        return null
+      }
       if (url === '/api/ai-providers' && method === 'POST') {
+        const refused = sharingProblem(body)
+        if (refused) return respond({ detail: refused.detail }, refused.status)
         const errors = validate(body)
         if (errors.length) return respond({ detail: errors }, 422)
         if (state.providers.some((p) => p.name === body.name)) {
@@ -1490,6 +1563,8 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
           return respond(null, 204)
         }
         if (method === 'PUT') {
+          const refused = sharingProblem(body, target)
+          if (refused) return respond({ detail: refused.detail }, refused.status)
           const errors = validate(body, target.id)
           if (errors.length) return respond({ detail: errors }, 422)
           if (state.providers.some((p) => p !== target && p.name === body.name)) {
@@ -1594,6 +1669,16 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
         return respond(areaAgentOut(domain))
       }
       if (url === '/api/agents') return respond(AGENT_DEFS.map(agentOut))
+      if (url === '/api/agents/shared') {
+        const m = mode()
+        return respond({
+          mode: m,
+          used_today: state.shared.used,
+          daily_limit: state.shared.limit,
+          resets_at: state.shared.resetsAt,
+          withdrawn: m === 'none' && state.shared.recentlyUsed,
+        })
+      }
       const settingsMatch = url.match(/^\/api\/agents\/([^/]+)\/settings$/)
       if (settingsMatch && method === 'PUT') {
         const def = AGENT_DEFS.find((d) => d.id === settingsMatch[1])
@@ -1609,6 +1694,8 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
           if (body.primary_provider_id && body.primary_provider_id === body.fallback_provider_id) {
             return respond({ detail: 'The fallback must differ from the primary provider' }, 422)
           }
+          const unknown = [body.primary_provider_id, body.fallback_provider_id].some((pid) => pid && !find(pid))
+          if (unknown) return respond({ detail: 'unknown provider' }, 404)
           state.assignments[def.id] = { primary: body.primary_provider_id, fallback: body.fallback_provider_id }
         }
         return respond(agentOut(def))
@@ -1619,6 +1706,15 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
         if (chatBody.provider_id && !override) return respond({ detail: 'unknown provider' }, 404)
         const resolved = override ?? effective(chatBody.agent_id).provider ?? null
         if (!resolved) return respond({ detail: 'No AI provider is active. Configure one in Settings.' }, 409)
+        if (!override && mode() === 'shared') {
+          // One count per request on the shared provider; over the limit nothing runs.
+          if (state.shared.used >= state.shared.limit) {
+            const detail = `Daily limit reached: you have used today's ${state.shared.limit} requests on the shared provider. Add your own provider in Settings, or try again tomorrow.`
+            return respond({ detail }, 429)
+          }
+          state.shared.used += 1
+          state.shared.recentlyUsed = true
+        }
         // Stored chats follow the backend contract (design.md of chat-session-history).
         const stored = state.chatSessions.find((s) => s.id === chatBody.session_id)
         if (chatBody.retry_from && !chatBody.session_id) return respond({ detail: 'retry_from needs a session_id' }, 400)

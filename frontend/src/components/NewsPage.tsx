@@ -1,6 +1,7 @@
 import { useEffect, useEffectEvent, useId, useRef, useState } from 'react'
 import type { NewsItem, NewsRefreshStatus } from '../api'
 import { useNews, useNewsRefresh } from '../hooks'
+import { useTime, type Time } from '../lib/time'
 import { Icon } from './Icon'
 import { BlurFade } from './magicui/blur-fade'
 import { NumberTicker } from './magicui/number-ticker'
@@ -8,42 +9,27 @@ import { NumberTicker } from './magicui/number-ticker'
 /** How long the text filter waits after the last key before it asks the server. */
 const FILTER_DELAY_MS = 300
 
-const dayKey = (date: Date) => `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
-
-const formatDay = (date: Date) => date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
-
-const formatClock = (date: Date) => date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-
-/** "Today", "Yesterday", or the date (e.g. "Nov 5, 2026"). */
-function dayLabel(date: Date, now: Date): string {
-  if (dayKey(date) === dayKey(now)) return 'Today'
-  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
-  if (dayKey(date) === dayKey(yesterday)) return 'Yesterday'
-  return formatDay(date)
-}
-
 /** The items (already newest first) in day groups, keeping their order. */
-function groupByDay(items: NewsItem[], now: Date): { key: string; label: string; items: NewsItem[] }[] {
+function groupByDay(items: NewsItem[], now: Date, t: Time): { key: string; label: string; items: NewsItem[] }[] {
   const groups: { key: string; label: string; items: NewsItem[] }[] = []
   for (const item of items) {
-    const date = new Date(item.published_at)
-    const key = dayKey(date)
+    const key = t.dayKey(item.published_at)
     const last = groups[groups.length - 1]
     if (last?.key === key) last.items.push(item)
-    else groups.push({ key, label: dayLabel(date, now), items: [item] })
+    else groups.push({ key, label: t.relativeDay(item.published_at, now), items: [item] })
   }
   return groups
 }
 
 /** When the news was last refreshed, said briefly: "just now", "12 min ago", "9:30 AM" or a date. */
-function describeRefresh(iso: string, now: Date): string {
+function describeRefresh(iso: string, now: Date, t: Time): string {
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return iso
   const minutes = Math.floor((now.getTime() - date.getTime()) / 60_000)
   if (minutes < 1) return 'just now'
   if (minutes < 60) return `${minutes} min ago`
-  if (dayKey(date) === dayKey(now)) return formatClock(date)
-  return `${formatDay(date)}, ${formatClock(date)}`
+  if (t.dayKey(date) === t.dayKey(now)) return t.time(date)
+  return `${t.date(date)}, ${t.time(date)}`
 }
 
 interface Props {
@@ -53,6 +39,7 @@ interface Props {
 
 /** AI news from the configured feeds: day groups, source and text filters, refresh. */
 export function NewsPage({ onAskAgent }: Props) {
+  const t = useTime()
   const [source, setSource] = useState('')
   const [text, setText] = useState('')
   const [q, setQ] = useState('')
@@ -106,7 +93,7 @@ export function NewsPage({ onAskAgent }: Props) {
           <h1>AI news</h1>
           <p className="muted">Headlines from the AI labs and research sites you follow, newest first.</p>
           {first?.last_refresh_at && (
-            <p className="muted news-refreshed">Last refreshed {describeRefresh(first.last_refresh_at, now)}</p>
+            <p className="muted news-refreshed">Last refreshed {describeRefresh(first.last_refresh_at, now, t)}</p>
           )}
         </div>
         <button type="button" onClick={() => void startRefresh()} disabled={running || !statusKnown}>
@@ -169,7 +156,7 @@ export function NewsPage({ onAskAgent }: Props) {
         </div>
       )}
 
-      {groupByDay(items, now).map((group) => (
+      {groupByDay(items, now, t).map((group) => (
         <section key={group.key} className="news-day" aria-label={group.label}>
           <h2>{group.label}</h2>
           <ul className="news-list">
@@ -207,6 +194,7 @@ function NewsCard({
   index: number
   onAskAgent: (text: string) => void
 }) {
+  const t = useTime()
   const titleId = useId()
   const published = new Date(item.published_at)
   return (
@@ -216,7 +204,7 @@ function NewsCard({
         {!Number.isNaN(published.getTime()) && (
           <>
             <span aria-hidden="true"> · </span>
-            <time dateTime={item.published_at}>{formatClock(published)}</time>
+            <time dateTime={item.published_at}>{t.time(published)}</time>
           </>
         )}
       </div>

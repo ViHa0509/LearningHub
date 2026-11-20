@@ -26,6 +26,7 @@ from app.resources.fetch import Fetched, FetchError, fetch_text
 from app.resources.store import node_resources
 from app.roadmaps import RoadmapCatalog
 from app.storage import FileStore, blob_key, sha256_hex
+from app.text_search import like_pattern, snippet
 
 NOTE_TEXT_LIMIT = 6000
 LESSON_LIMIT = 20_000
@@ -76,14 +77,6 @@ def _text(args: dict[str, Any], key: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ToolInputError(f"'{key}' must be a non-empty string")
     return value.strip()
-
-
-def _snippet(text: str, query: str, width: int = 90) -> str:
-    at = text.lower().find(query.lower())
-    if at < 0:
-        return text[: width * 2].strip()
-    start = max(0, at - width)
-    return ("…" if start else "") + text[start : at + len(query) + width].strip() + "…"
 
 
 SPECS: tuple[ToolSpec, ...] = (
@@ -331,8 +324,7 @@ class AgentTools:
 
     def search_notes(self, args: dict[str, Any]) -> ToolOutcome:
         query = _text(args, "query")[:200]
-        escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        pattern = f"%{escaped}%"
+        pattern = like_pattern(query)
         rows = self._session.scalars(
             select(Note)
             .where(
@@ -351,7 +343,7 @@ class AgentTools:
                 "id": str(n.id),
                 "title": n.title,
                 "node_id": n.node_id,
-                "snippet": _snippet(n.body_text, query),
+                "snippet": snippet(n.body_text, query),
             }
             for n in rows
         ]

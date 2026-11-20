@@ -1,12 +1,16 @@
 import type { ProviderOut } from '../api'
-import { useProviders, useProviderTypes } from '../hooks'
+import { useAgents, useProviders, useProviderTypes, useSharedStatus } from '../hooks'
 import { typeLabel } from '../lib/providers'
 import { SettingsNav } from './SettingsNav'
+import { WithdrawnWarning } from './SharedProvider'
+import { sharedLine, sharedProviders, usageLine } from '../lib/shared'
 import { StatusBadge } from './StatusBadge'
 
 export function SettingsPage() {
   const providers = useProviders()
   const types = useProviderTypes()
+  const shared = useSharedStatus().data
+  const sharedOn = sharedProviders(useAgents().data)
   return (
     <section className="settings-page" aria-label="Settings">
       <SettingsNav current="providers" />
@@ -22,9 +26,20 @@ export function SettingsPage() {
         provider's console.
       </p>
       {providers.isError && <p className="error">Could not load the providers.</p>}
+      {shared?.withdrawn && <WithdrawnWarning />}
+      {providers.data && providers.data.length === 0 && shared?.mode === 'shared' && (
+        <div>
+          {sharedOn.map((p) => (
+            <p key={p.id}>{sharedLine(p)}</p>
+          ))}
+          <p className="shared-usage">{usageLine(shared)}</p>
+        </div>
+      )}
       {providers.data && providers.data.length === 0 && (
         <p className="muted" role="status">
-          No providers yet. Add one to use the agent.
+          {shared?.mode === 'shared'
+            ? 'You have no provider of your own yet. Add one to use your own key instead of the shared one.'
+            : 'No providers yet. Add one to use the agent.'}
         </p>
       )}
       <div className="provider-cards">
@@ -48,7 +63,10 @@ function ProviderCard({ provider, typeName, needsKey }: { provider: ProviderOut;
         <h2>
           <a href={`#/settings/providers/${provider.id}`}>{provider.name}</a>
         </h2>
-        <span className={provider.is_active ? 'tag on' : 'tag off'}>{provider.is_active ? 'Active' : 'Inactive'}</span>
+        <span>
+          <span className={provider.is_active ? 'tag on' : 'tag off'}>{provider.is_active ? 'Active' : 'Inactive'}</span>
+          {provider.shared && <span className="tag shared">Shared</span>}
+        </span>
       </header>
       <p className="provider-meta">
         {typeName} · {provider.model_name}

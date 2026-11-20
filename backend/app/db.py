@@ -1,6 +1,6 @@
 import uuid
 from collections.abc import Iterator
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from fastapi import Request
@@ -8,6 +8,7 @@ from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
+    Date,
     DateTime,
     Engine,
     ForeignKey,
@@ -88,6 +89,8 @@ class AIProvider(Base):
     base_url: Mapped[str | None] = mapped_column(Text)
     config: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Shared with every signed-in user (admin only, never Claude Code); private by default.
+    shared: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     last_test_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_test_status: Mapped[str | None] = mapped_column(Text)
     last_test_message: Mapped[str | None] = mapped_column(Text)
@@ -114,6 +117,16 @@ class AgentProvider(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class SharedUsage(Base):
+    """Agent requests one user ran on shared configurations on one UTC day."""
+
+    __tablename__ = "shared_usage"
+
+    user_id: Mapped[uuid.UUID] = user_fk(primary_key=True)
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    runs: Mapped[int] = mapped_column(Integer)
 
 
 class AgentSetting(Base):
@@ -459,6 +472,8 @@ class User(Base):
     disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     placeholder: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     preferences: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    # IANA name chosen by the user for showing times; None until chosen.
+    timezone: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

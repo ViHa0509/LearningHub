@@ -45,6 +45,7 @@ def clean_tables() -> None:
             text(
                 "TRUNCATE notes, lessons, agent_providers, ai_providers, node_resources, "
                 "news_items, agent_settings, area_agent_settings, kh_connections, users, "
+                "shared_usage, "
                 "oauth_accounts, sessions, "
                 "auth_tokens, "
                 "app_settings, sync_keys, invitations, oauth_pending, sync_uploads, "
@@ -97,7 +98,13 @@ def owner_session_token(app: FastAPI) -> str:
     with app.state.session_factory() as db:
         user = db.scalar(select(User).where(User.role == "admin"))
         if user is None:
-            user = User(email=OWNER_EMAIL, email_verified_at=now, role="admin", preferences={})
+            user = User(
+                email=OWNER_EMAIL,
+                email_verified_at=now,
+                role="admin",
+                preferences={},
+                timezone="UTC",
+            )
             db.add(user)
             db.flush()
         db.add(

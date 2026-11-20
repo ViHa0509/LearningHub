@@ -35,7 +35,7 @@
    - After `strip()`, fewer than 2 characters answers empty groups without querying.
    - Response model `SearchOut { query, topics: [TopicHit], lessons: [LessonHit], notes: [NoteHit] }`:
      - `TopicHit { node_id, title, domain_title }`
-     - `LessonHit { node_id, title, domain_title, source, snippet }`
+     - `LessonHit { node_id, title, domain_title, source, snippet }` (`source` is the lesson's stored source: `user`, `agent` or `import`)
      - `NoteHit { id, title, node_id | null, snippet }`
    - GET with no side effect, so the `X-LearningHub` header is not required.
 

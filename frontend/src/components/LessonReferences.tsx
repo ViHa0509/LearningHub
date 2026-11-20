@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api, queryKeys, type ResourceItem } from '../api'
 import { useNodeResources, useResourceSync } from '../hooks'
+import { useTime } from '../lib/time'
 import { Icon } from './Icon'
 
 /** Group headings per reference type; another type is shown by its name. */
@@ -35,13 +36,6 @@ function hostOf(url: string): string {
   }
 }
 
-function formatDate(iso: string): string {
-  const date = new Date(iso)
-  return Number.isNaN(date.getTime())
-    ? iso
-    : date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
-}
-
 interface Props {
   domain: string
   node: string
@@ -51,6 +45,7 @@ interface Props {
 
 /** The node's reference links synced from roadmap.sh, with a sync button while there are none. */
 export function LessonReferences({ domain, node, onDraftFromReferences }: Props) {
+  const formatDate = useTime().date
   const resources = useNodeResources(domain, node)
   const items = resources.data?.items ?? []
   const empty = resources.isSuccess && items.length === 0

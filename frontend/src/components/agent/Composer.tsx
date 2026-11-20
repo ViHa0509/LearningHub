@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from 'react'
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import type { Effort } from '../../api'
 import { EFFORTS, effortLabel } from '../../lib/agentPrefs'
 import { ACCEPT, extensionOf, formatSize, type Attachment } from '../../lib/attachments'
@@ -15,6 +15,11 @@ interface Props {
   onRemoveAttachment: (id: number) => void
   effort: Effort
   onEffort: (effort: Effort) => void
+  /** Whether the chat pet is switched on, and the switch. */
+  pet: boolean
+  onPet: (on: boolean) => void
+  /** Decoration drawn inside the composer (the chat pet). */
+  decoration?: ReactNode
   busy: boolean
   canSend: boolean
   dropping: boolean
@@ -109,6 +114,7 @@ export function Composer(props: Props) {
         onSubmit()
       }}
     >
+      {props.decoration}
       {popupOpen && (
         <div className="popover skill-popup">
           <div className="skill-popup-head" aria-hidden="true">
@@ -258,6 +264,19 @@ export function Composer(props: Props) {
                     ))}
                   </div>
                 )}
+                <button
+                  type="button"
+                  role="menuitemcheckbox"
+                  aria-checked={props.pet}
+                  onClick={() => {
+                    props.onPet(!props.pet)
+                    closeMenu(true)
+                  }}
+                >
+                  <Icon name="sparkle" />
+                  Pet
+                  {props.pet && <Icon name="check" className="menu-check" />}
+                </button>
               </ActionMenu>
             )}
           </div>

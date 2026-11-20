@@ -1,9 +1,11 @@
+import { useRef, useState } from 'react'
 import type { Me } from '../api'
 import type { Theme } from '../lib/theme'
 import type { ScreenClass } from '../lib/useScreenClass'
 import { AccountMenu } from './AccountMenu'
 import { Icon, type IconName } from './Icon'
 import { AGENT_OPENER_ID, LEARNED_OPENER_ID } from './PanelFrame'
+import { TopSearch } from './TopSearch'
 
 interface Props {
   theme: Theme
@@ -40,10 +42,17 @@ export function TopBar({
   rightPanelId,
 }: Props) {
   const phone = screenClass === 'phone'
+  const [searchRow, setSearchRow] = useState(false)
+  const searchButton = useRef<HTMLButtonElement>(null)
+  const closeSearchRow = () => {
+    setSearchRow(false)
+    searchButton.current?.focus()
+  }
   const current = THEMES.findIndex((t) => t.value === theme)
   const currentTheme = THEMES[current < 0 ? 0 : current]
   const nextTheme = THEMES[(current + 1) % THEMES.length]
   return (
+    <>
     <header className="top-bar">
       {phone && (
         <button
@@ -63,6 +72,7 @@ export function TopBar({
         <img className="brand-mark for-light" src="/brand/logo-mark-small-light.svg" alt="" width="28" height="28" />
         <span className="brand-title">Learning Hub</span>
       </a>
+      {user && !phone && <TopSearch />}
       <nav className="top-actions" aria-label="App">
         <a href="#/news">
           <Icon name="news" />
@@ -75,6 +85,18 @@ export function TopBar({
           </a>
         )}
       </nav>
+      {phone && user && (
+        <button
+          type="button"
+          ref={searchButton}
+          className="top-icon-button"
+          aria-label="Search"
+          aria-expanded={searchRow}
+          onClick={() => setSearchRow(true)}
+        >
+          <Icon name="search" size={20} />
+        </button>
+      )}
       {phone ? (
         <button
           type="button"
@@ -115,5 +137,11 @@ export function TopBar({
       )}
       {user && <AccountMenu user={user} />}
     </header>
+    {phone && user && searchRow && (
+      <div className="top-search-row">
+        <TopSearch autoFocus onClose={closeSearchRow} />
+      </div>
+    )}
+    </>
   )
 }

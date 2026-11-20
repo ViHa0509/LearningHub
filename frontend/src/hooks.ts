@@ -55,6 +55,18 @@ export function useAgents() {
   return useQuery({ queryKey: queryKeys.agents, queryFn: api.agents })
 }
 
+/** The shared-provider mode, the user's count of the day and the withdrawn flag. */
+export function useSharedStatus() {
+  return useQuery({ queryKey: queryKeys.sharedStatus, queryFn: api.sharedStatus })
+}
+
+/** Whether an agent can answer: the user has an active provider, or runs on the admin's shared one. */
+export function useAgentReady(): boolean {
+  const providers = useProviders()
+  const shared = useSharedStatus()
+  return (providers.data ?? []).some((p) => p.is_active) || shared.data?.mode === 'shared'
+}
+
 export function useAgentTools() {
   return useQuery({ queryKey: queryKeys.agentTools, queryFn: api.agentTools })
 }

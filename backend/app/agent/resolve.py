@@ -5,36 +5,55 @@ for an agent without any assignment of its own the assistant's primary (and fall
 the first active configuration by creation time. The agent's fallback is used only
 after a recoverable error (timeout, rate limit, unavailable) and then for the rest of the
 request.
+
+Shared mode: a user (not the admin) with no usable active configuration of their own runs
+each agent as the admin set it up, on the admin's shared, active, non-Claude-Code rows only.
+This module is the one place that reads another user's rows, and only those. Each request in
+shared mode takes one count of the user's daily limit before any model is built.
 """
 
+import logging
 import time
 import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from datetime import UTC, date, datetime, timedelta
+from datetime import time as dtime
 from typing import Literal, TypeVar
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.agent.llm.errors import ProviderError
 from app.agent.llm.factory import ChatModel, ChatModelFactory, ProviderSettings, runs_own_loop
-from app.agent.llm.logs import event
+from app.agent.llm.logs import LOG, event
 from app.agent.llm.params import CLAUDE_CODE_TYPE
 from app.agent.loop import tool_loop
 from app.agent.messages import Message, ToolSpec, Turn
 from app.agent.results import AgentResult
 from app.agent.secrets import SecretBox, SecretUnreadable
 from app.agent.tools import AgentTools
-from app.db import AgentProvider, AgentSetting, AIProvider, User
+from app.db import AgentProvider, AgentSetting, AIProvider, SharedUsage, User
 
 T = TypeVar("T")
 
-EffectiveReason = Literal["override", "primary", "assistant", "default", "none"]
+EffectiveReason = Literal["override", "primary", "assistant", "default", "shared", "none"]
+SharedMode = Literal["own", "shared", "none"]
 
 # Agents without an assignment of their own follow this one (the chat panel's agent).
 DEFAULT_AGENT = "assistant"
 
 NO_PROVIDER = "No active AI provider: add one or switch one on in Settings."
+
+# A user who ran on a shared configuration this many days back sees the withdrawn warning.
+WITHDRAWN_DAYS = 30
+
+
+def limit_message(limit: int) -> str:
+    return (
+        f"Daily limit reached: you have used today's {limit} requests on the shared provider. "
+        "Add your own provider in Settings, or try again tomorrow."
+    )
 
 
 class ResolveError(Exception):
@@ -121,6 +140,136 @@ def effective(
     return (default, "default") if default is not None else (None, "none")
 
 
+# --- shared mode -----------------------------------------------------------------------
+
+
+@dataclass
+class SharedSetup:
+    """How one agent runs for a user in shared mode: the admin's shared rows and switch."""
+
+    primary: AIProvider
+    fallback: AIProvider | None
+    web_search: bool
+
+
+def the_admin(session: Session) -> User | None:
+    return session.scalars(
+        select(User).where(User.role == "admin").order_by(User.created_at, User.id).limit(1)
+    ).first()
+
+
+def shared_rows(session: Session, admin_id: uuid.UUID) -> list[AIProvider]:
+    """The admin's configurations other users may run on: shared, active, not Claude Code."""
+    return list(
+        session.scalars(
+            select(AIProvider)
+            .where(
+                AIProvider.user_id == admin_id,
+                AIProvider.shared.is_(True),
+                AIProvider.is_active.is_(True),
+                AIProvider.provider_type != CLAUDE_CODE_TYPE,
+            )
+            .order_by(AIProvider.created_at, AIProvider.name)
+        )
+    )
+
+
+def in_shared_mode(session: Session, user_id: uuid.UUID) -> uuid.UUID | None:
+    """The admin's id when this user runs on shared rows (not the admin, no usable active row
+    of their own); else None. The admin's shared rows are their own: never shared mode."""
+    admin = the_admin(session)
+    if admin is None or admin.id == user_id:
+        return None
+    if first_active(session, user_id) is not None:
+        return None
+    return admin.id
+
+
+def shared_setup(session: Session, user_id: uuid.UUID, agent_id: str) -> SharedSetup | None:
+    """The agent's setup in shared mode, or None (not in shared mode, or nothing shared).
+
+    Primary: the admin's primary for the agent (or the assistant's when the agent has no
+    assignment of the admin's) when it is shared, else the first shared row. Fallback: the
+    admin's matching fallback when it is shared and differs. Internet search: the admin's.
+    """
+    admin_id = in_shared_mode(session, user_id)
+    if admin_id is None:
+        return None
+    rows = shared_rows(session, admin_id)
+    if not rows:
+        return None
+    allowed = {row.id: row for row in rows}
+    assigned, _inherited = own_or_inherited(session, admin_id, agent_id)
+    wanted = assigned.get("primary")
+    primary = allowed.get(wanted.id, rows[0]) if wanted is not None else rows[0]
+    wanted_fallback = assigned.get("fallback")
+    fallback = allowed.get(wanted_fallback.id) if wanted_fallback is not None else None
+    if fallback is not None and fallback.id == primary.id:
+        fallback = None
+    return SharedSetup(primary, fallback, web_search_enabled(session, admin_id, agent_id))
+
+
+def shared_mode(session: Session, user_id: uuid.UUID) -> SharedMode:
+    """own: a usable active row of the user's own; shared: shared rows to run on; none."""
+    if first_active(session, user_id) is not None:
+        return "own"
+    admin_id = in_shared_mode(session, user_id)
+    if admin_id is not None and shared_rows(session, admin_id):
+        return "shared"
+    return "none"
+
+
+def utc_today() -> date:
+    return datetime.now(UTC).date()
+
+
+def resets_at(day: date) -> datetime:
+    """The next 00:00 UTC after ``day``."""
+    return datetime.combine(day + timedelta(days=1), dtime(0), tzinfo=UTC)
+
+
+def used_on(session: Session, user_id: uuid.UUID, day: date) -> int:
+    row = session.get(SharedUsage, (user_id, day))
+    return row.runs if row is not None else 0
+
+
+def used_recently(session: Session, user_id: uuid.UUID, day: date) -> bool:
+    """A shared request of the user within the last WITHDRAWN_DAYS days."""
+    found = session.scalars(
+        select(SharedUsage.day).where(
+            SharedUsage.user_id == user_id,
+            SharedUsage.day >= day - timedelta(days=WITHDRAWN_DAYS),
+        )
+    ).first()
+    return found is not None
+
+
+COUNT_SQL = text(
+    "INSERT INTO shared_usage (user_id, day, runs) VALUES (:user_id, :day, 1) "
+    "ON CONFLICT (user_id, day) DO UPDATE SET runs = shared_usage.runs + 1 "
+    "WHERE shared_usage.runs < :limit "
+    "RETURNING runs"
+)
+
+
+def count_shared(session: Session, user_id: uuid.UUID, limit: int, day: date) -> int | None:
+    """One atomic count: the new number of runs, or None when the limit was already reached.
+    Concurrent requests serialize on the row, so at most ``limit`` ever pass. Not committed."""
+    runs = session.execute(COUNT_SQL, {"user_id": user_id, "day": day, "limit": limit}).scalar()
+    # A first request of the day inserts 1 even with limit 1; limit >= 1 is enforced.
+    return int(runs) if runs is not None else None
+
+
+def take_shared_count(session: Session, user_id: uuid.UUID, limit: int) -> None:
+    """Count one shared request (committed at once, so a later failure still counts), or
+    ResolveError 429 over the limit. Only the user id is logged, never request text."""
+    runs = count_shared(session, user_id, limit, utc_today())
+    session.commit()
+    if runs is None:
+        LOG.log(logging.INFO, "shared limit", extra={"user_id": str(user_id)})
+        raise ResolveError(429, limit_message(limit))
+
+
 @dataclass
 class Candidate:
     row: AIProvider
@@ -176,6 +325,17 @@ class AgentModel:
         self.current = self.primary
         self.fallback_used = False
         self._primary_error: ProviderError | None = None
+        # Shared mode: the rows are the admin's; no model is built before the count is taken.
+        self.shared = False
+        self.counted = False
+        # The Internet search switch that applies to this request.
+        self.web_search = False
+
+    def count(self, session: Session, user_id: uuid.UUID, limit: int) -> None:
+        """Take the daily count when the request runs on shared rows (ResolveError 429)."""
+        if self.shared and not self.counted:
+            take_shared_count(session, user_id, limit)
+        self.counted = True
 
     @property
     def model(self) -> str:
@@ -186,6 +346,8 @@ class AgentModel:
         return self.current.row
 
     def _build(self, candidate: Candidate) -> ChatModel:
+        if self.shared and not self.counted:
+            raise RuntimeError("a shared request must be counted before a model is built")
         if candidate.model is None:
             candidate.model = self._factory.create(settings_of(candidate.row, self._box))
         return candidate.model
@@ -317,8 +479,13 @@ def resolve_chain(
     agent_id: str,
     override_id: uuid.UUID | None = None,
 ) -> AgentModel:
-    """The model for one agent request, or ResolveError (404 / 409) before any model call."""
+    """The model for one agent request, or ResolveError (404 / 409) before any model call.
+
+    The caller must call ``count`` on the result before running it: in shared mode that takes
+    the daily count (429 over the limit); a model is never built before.
+    """
     if override_id is not None:
+        # An override names only the user's own rows; a shared row's id is 404 like any other.
         row = session.scalars(
             select(AIProvider).where(AIProvider.id == override_id, AIProvider.user_id == user_id)
         ).first()
@@ -328,13 +495,23 @@ def resolve_chain(
             raise ResolveError(409, NO_PROVIDER)
         if not row.is_active:
             raise ResolveError(409, f"{row.name} is switched off in Settings")
-        return AgentModel(agent_id, row, None, box, factory)
+        model = AgentModel(agent_id, row, None, box, factory)
+        model.web_search = web_search_enabled(session, user_id, agent_id)
+        return model
     chosen, _reason = effective(session, user_id, agent_id)
     if chosen is None:
-        raise ResolveError(409, NO_PROVIDER)
+        setup = shared_setup(session, user_id, agent_id)
+        if setup is None:
+            raise ResolveError(409, NO_PROVIDER)
+        model = AgentModel(agent_id, setup.primary, setup.fallback, box, factory)
+        model.shared = True
+        model.web_search = setup.web_search
+        return model
     fallback = own_or_inherited(session, user_id, agent_id)[0].get("fallback")
     if fallback is not None and (
         not fallback.is_active or fallback.id == chosen.id or not usable(fallback, session)
     ):
         fallback = None
-    return AgentModel(agent_id, chosen, fallback, box, factory)
+    model = AgentModel(agent_id, chosen, fallback, box, factory)
+    model.web_search = web_search_enabled(session, user_id, agent_id)
+    return model

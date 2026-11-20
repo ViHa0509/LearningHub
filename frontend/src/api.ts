@@ -153,6 +153,8 @@ export interface ProviderIn {
   base_url?: string
   is_active: boolean
   config: ProviderConfig
+  /** Admin only: share with every user. Left out = unchanged on update, private on create. */
+  shared?: boolean
 }
 
 export interface TestResult {
@@ -178,6 +180,8 @@ export interface ProviderOut {
   key_hint: string | null
   key_kind: 'api_key' | 'setup_token' | null
   has_key: boolean
+  /** Shared with all users (set by the admin only). */
+  shared: boolean
   base_url: string | null
   config: ProviderConfig
   is_active: boolean
@@ -195,6 +199,8 @@ export interface ProviderRef {
   model_name: string
   is_active: boolean
   last_test_status: TestStatus | null
+  /** A shared configuration of the admin (only name and model are real data for a member). */
+  shared: boolean
 }
 
 export interface AgentOut {
@@ -204,9 +210,21 @@ export interface AgentOut {
   primary: ProviderRef | null
   fallback: ProviderRef | null
   effective: ProviderRef | null
-  effective_reason: 'override' | 'primary' | 'assistant' | 'default' | 'none'
+  effective_reason: 'override' | 'primary' | 'assistant' | 'default' | 'shared' | 'none'
   /** Internet search (Claude Code WebSearch) for this agent. */
   web_search: boolean
+}
+
+/** GET /api/agents/shared: how the asking user runs the agents and what is left of the shared daily limit. */
+export interface SharedStatus {
+  /** own: a usable configuration of the user's own; shared: the admin's shared one; none: neither. */
+  mode: 'own' | 'shared' | 'none'
+  used_today: number
+  daily_limit: number
+  /** The next 00:00 UTC as an ISO instant. */
+  resets_at: string
+  /** The shared provider the user ran on is gone (only with mode none). */
+  withdrawn: boolean
 }
 
 /** A device sign-in in progress at the identity service (GET /api/kh, POST /api/kh/connect). */
@@ -494,6 +512,8 @@ export interface Me {
   avatar_url: string | null
   has_password: boolean
   linked: string[]
+  /** IANA time zone the user chose; null until chosen. */
+  timezone: string | null
 }
 
 /** A row of the Users page (GET /api/admin/users). */
@@ -719,6 +739,35 @@ async function sha256Hex(file: Blob): Promise<string> {
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('')
 }
 
+export interface TopicHit {
+  node_id: string
+  title: string
+  domain_title: string
+}
+
+export interface LessonHit {
+  node_id: string
+  title: string
+  domain_title: string
+  source: string
+  snippet: string
+}
+
+export interface NoteHit {
+  id: string
+  title: string
+  node_id: string | null
+  snippet: string
+}
+
+/** GET /api/search: the three groups of the top-bar search (spec: app-search). */
+export interface SearchResult {
+  query: string
+  topics: TopicHit[]
+  lessons: LessonHit[]
+  notes: NoteHit[]
+}
+
 const json = (method: string, body: unknown): RequestInit => ({
   method,
   headers: { 'Content-Type': 'application/json' },
@@ -728,6 +777,7 @@ const json = (method: string, body: unknown): RequestInit => ({
 export const api = {
   health,
   domains: () => request<DomainSummary[]>('/api/domains'),
+  search: (q: string) => request<SearchResult>(`/api/search?q=${encodeURIComponent(q)}`),
   roadmap: (domain: string) => request<Roadmap>(`/api/domains/${domain}/roadmap`),
   counts: (domain: string) => request<NodeCounts>(`/api/domains/${domain}/counts`),
   fields: () => request<LearningField[]>('/api/fields'),
@@ -821,6 +871,7 @@ export const api = {
     ),
   providerModels: (id: string) => request<{ models: string[] }>(`/api/ai-providers/${id}/models`),
   agents: () => request<AgentOut[]>('/api/agents'),
+  sharedStatus: () => request<SharedStatus>('/api/agents/shared'),
   assignAgent: (id: string, body: AgentAssignment) =>
     request<AgentOut>(`/api/agents/${id}/provider`, json('PUT', body)),
   saveAgentSettings: (id: string, body: { web_search: boolean }) =>
@@ -880,6 +931,8 @@ export const api = {
   signup: (body: { email: string; password: string; display_name?: string }) =>
     request<Me>('/api/auth/signup', json('POST', body)),
   login: (email: string, password: string) => request<Me>('/api/auth/login', json('POST', { email, password })),
+  /** Stores the user's time zone (an IANA name); answers the updated user. */
+  setTimezone: (timezone: string) => request<Me>('/api/auth/timezone', json('PUT', { timezone })),
   logout: () => request<void>('/api/auth/logout', { method: 'POST' }),
   forgotPassword: (email: string) => request<{ message: string }>('/api/auth/forgot', json('POST', { email })),
   resetPassword: (token: string, password: string) =>
@@ -957,6 +1010,7 @@ export const queryKeys = {
   health: ['health'] as const,
   domains: ['domains'] as const,
   fields: ['fields'] as const,
+  search: (q: string) => ['search', q] as const,
   roadmap: (domain: string) => ['roadmap', domain] as const,
   counts: (domain: string) => ['counts', domain] as const,
   banks: (area: string) => ['banks', area] as const,
@@ -973,6 +1027,8 @@ export const queryKeys = {
   provider: (id: string) => ['ai-providers', id] as const,
   providerTypes: ['ai-provider-types'] as const,
   agents: ['agents'] as const,
+  /** Under `agents`, so refreshing the agents refreshes it too. */
+  sharedStatus: ['agents', 'shared'] as const,
   kh: ['kh'] as const,
   agentTools: ['agent-tools'] as const,
   areaAgents: ['area-agents'] as const,

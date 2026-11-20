@@ -26,10 +26,6 @@ export function typeLabel(types: ProviderTypeInfo[] | undefined, type: string): 
   return types?.find((t) => t.type === type)?.label ?? type
 }
 
-export function formatTime(iso: string): string {
-  return new Date(iso).toLocaleString()
-}
-
 /** "Claude main · claude-sonnet-5-5", the way answers and pickers name a provider. */
 export function providerLabel(p: { name: string; model_name: string }): string {
   return `${p.name} · ${p.model_name}`

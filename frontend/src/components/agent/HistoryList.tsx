@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api, queryKeys, type ChatSessionSummary } from '../../api'
+import { useTime } from '../../lib/time'
 import { Icon } from '../Icon'
 
 interface Props {
@@ -13,11 +14,11 @@ interface Props {
   onDeleted: (id: string) => void
 }
 
-const when = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 const countOf = (n: number) => `${n} ${n === 1 ? 'message' : 'messages'}`
 
 /** The user's past chats, newest activity first: open one, rename it, or delete it. */
 export function HistoryList({ currentId, busy, onOpen, onDeleted }: Props) {
+  const when = useTime().dateTimeShort
   const client = useQueryClient()
   const list = useQuery({ queryKey: queryKeys.chatSessions, queryFn: api.chatSessions })
   const [renaming, setRenaming] = useState<string | null>(null)

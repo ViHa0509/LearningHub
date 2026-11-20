@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
 import {
   api,
+  ApiError,
   queryKeys,
   type AgentStep,
   type ChatPage,
@@ -10,6 +11,7 @@ import {
   type ProposedTopics,
 } from '../../api'
 import type { ReadyAttachment } from '../../lib/attachments'
+import { useTime } from '../../lib/time'
 
 /** One user message: what the user typed, what is sent, its files and the agent that answers it. */
 export interface Turn {
@@ -76,6 +78,7 @@ interface Options {
 
 export function useAgentChat({ effort, page }: Options) {
   const client = useQueryClient()
+  const clock = useTime()
   const [entries, setEntries] = useState<Entry[]>([])
   const [busy, setBusy] = useState(false)
   // A stored chat is being read.
@@ -169,7 +172,20 @@ export function useAgentChat({ effort, page }: Options) {
         }),
       ])
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'The agent request failed'
+      let message = e instanceof Error ? e.message : 'The agent request failed'
+      // Over the shared daily limit: say when it resets, in the user's time zone.
+      if (e instanceof ApiError && e.status === 429) {
+        try {
+          const status = await client.fetchQuery({
+            queryKey: queryKeys.sharedStatus,
+            queryFn: api.sharedStatus,
+            staleTime: 0,
+          })
+          message = `${message} It resets ${clock.dateTimeShort(status.resets_at)}.`
+        } catch {
+          // The limit message alone is still true.
+        }
+      }
       // The chat was deleted elsewhere: what is on screen goes on as a new chat when sent again.
       if (current && message === 'chat session not found') setSession(null)
       setEntries((list) => list.map((entry) => (entry.id === question.id ? { ...entry, error: message } : entry)))

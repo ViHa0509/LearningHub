@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { api, ApiError, queryKeys, type AdminUser, type Invitation } from '../api'
 import { authErrorMessage, useMe } from '../lib/auth'
+import { useTime } from '../lib/time'
 import { useUnsavedGuard } from '../lib/unsavedGuard'
 import { ActionMenu } from './ActionMenu'
 import { Icon } from './Icon'
@@ -10,7 +11,6 @@ import { SettingsNav } from './SettingsNav'
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
 const OUTBOX_NOTE = 'Email is not configured: the link was written to storage/outbox on the server.'
 
-const day = (iso: string) => new Date(iso).toLocaleDateString()
 
 /** Settings > Users (admin only): invite people, see pending invitations, manage members. */
 export function UsersSettings() {
@@ -152,6 +152,7 @@ function InviteForm() {
 }
 
 function PendingInvitations({ invitations, failed }: { invitations: Invitation[] | undefined; failed: boolean }) {
+  const { date: day } = useTime()
   const client = useQueryClient()
   const [error, setError] = useState<string | null>(null)
 
@@ -193,6 +194,7 @@ function PendingInvitations({ invitations, failed }: { invitations: Invitation[]
 }
 
 function UsersTable({ users, failed, selfId }: { users: AdminUser[] | undefined; failed: boolean; selfId: string | null }) {
+  const { date: day } = useTime()
   const client = useQueryClient()
   const [error, setError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<AdminUser | null>(null)

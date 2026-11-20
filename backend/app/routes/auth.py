@@ -9,6 +9,7 @@ import re
 from datetime import datetime
 from typing import Annotated
 from uuid import UUID
+from zoneinfo import available_timezones
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import RedirectResponse
@@ -46,6 +47,7 @@ from app.auth.schemas import (
     RevokedOut,
     SessionOut,
     SignupIn,
+    TimezoneIn,
     TokenIn,
     VerifiedOut,
 )
@@ -139,6 +141,7 @@ def me_out(db: Session, user: User) -> MeOut:
         avatar_url=None,
         has_password=user.password_hash is not None,
         linked=sorted(set(linked)),
+        timezone=user.timezone,
     )
 
 
@@ -231,6 +234,20 @@ def status(request: Request, db: DbDep) -> AuthStatus:
 
 @router.get("/me", response_model=MeOut)
 def me(signed: SignedDep, db: DbDep) -> MeOut:
+    return me_out(db, signed.user)
+
+
+UNKNOWN_TIMEZONE = "unknown time zone"
+MAX_TIMEZONE_LENGTH = 64
+
+
+@router.put("/timezone", response_model=MeOut, dependencies=guarded)
+def set_timezone(body: TimezoneIn, signed: SignedDep, db: DbDep) -> MeOut:
+    name = body.timezone
+    if len(name) > MAX_TIMEZONE_LENGTH or name not in available_timezones():
+        raise HTTPException(status_code=422, detail=UNKNOWN_TIMEZONE)
+    signed.user.timezone = name
+    db.commit()
     return me_out(db, signed.user)
 
 

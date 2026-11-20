@@ -30,6 +30,26 @@ export function saveEffort(effort: Effort) {
   }
 }
 
+const PET_KEY = 'learninghub.pet'
+
+/** The chat pet is on until the user switches it off ('off' in storage; a missing value means on). */
+export function readPet(): boolean {
+  try {
+    return localStorage.getItem(PET_KEY) !== 'off'
+  } catch {
+    return true
+  }
+}
+
+export function savePet(on: boolean) {
+  try {
+    if (on) localStorage.removeItem(PET_KEY)
+    else localStorage.setItem(PET_KEY, 'off')
+  } catch {
+    // storage blocked: the choice lasts for this page only
+  }
+}
+
 /** Copies text to the clipboard; false when the clipboard is not available or refused. */
 export async function copyText(text: string): Promise<boolean> {
   try {

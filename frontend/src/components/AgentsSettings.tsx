@@ -1,10 +1,12 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { api, ApiError, queryKeys, type AgentOut, type AgentTool, type AreaAgentSettings, type KhStatus, type ProviderOut } from '../api'
-import { useAgents, useAgentTools, useAreaAgents, useProviders, useRefreshProviders } from '../hooks'
+import { useAgents, useAgentTools, useAreaAgents, useProviders, useRefreshProviders, useSharedStatus } from '../hooks'
 import { providerLabel } from '../lib/providers'
 import { useUnsavedGuard } from '../lib/unsavedGuard'
 import { SettingsNav } from './SettingsNav'
+import { WithdrawnWarning } from './SharedProvider'
+import { sharedLine, usageLine } from '../lib/shared'
 import { StatusBadge } from './StatusBadge'
 
 const MAX_INSTRUCTIONS = 4000
@@ -33,8 +35,15 @@ export function AgentsSettings() {
 
 function AgentsSection({ providers }: { providers: ProviderOut[] }) {
   const agents = useAgents()
+  const shared = useSharedStatus().data
   return (
     <section className="agents-section" aria-label="Agent providers">
+      {shared?.withdrawn && <WithdrawnWarning />}
+      {shared?.mode === 'shared' && (
+        <p className="shared-usage" role="status">
+          {usageLine(shared)}
+        </p>
+      )}
       <p className="muted">
         Choose which provider each agent uses. The fallback takes over when the primary is rate limited, times
         out or is unavailable.
@@ -49,7 +58,26 @@ function AgentsSection({ providers }: { providers: ProviderOut[] }) {
   )
 }
 
+/** An agent that runs on the admin's shared provider: what it uses, without controls. */
+function SharedAgentCard({ agent }: { agent: AgentOut }) {
+  return (
+    <article className="provider-card" aria-label={agent.name}>
+      <header className="provider-header">
+        <h2 className="agent-name">{agent.name}</h2>
+      </header>
+      <p className="muted small">{agent.description}</p>
+      <p className="agent-effective">{agent.effective ? sharedLine(agent.effective) : 'No shared provider is available.'}</p>
+      <p className="muted small">Internet search: {agent.web_search ? 'on' : 'off'}</p>
+    </article>
+  )
+}
+
 function AgentCard({ agent, providers }: { agent: AgentOut; providers: ProviderOut[] }) {
+  if (agent.effective_reason === 'shared') return <SharedAgentCard agent={agent} />
+  return <OwnAgentCard agent={agent} providers={providers} />
+}
+
+function OwnAgentCard({ agent, providers }: { agent: AgentOut; providers: ProviderOut[] }) {
   const refresh = useRefreshProviders()
   const [primary, setPrimary] = useState(agent.primary?.id ?? '')
   const [fallback, setFallback] = useState(agent.fallback?.id ?? '')

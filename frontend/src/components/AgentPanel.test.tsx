@@ -468,7 +468,10 @@ describe('composer options menu', () => {
     expect(items[0]).toHaveFocus()
     await user.keyboard('{ArrowDown}')
     expect(items[1]).toHaveFocus()
+    // Up from the first item wraps to the last one, which is Pet (chat-pet); Effort is above it.
     await user.keyboard('{ArrowUp}{ArrowUp}')
+    expect(within(menu).getByRole('menuitemcheckbox', { name: 'Pet' })).toHaveFocus()
+    await user.keyboard('{ArrowUp}')
     expect(items[2]).toHaveFocus()
     await user.keyboard('{Enter}{ArrowDown}')
     expect(within(menu).getByRole('menuitemradio', { name: 'Low' })).toHaveFocus()

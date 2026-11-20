@@ -21,6 +21,7 @@ dependencies = [
     "PyYAML==6.0.3",
     "pypdf==6.21.4",
     "SQLAlchemy==2.1.8",
+    "tzdata==2026.6",
     "uvicorn[standard]==0.54.0",
 ]
 

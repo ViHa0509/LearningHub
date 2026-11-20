@@ -5,7 +5,7 @@ import {
   useArchivedNotes,
   useDomains,
   useNotes,
-  useProviders,
+  useAgentReady,
   useRefreshNotes,
   useServiceHealth,
   type ServiceHealth,
@@ -16,8 +16,11 @@ import { domainOf } from '../lib/grouping'
 import { navigate, useRoute } from '../lib/route'
 import { useScreenClass, type ScreenClass } from '../lib/useScreenClass'
 import { useTheme, type Theme } from '../lib/theme'
+import { forgetTimeZoneDismissal } from '../lib/timezonePrompt'
 import { AgentPanel, type AgentRequest } from './AgentPanel'
 import { AuthPages } from './AuthPages'
+import { TimeZoneDialog } from './TimeZoneDialog'
+import { AccountSettings } from './AccountSettings'
 import { AgentsSettings } from './AgentsSettings'
 import { DataSettings } from './DataSettings'
 import { SignInSettings } from './SignInSettings'
@@ -57,6 +60,11 @@ export function AppShell() {
   useEffect(() => {
     if (needsLogin) rememberReturn(hash)
   }, [needsLogin, hash])
+
+  // Signing out (or an ended session) forgets that the time zone question was put off.
+  useEffect(() => {
+    if (auth.required && auth.me === null) forgetTimeZoneDismissal()
+  }, [auth.required, auth.me])
 
   // Signed in already on the login or create page: go on to the app.
   const onEntryPage = authRoute?.page === 'login' || authRoute?.page === 'create' || authRoute?.page === 'signup'
@@ -154,8 +162,7 @@ function MainApp({ theme, onThemeChange, health, user }: MainProps) {
     setProposal(proposed)
     navigate({ page: 'roadmap', domain: proposed.area })
   }
-  const providers = useProviders()
-  const agentAvailable = (providers.data ?? []).some((p) => p.is_active)
+  const agentAvailable = useAgentReady()
 
   const page: ChatPage =
     route.page === 'roadmap'
@@ -243,6 +250,8 @@ function MainApp({ theme, onThemeChange, health, user }: MainProps) {
     )
   } else if (route.page === 'data-settings') {
     center = <DataSettings />
+  } else if (route.page === 'account-settings') {
+    center = <AccountSettings />
   } else if (route.page === 'agents-settings') {
     center = <AgentsSettings />
   } else if (route.page === 'provider') {
@@ -381,6 +390,7 @@ function MainApp({ theme, onThemeChange, health, user }: MainProps) {
         />
       </div>
 
+      {user && <TimeZoneDialog user={user} />}
       {importing && <ImportDialog roadmaps={roadmaps} onClose={() => setImporting(false)} onChanged={refresh} />}
     </div>
   )

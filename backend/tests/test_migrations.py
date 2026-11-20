@@ -105,6 +105,7 @@ def test_downgrade_base_then_upgrade_head() -> None:
             "disabled_at",
             "placeholder",
             "preferences",
+            "timezone",
             "created_at",
         }
         assert users["password_hash"]["nullable"] is True

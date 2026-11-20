@@ -46,6 +46,7 @@ from app.routes import (
     notes,
     practice,
     resources,
+    search,
     settings_signin,
 )
 from app.storage import FileStore, LocalFileStore, StorageError, SupabaseFileStore
@@ -208,6 +209,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         kh,
         resources,
         news,
+        search,
         settings_signin,
         admin,
     ):

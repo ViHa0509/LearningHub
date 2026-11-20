@@ -19,6 +19,7 @@ const owner: Me = {
   avatar_url: null,
   has_password: true,
   linked: [],
+  timezone: 'UTC',
 }
 
 function Harness({ screenClass, user = null, ...rest }: { screenClass: ScreenClass; user?: Me | null } & Partial<Parameters<typeof TopBar>[0]>) {
@@ -99,6 +100,50 @@ describe('TopBar on a phone', () => {
     render(<Harness screenClass="phone" user={owner} />)
     expect(screen.getByRole('button', { name: 'Account menu: Ada' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Settings' })).not.toBeInTheDocument()
+  })
+})
+
+/** Spec: app-search - Search on a phone; Search box in the top bar. */
+describe('TopBar search', () => {
+  it('phone: a Search button opens a focused search row, and Escape on the empty field hides it', async () => {
+    const user = userEvent.setup()
+    render(<Harness screenClass="phone" user={owner} />)
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    const button = screen.getByRole('button', { name: 'Search' })
+    expect(button).toHaveAttribute('aria-expanded', 'false')
+    await user.click(button)
+    expect(screen.getByRole('combobox')).toHaveFocus()
+    expect(button).toHaveAttribute('aria-expanded', 'true')
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    expect(button).toHaveAttribute('aria-expanded', 'false')
+    expect(button).toHaveFocus()
+  })
+
+  it('phone: the close button hides the search row', async () => {
+    const user = userEvent.setup()
+    render(<Harness screenClass="phone" user={owner} />)
+    await user.click(screen.getByRole('button', { name: 'Search' }))
+    await user.click(screen.getByRole('button', { name: 'Close search' }))
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+  })
+
+  it('desktop and tablet: the box is in the top bar and there is no Search button', () => {
+    for (const screenClass of ['desktop', 'tablet'] as const) {
+      const { unmount } = render(<Harness screenClass={screenClass} user={owner} />)
+      expect(screen.getByRole('combobox')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Search' })).not.toBeInTheDocument()
+      unmount()
+    }
+  })
+
+  it('signed out: no search box and no Search button on any screen', () => {
+    for (const screenClass of ['desktop', 'tablet', 'phone'] as const) {
+      const { unmount } = render(<Harness screenClass={screenClass} />)
+      expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Search' })).not.toBeInTheDocument()
+      unmount()
+    }
   })
 })
 

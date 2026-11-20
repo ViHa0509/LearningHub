@@ -11,8 +11,10 @@ import {
   type ProviderTypeInfo,
   type TestResult,
 } from "../api";
-import { useProviderTypes, useRefreshProviders } from "../hooks";
-import { formatTime, STATUS_LABEL, TEST_MESSAGE } from "../lib/providers";
+import { useProviderTypes, useRefreshProviders, useSharedStatus } from "../hooks";
+import { useIsAdmin } from "../lib/auth";
+import { STATUS_LABEL, TEST_MESSAGE } from "../lib/providers";
+import { useTime } from "../lib/time";
 import { navigate } from "../lib/route";
 import { useUnsavedGuard } from "../lib/unsavedGuard";
 
@@ -75,6 +77,7 @@ interface FormState {
   contextWindow: string;
   extra: string;
   isActive: boolean;
+  shared: boolean;
 }
 
 const text = (n: number | undefined) => (n === undefined ? "" : String(n));
@@ -103,6 +106,7 @@ function fromProvider(p: ProviderOut): FormState {
         ? JSON.stringify(c.extra, null, 2)
         : "",
     isActive: p.is_active,
+    shared: p.shared,
   };
 }
 
@@ -127,6 +131,7 @@ function blankForm(types: ProviderTypeInfo[]): FormState {
     contextWindow: "",
     extra: "",
     isActive: true,
+    shared: false,
   };
 }
 
@@ -258,6 +263,9 @@ function ProviderForm({
   initial: ProviderOut | null;
 }) {
   const uid = useId();
+  const clock = useTime();
+  const admin = useIsAdmin();
+  const dailyLimit = useSharedStatus().data?.daily_limit;
   const refresh = useRefreshProviders();
   const [saved, setSaved] = useState<ProviderOut | null>(initial);
   const [form, setForm] = useState<FormState>(() =>
@@ -350,6 +358,8 @@ function ProviderForm({
   const save = async () => {
     const body = validated();
     if (!body) return;
+    // Only the admin sends `shared`; it is left out until it is or was ticked.
+    if (admin && (form.shared || saved?.shared)) body.shared = isClaudeCode ? false : form.shared;
     setBusy(true);
     setJustSaved(false);
     try {
@@ -496,6 +506,23 @@ function ProviderForm({
           Active
         </label>
       </header>
+      {admin && !isClaudeCode && (
+        <div className="shared-field">
+          <label className="check-field">
+            <input
+              type="checkbox"
+              checked={form.shared}
+              aria-describedby={id("shared-note")}
+              onChange={(e) => set("shared", e.target.checked)}
+            />
+            Shared with all users
+          </label>
+          <p className="muted small" id={id("shared-note")}>
+            Other users can run the agents on this key without adding their own
+            {dailyLimit !== undefined ? ` (${dailyLimit} requests a day each)` : ""}.
+          </p>
+        </div>
+      )}
       {dirty && (
         <p className="muted unsaved" role="status">
           You have unsaved changes.
@@ -945,7 +972,7 @@ function ProviderForm({
           <dt>Last successful test</dt>
           <dd>
             {saved?.last_success_at
-              ? formatTime(saved.last_success_at)
+              ? clock.dateTime(saved.last_success_at)
               : "Not tested yet"}
           </dd>
         </dl>

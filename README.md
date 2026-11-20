@@ -10,6 +10,7 @@ It is also built as a showcase of an **AI-native SDLC**: every change goes spec 
 
 - **Home** with one card per role, its description and progress (topics with notes).
 - **Roadmap maps** (React Flow) with note counts per topic; click a topic to open its lesson.
+- **Top-bar search** (on a phone, a search button): one box finds your topics, lessons and notes by text, shown as three groups (Topics, Lessons, Notes); open a result with a click or the keyboard.
 - **Lesson pages**: breadcrumb, description, subtopics, linked notes, and a Markdown lesson you write or the agent drafts.
 - **Import** of Claude-generated HTML pages (duplicate detection, 10 MB limit); originals are shown in a sandboxed iframe (`sandbox="allow-scripts"`, CSP `sandbox`), so their scripts cannot reach the app.
 - **AI providers and agents**: named provider configurations (OpenAI, Anthropic, Gemini, Local, Custom) with parameters, a connection test that names the failure, model listing, and a primary and fallback provider per agent.

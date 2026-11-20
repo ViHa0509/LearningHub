@@ -4,6 +4,7 @@ import { api, queryKeys, type AnswerResult, type Bank, type Question, type Quest
 import { useDomains } from '../hooks'
 import { navigate } from '../lib/route'
 import { useBanksLackingPictures } from '../lib/pictures'
+import { useTime } from '../lib/time'
 import { BankPictures } from './BankPictures'
 import { ImportBank } from './ImportBank'
 import { QuestionCard } from './QuestionCard'
@@ -326,6 +327,7 @@ function Browser({ bank, questions }: { bank: Bank; questions: Question[] }) {
 }
 
 function History({ bank }: { bank: Bank }) {
+  const t = useTime()
   const exams = useQuery({ queryKey: queryKeys.bankExams(bank.id), queryFn: () => api.bankExams(bank.id) })
   return (
     <>
@@ -337,7 +339,7 @@ function History({ bank }: { bank: Bank }) {
           {exams.data.map((e) => (
             <li key={e.id}>
               <a href={`#/exam/${e.id}`}>
-                <time dateTime={e.started_at}>{new Date(e.started_at).toLocaleString()}</time>
+                <time dateTime={e.started_at}>{t.dateTime(e.started_at)}</time>
                 {e.submitted_at === null ? (
                   <span className="muted">In progress</span>
                 ) : (

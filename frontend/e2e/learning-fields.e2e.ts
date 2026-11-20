@@ -478,6 +478,8 @@ test('Publish: a member sees the published field read only and can link notes an
     data: { token, password: MEMBER.password, display_name: MEMBER.name },
   })
   expect(accepted.status(), await accepted.text()).toBe(201)
+  // The member has a time zone (user-timezone), so its dialog does not cover the pages under test.
+  expect((await member.context.request.put(`${API}/api/auth/timezone`, { headers: H, data: { timezone: 'UTC' } })).status()).toBe(200)
   const mp = await member.context.newPage()
 
   // Private first: the member does not see it.
@@ -552,6 +554,8 @@ test("Another user's private area is unknown: reading it answers 404 and a note 
       data: { token, password: MEMBER.password, display_name: MEMBER.name },
     })
     expect(accepted.status(), await accepted.text()).toBe(201)
+    // The member has a time zone (user-timezone), so its dialog does not cover the pages under test.
+    expect((await member.context.request.put(`${API}/api/auth/timezone`, { headers: H, data: { timezone: 'UTC' } })).status()).toBe(200)
   }
   const m = member.context.request
   const fields = (await (await m.get(`${API}/api/fields`)).json()) as ApiField[]

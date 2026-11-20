@@ -1,7 +1,8 @@
 """Agents and their primary and fallback providers."""
 
 import uuid
-from typing import Annotated, Literal
+from datetime import datetime
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -9,7 +10,19 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.agent.agents import AGENTS, AgentDef
-from app.agent.resolve import assignments, effective, web_search_enabled
+from app.agent.resolve import (
+    EffectiveReason,
+    SharedMode,
+    assignments,
+    effective,
+    resets_at,
+    shared_mode,
+    shared_setup,
+    used_on,
+    used_recently,
+    utc_today,
+    web_search_enabled,
+)
 from app.agent.tools import ASSISTANT_SPECS, KH_TOOL, OUTLINE_SPECS, SPECS
 from app.auth.current import CurrentUser
 from app.db import AgentProvider, AgentSetting, AIProvider, AreaAgentSetting, get_session
@@ -28,6 +41,8 @@ class ProviderRef(BaseModel):
     model_name: str
     is_active: bool
     last_test_status: str | None
+    # A configuration the admin shares, as a user in shared mode sees it (false for own rows).
+    shared: bool = False
 
 
 class AgentOut(BaseModel):
@@ -37,8 +52,16 @@ class AgentOut(BaseModel):
     primary: ProviderRef | None
     fallback: ProviderRef | None
     effective: ProviderRef | None
-    effective_reason: Literal["override", "primary", "assistant", "default", "none"]
+    effective_reason: EffectiveReason
     web_search: bool
+
+
+class SharedStatusOut(BaseModel):
+    mode: SharedMode
+    used_today: int
+    daily_limit: int
+    resets_at: datetime
+    withdrawn: bool
 
 
 class SettingsIn(BaseModel):
@@ -63,7 +86,32 @@ def ref(row: AIProvider | None) -> ProviderRef | None:
     )
 
 
+def shared_ref(row: AIProvider) -> ProviderRef:
+    """Another user's view of a shared row: name and model; no key hint, URL or test result."""
+    return ProviderRef(
+        id=row.id,
+        name=row.name,
+        provider_type=row.provider_type,
+        model_name=row.model_name,
+        is_active=row.is_active,
+        last_test_status=None,
+        shared=True,
+    )
+
+
 def agent_out(session: Session, user_id: uuid.UUID, agent: AgentDef) -> AgentOut:
+    setup = shared_setup(session, user_id, agent.id)
+    if setup is not None:
+        return AgentOut(
+            id=agent.id,
+            name=agent.name,
+            description=agent.description,
+            primary=None,
+            fallback=None,
+            effective=shared_ref(setup.primary),
+            effective_reason="shared",
+            web_search=setup.web_search,
+        )
     assigned = assignments(session, user_id, agent.id)
     chosen, reason = effective(session, user_id, agent.id)
     return AgentOut(
@@ -101,6 +149,22 @@ def list_agents(
     session: Annotated[Session, Depends(get_session)], user: CurrentUser
 ) -> list[AgentOut]:
     return [agent_out(session, user.id, agent) for agent in AGENTS.values()]
+
+
+@router.get("/shared", response_model=SharedStatusOut)
+def shared_status(
+    request: Request, session: Annotated[Session, Depends(get_session)], user: CurrentUser
+) -> SharedStatusOut:
+    """How the user runs the agents, and their count of shared requests today (UTC)."""
+    today = utc_today()
+    mode = shared_mode(session, user.id)
+    return SharedStatusOut(
+        mode=mode,
+        used_today=used_on(session, user.id, today),
+        daily_limit=request.app.state.settings.shared_daily_limit,
+        resets_at=resets_at(today),
+        withdrawn=mode == "none" and used_recently(session, user.id, today),
+    )
 
 
 def tool_catalog(kh_available: bool = False) -> list[AgentToolOut]:

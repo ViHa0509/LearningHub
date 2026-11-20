@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -77,6 +77,8 @@ class Settings(BaseSettings):
     kh_url: str | None = None
     kh_issuer: str | None = None
     kh_client_id: str | None = None
+    # Agent requests a user may run per UTC day on configurations the admin shares.
+    shared_daily_limit: int = Field(default=10, ge=1)
 
 
 @lru_cache
