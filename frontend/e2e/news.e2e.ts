@@ -43,10 +43,10 @@ const SOURCES = [
   { id: 'qc-research', name: 'QC Research Blog', homepage: 'https://research.example.test/' },
 ]
 
-/** A local time `daysAgo` days back at `hour`:`minute`, as ISO. */
+/** A UTC time `daysAgo` days back at `hour`:`minute`, as ISO (the e2e owner's time zone is UTC). */
 function at(daysAgo: number, hour: number, minute = 0): string {
   const now = new Date()
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysAgo, hour, minute).toISOString()
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - daysAgo, hour, minute)).toISOString()
 }
 
 function item(n: number, source: 0 | 1, title: string, published: string, summary = ''): Item {
@@ -253,7 +253,7 @@ test.describe('News page', () => {
     await expect(news.getByRole('heading', { level: 2 })).toHaveText([
       'Today',
       'Yesterday',
-      new Date(ITEMS[3].published_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
+      new Date(ITEMS[3].published_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' }),
     ])
     const today = news.getByRole('region', { name: 'Today' })
     await expect(today.getByRole('link')).toHaveText([ITEMS[0].title, ITEMS[1].title])

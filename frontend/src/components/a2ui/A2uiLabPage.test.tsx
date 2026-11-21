@@ -17,6 +17,7 @@ const me: Me = {
   avatar_url: null,
   has_password: true,
   linked: [],
+  timezone: 'Asia/Ho_Chi_Minh',
 }
 
 const HELLO = [
