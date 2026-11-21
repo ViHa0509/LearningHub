@@ -577,6 +577,39 @@ test.describe('phone only', () => {
     expect(before.y - after.y, `first node moved up by ${before.y - after.y}px after a 250px drag`).toBeGreaterThan(100)
   })
 
+  test('Lab on small screens: the A2UI Lab shows Editor, Preview and Inspector tabs, one pane at a time, no sideways scroll', async ({ page }) => {
+    await page.goto('/#/a2ui-lab')
+    await expect(page.getByRole('heading', { name: 'A2UI Lab' })).toBeVisible({ timeout: 15_000 })
+    const tabs = page.getByRole('tablist', { name: 'Lab panes' })
+    await expect(tabs.getByRole('tab')).toHaveText(['Editor', 'Preview', 'Inspector'])
+    const panes = ['Editor', 'Preview', 'Inspector']
+    const visiblePanes = async () => {
+      const out: string[] = []
+      for (const name of panes) if (await page.getByRole('tabpanel', { name, exact: true }).isVisible()) out.push(name)
+      return out
+    }
+    await expect.poll(visiblePanes).toEqual(['Editor'])
+    expect((await overflow(page)).html).toBeLessThanOrEqual(0)
+
+    await page.getByLabel('Sample').selectOption({ label: 'Form with two-way binding' })
+    await page.getByRole('button', { name: 'Next step' }).tap()
+    // Send switches to the Preview pane.
+    await expect.poll(visiblePanes).toEqual(['Preview'])
+    await expect(page.getByRole('tabpanel', { name: 'Preview' }).getByRole('textbox')).toBeVisible()
+    expect((await overflow(page)).html).toBeLessThanOrEqual(0)
+    await shotBoth(page, 'a2ui-lab-preview')
+
+    await tabs.getByRole('tab', { name: 'Inspector' }).tap()
+    await expect.poll(visiblePanes).toEqual(['Inspector'])
+    expect((await overflow(page)).html).toBeLessThanOrEqual(0)
+    await shotBoth(page, 'a2ui-lab-inspector')
+
+    await tabs.getByRole('tab', { name: 'Editor' }).tap()
+    await expect.poll(visiblePanes).toEqual(['Editor'])
+    expect((await overflow(page)).html).toBeLessThanOrEqual(0)
+    await shotBoth(page, 'a2ui-lab')
+  })
+
   test('Roadmap map on small screens: the Zoom controls change the zoom', async ({ page }) => {
     await page.goto('/#/roadmap/frontend')
     await expect(page.getByTestId('node-frontend/web-basics')).toBeVisible({ timeout: 15_000 })

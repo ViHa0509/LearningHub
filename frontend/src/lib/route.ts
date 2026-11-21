@@ -17,6 +17,8 @@ export type Route =
   /** Settings > Account (time zone). */
   | { page: 'account-settings' }
   | { page: 'news' }
+  /** The A2UI Lab playground (`#/a2ui-lab`). */
+  | { page: 'a2ui-lab' }
   /** Practice questions of an area (`#/practice/<area slug>`). */
   | { page: 'practice'; area: string }
   /** A mock test (`#/exam/<exam id>`): taking it, or its result. */
@@ -39,6 +41,7 @@ export function parseRoute(hash: string): Route {
   if (parts[0] === 'settings' && parts[1] === 'agents' && parts.length === 2) return { page: 'agents-settings' }
   if (parts[0] === 'settings' && parts[1] === 'account' && parts.length === 2) return { page: 'account-settings' }
   if (parts[0] === 'news' && parts.length === 1) return { page: 'news' }
+  if (parts[0] === 'a2ui-lab' && parts.length === 1) return { page: 'a2ui-lab' }
   if (parts[0] === 'practice' && parts.length === 2) return { page: 'practice', area: parts[1] }
   if (parts[0] === 'exam' && parts.length === 2) return { page: 'exam', id: parts[1] }
   if (parts[0] === 'settings' && parts[1] === 'providers' && parts.length === 3) {
@@ -71,6 +74,8 @@ export function routeHash(route: Route): string {
       return '#/settings/account'
     case 'news':
       return '#/news'
+    case 'a2ui-lab':
+      return '#/a2ui-lab'
     case 'practice':
       return `#/practice/${route.area}`
     case 'exam':

@@ -191,6 +191,12 @@ const PATHS = {
       <path d="M7.5 14.5h7M7.5 17h5" />
     </>
   ),
+  lab: (
+    <>
+      <path d="M9.5 4h5M10 4v5.5L5.2 18a1.8 1.8 0 0 0 1.6 2.7h10.4a1.8 1.8 0 0 0 1.6-2.7L14 9.5V4" />
+      <path d="M7.8 14.5h8.4" />
+    </>
+  ),
 } satisfies Record<string, ReactElement>
 
 export type IconName = keyof typeof PATHS

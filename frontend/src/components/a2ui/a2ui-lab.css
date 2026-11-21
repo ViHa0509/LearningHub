@@ -1,0 +1,261 @@
+/*
+ * A2UI Lab: theme bridge (design 8). The A2UI basic catalog reads --a2ui-* variables; here they
+ * point at the app tokens from index.css, so the app's dark-mode token switch themes surfaces
+ * with no JavaScript. Variable names come from @a2ui/web_core (basic_catalog/styles/default.js).
+ * The page layout lives in the same root class and is added with the page.
+ */
+.a2ui-lab {
+  --a2ui-color-background: var(--surface);
+  --a2ui-color-on-background: var(--text);
+  --a2ui-color-surface: var(--surface-2);
+  --a2ui-color-on-surface: var(--text);
+
+  --a2ui-color-primary: var(--accent);
+  --a2ui-color-primary-light: var(--accent-hover);
+  --a2ui-color-primary-dark: var(--accent-hover);
+  --a2ui-color-primary-hover: var(--accent-hover);
+  --a2ui-color-on-primary: var(--on-accent);
+
+  --a2ui-color-secondary: var(--surface-2);
+  --a2ui-color-secondary-light: var(--surface-3);
+  --a2ui-color-secondary-dark: var(--surface-3);
+  --a2ui-color-secondary-hover: var(--surface-3);
+  --a2ui-color-on-secondary: var(--text);
+
+  --a2ui-color-border: var(--border-strong);
+  --a2ui-border-width: 1px;
+  --a2ui-border: 1px solid var(--border-strong);
+  --a2ui-border-radius: var(--radius);
+
+  --a2ui-color-input: var(--surface);
+  --a2ui-color-on-input: var(--text);
+
+  --a2ui-font-family-title: var(--font);
+  --a2ui-font-family-monospace: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  font-family: var(--font);
+  color: var(--text);
+}
+
+/* Media the lab refuses to load: the URL is shown as text and never requested. */
+.a2ui-lab .a2ui-blocked {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 0.875rem;
+  min-width: 0;
+}
+.a2ui-lab .a2ui-blocked strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.a2ui-lab .a2ui-blocked code {
+  font-family: var(--a2ui-font-family-monospace);
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+/* Image variants (A2UI basic catalog: icon, avatar, smallFeature, mediumFeature, largeFeature, header). */
+.a2ui-lab .a2ui-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+}
+.a2ui-lab .a2ui-image-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 0;
+}
+.a2ui-lab .a2ui-image-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+}
+.a2ui-lab .a2ui-image-smallFeature {
+  width: 50px;
+  height: 50px;
+}
+.a2ui-lab .a2ui-image-mediumFeature {
+  width: 100%;
+  max-width: 150px;
+  height: 150px;
+}
+.a2ui-lab .a2ui-image-largeFeature {
+  width: 100%;
+  max-width: 400px;
+  height: 200px;
+}
+.a2ui-lab .a2ui-image-header {
+  width: 100%;
+  height: 240px;
+  border-radius: 0;
+}
+
+.a2ui-lab .a2ui-video {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  border-radius: var(--radius);
+  background: var(--surface-3);
+}
+
+.a2ui-lab .a2ui-audio {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 100%;
+}
+.a2ui-lab .a2ui-audio figcaption {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.a2ui-lab .a2ui-audio audio {
+  width: 100%;
+}
+
+/* Text rendered as Markdown (LabMarkdown). */
+.a2ui-lab .a2ui-markdown {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.a2ui-lab .a2ui-markdown { font-size: 0.875rem; line-height: 1.5; }
+.a2ui-lab .a2ui-markdown > :first-child { margin-top: 0; }
+.a2ui-lab .a2ui-markdown > :last-child { margin-bottom: 0; }
+.a2ui-lab .a2ui-markdown a { color: var(--accent); }
+.a2ui-lab .a2ui-markdown pre,
+.a2ui-lab .a2ui-markdown code {
+  font-family: var(--a2ui-font-family-monospace);
+  background: var(--code-bg);
+  border-radius: 4px;
+}
+.a2ui-lab .a2ui-markdown pre {
+  padding: 8px 10px;
+  overflow-x: auto;
+}
+.a2ui-lab .a2ui-markdown :not(pre) > code { padding: 1px 4px; }
+.a2ui-lab .a2ui-markdown table { border-collapse: collapse; }
+.a2ui-lab .a2ui-markdown th,
+.a2ui-lab .a2ui-markdown td {
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+}
+
+/* Page layout (editor | preview | inspector). Only app tokens, so light and dark both work. */
+.a2ui-lab-page {
+  padding: 24px clamp(12px, 3vw, 32px) 32px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  container-type: inline-size;
+}
+.a2ui-header h1 { font-size: 26px; margin: 0 0 6px; }
+.a2ui-header p { margin: 0 0 16px; }
+
+.a2ui-panes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.a2ui-inspector { grid-column: 1 / -1; }
+@container (min-width: 1200px) {
+  .a2ui-panes { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); }
+  .a2ui-inspector { grid-column: auto; }
+}
+@container (max-width: 640px) {
+  .a2ui-panes { grid-template-columns: minmax(0, 1fr); }
+}
+.a2ui-phone .a2ui-panes { grid-template-columns: minmax(0, 1fr); }
+
+.a2ui-pane {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.a2ui-pane[hidden] { display: none; }
+
+.a2ui-sample { display: flex; flex-direction: column; gap: 4px; font-size: 0.875rem; }
+.a2ui-sample select { width: 100%; max-width: 100%; box-sizing: border-box; text-overflow: ellipsis; }
+.a2ui-sample-note { margin: 0; font-size: 0.875rem; }
+
+.a2ui-input { display: block; }
+.a2ui-input textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 320px;
+  font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px;
+  resize: vertical;
+  white-space: pre;
+  overflow-x: auto;
+}
+.a2ui-input textarea[aria-invalid='true'] { border-color: var(--danger); }
+.a2ui-parse-error p { margin: 0; overflow-wrap: anywhere; }
+
+.a2ui-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.a2ui-step { font-size: 0.875rem; }
+
+.a2ui-preview { gap: 16px; }
+.a2ui-empty { margin: 0; }
+.a2ui-surface { min-width: 0; }
+.a2ui-surface-id { font-size: 0.8125rem; font-weight: 600; color: var(--muted); margin: 0 0 6px; }
+
+.a2ui-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--border); }
+.a2ui-tabs [role='tab'] {
+  background: none;
+  border: 1px solid transparent;
+  border-bottom: 2px solid transparent;
+  border-radius: 6px 6px 0 0;
+  color: var(--muted);
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.a2ui-tabs [role='tab']:hover { color: var(--text); background: none; border-color: transparent; border-bottom-color: transparent; }
+.a2ui-tabs [role='tab'][aria-selected='true'],
+.a2ui-tabs [role='tab'][aria-selected='true']:hover,
+.a2ui-tabs [role='tab'][aria-selected='true']:focus {
+  background: none;
+  color: var(--text);
+  border-color: transparent;
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+.a2ui-tabs [role='tab']:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.a2ui-pane-tabs { margin-bottom: 12px; }
+
+.a2ui-inspector-body { min-width: 0; }
+.a2ui-inspector-body pre {
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--code-bg);
+  border-radius: 6px;
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre;
+  overflow-x: auto;
+  max-width: 100%;
+}
+.a2ui-log, .a2ui-errors { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.a2ui-log-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; font-size: 0.8125rem; margin-bottom: 4px; }
+.a2ui-log-entry { border-left: 3px solid var(--border-strong); padding-left: 8px; min-width: 0; }
+.a2ui-log-entry.to-renderer { border-left-color: var(--accent); }
+.a2ui-data h3 { font-size: 0.875rem; margin: 0 0 4px; }
+.a2ui-data + .a2ui-data { margin-top: 12px; }
+.a2ui-errors li { overflow-wrap: anywhere; }

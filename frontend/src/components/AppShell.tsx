@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import type { ChatPage, Me, Note, ProposedTopics } from '../api'
 import {
   useAllRoadmaps,
@@ -40,6 +40,9 @@ import { ProviderPage } from './ProviderPage'
 import { ServiceUnavailable } from './ServiceUnavailable'
 import { SettingsPage } from './SettingsPage'
 import { TopBar } from './TopBar'
+
+// The A2UI renderer, zod and markdown-it load only when the lab is opened.
+const A2uiLabPage = lazy(() => import('./a2ui/A2uiLabPage'))
 
 /**
  * The session gate. Without a required session (auth_required false) the app shows as it always
@@ -234,6 +237,18 @@ function MainApp({ theme, onThemeChange, health, user }: MainProps) {
   } else if (route.page === 'news') {
     // The chat sees the News page as home: the agent has no news context.
     center = <NewsPage onAskAgent={(text) => askAgent(text, undefined, true)} />
+  } else if (route.page === 'a2ui-lab') {
+    center = (
+      <Suspense
+        fallback={
+          <p className="list-loading muted" role="status">
+            <span className="spinner" aria-hidden="true"></span>Loading…
+          </p>
+        }
+      >
+        <A2uiLabPage />
+      </Suspense>
+    )
   } else if (route.page === 'settings') {
     center = <SettingsPage />
   } else if (route.page === 'sign-in-settings') {

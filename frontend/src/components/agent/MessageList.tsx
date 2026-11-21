@@ -1,27 +1,17 @@
 import { useEffect, useRef } from 'react'
-import Markdown, { type Components } from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import Markdown from 'react-markdown'
 import type { ProposedTopics } from '../../api'
 import { effortLabel } from '../../lib/agentPrefs'
 import { formatSize } from '../../lib/attachments'
 import { Icon } from '../Icon'
 import { AnimatedShinyText } from '../magicui/animated-shiny-text'
-import { CodeBlock } from './CodeBlock'
+import { MODEL_MARKDOWN, REMARK } from '../markdownConfig'
 import { CopyButton } from './CopyButton'
 import type { Entry } from './useAgentChat'
 
 const STARTERS = ['What did I note about this topic?', 'Quiz me on what I learned', 'What should I learn next?']
 
-// GFM for tables and task lists. No rehype-raw: HTML in model output is shown as text, never inserted.
-const REMARK = [remarkGfm]
-const MARKDOWN: Components = {
-  pre: ({ node: _node, ...props }) => <CodeBlock {...props} />,
-  table: ({ node: _node, ...props }) => (
-    <div className="md-table">
-      <table {...props} />
-    </div>
-  ),
-}
+const MARKDOWN = MODEL_MARKDOWN
 
 interface Props {
   entries: Entry[]

@@ -78,6 +78,10 @@ export function TopBar({
           <Icon name="news" />
           <span className="top-label">News</span>
         </a>
+        <a href="#/a2ui-lab">
+          <Icon name="lab" />
+          <span className="top-label">A2UI Lab</span>
+        </a>
         {!user && (
           <a href="#/settings">
             <Icon name="settings" />

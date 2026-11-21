@@ -15,6 +15,7 @@ It is also built as a showcase of an **AI-native SDLC**: every change goes spec 
 - **Import** of Claude-generated HTML pages (duplicate detection, 10 MB limit); originals are shown in a sandboxed iframe (`sandbox="allow-scripts"`, CSP `sandbox`), so their scripts cannot reach the app.
 - **AI providers and agents**: named provider configurations (OpenAI, Anthropic, Gemini, Local, Custom) with parameters, a connection test that names the failure, model listing, and a primary and fallback provider per agent.
 - **Agent chat** on the configured providers: tools to search and read notes, list roadmaps, read and write lessons. Note text is treated as untrusted data; the agent never overwrites a lesson you wrote.
+- **A2UI Lab** (`#/a2ui-lab`): a local playground for the A2UI v0.9 protocol (write or step through messages, see the surfaces, data model and actions); no agent yet.
 - Light, dark or system theme; every page has its own address (`#/lesson/backend/caching`).
 
 ## Infrastructure
