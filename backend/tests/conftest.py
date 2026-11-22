@@ -50,7 +50,8 @@ def clean_tables() -> None:
                 "auth_tokens, "
                 "app_settings, sync_keys, invitations, oauth_pending, sync_uploads, "
                 "chat_sessions, chat_messages, learning_fields, learning_areas, learning_topics, "
-                "question_banks, questions, question_answers, question_bookmarks, exam_attempts"
+                "question_banks, questions, question_answers, question_bookmarks, exam_attempts, "
+                "a2ui_surfaces"
             )
         )
     engine.dispose()

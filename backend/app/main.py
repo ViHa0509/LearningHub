@@ -30,6 +30,7 @@ from app.resources.mapping import load_mappings
 from app.resources.sync import SyncJobs, http_get
 from app.roadmaps import RoadmapCatalog
 from app.routes import (
+    a2ui,
     admin,
     agent,
     agents,
@@ -212,6 +213,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         search,
         settings_signin,
         admin,
+        a2ui,
     ):
         app.include_router(module.router, dependencies=gate)
     # The upload routes authenticate with the sync key, not a session.

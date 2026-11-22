@@ -5,6 +5,7 @@ is only ever reached through its session.
 """
 
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -90,17 +91,19 @@ def store_turn(
     chat_id: uuid.UUID | None,
     messages: list[NewMessage],
     replace_from: int | None = None,
+    before_commit: Callable[[Session, list[ChatMessage]], None] | None = None,
 ) -> tuple[ChatSession, list[ChatMessage]]:
     """Store ``messages`` at the end of the session in one commit; without ``chat_id`` a new
     session is created, titled from its first user message. ``replace_from`` (a retry) first
-    removes the messages from that position on.
+    removes the messages from that position on. ``before_commit`` runs with the new rows just
+    before the commit, in the same transaction (a retry after a conflict runs it again).
 
     Another tab may append to the same session at the same time: the position is unique per
     session, so a conflict is retried once with fresh positions.
     """
     for attempt in (1, 2):
         try:
-            return _store(db, user_id, chat_id, messages, replace_from)
+            return _store(db, user_id, chat_id, messages, replace_from, before_commit)
         except IntegrityError:
             db.rollback()
             if attempt == 2:
@@ -114,6 +117,7 @@ def _store(
     chat_id: uuid.UUID | None,
     messages: list[NewMessage],
     replace_from: int | None,
+    before_commit: Callable[[Session, list[ChatMessage]], None] | None = None,
 ) -> tuple[ChatSession, list[ChatMessage]]:
     now = datetime.now(UTC)
     if chat_id is None:
@@ -165,5 +169,7 @@ def _store(
         )
         db.add(row)
         rows.append(row)
+    if before_commit is not None:
+        before_commit(db, rows)
     db.commit()
     return chat, rows

@@ -17,7 +17,14 @@ import uuid
 from collections.abc import Callable, Iterable
 from typing import IO, Any
 
-from app.agent.tools import ASSISTANT_SPECS, KH_TOOL, SPECS, AgentTools, ToolOutcome
+from app.agent.tools import (
+    ASSISTANT_SPECS,
+    INTERACTIVE_TOOL,
+    KH_TOOL,
+    SPECS,
+    AgentTools,
+    ToolOutcome,
+)
 
 LOG = logging.getLogger("learninghub.mcp")
 
@@ -116,6 +123,7 @@ class McpServer:
                 {"name": s.name, "description": s.description, "inputSchema": s.parameters}
                 for s in SPECS + ASSISTANT_SPECS
                 if (self._allowed is None or s.name in self._allowed)
+                and s.name != INTERACTIVE_TOOL  # not supported for claude-code
                 and (s.name != KH_TOOL or self._kh_offered())
             ]
         }

@@ -1,0 +1,160 @@
+/*
+ * A2UI theme bridge (design 8), shared by the A2UI Lab and the chat surfaces (a2ui-chat-agent, design 9). The A2UI basic catalog reads --a2ui-* variables; here they
+ * point at the app tokens from index.css, so the app's dark-mode token switch themes surfaces
+ * with no JavaScript. Variable names come from @a2ui/web_core (basic_catalog/styles/default.js).
+ * A root element carries the `a2ui-theme` class; the Lab page layout is in a2ui-lab.css.
+ */
+.a2ui-theme {
+  --a2ui-color-background: var(--surface);
+  --a2ui-color-on-background: var(--text);
+  --a2ui-color-surface: var(--surface-2);
+  --a2ui-color-on-surface: var(--text);
+
+  --a2ui-color-primary: var(--accent);
+  --a2ui-color-primary-light: var(--accent-hover);
+  --a2ui-color-primary-dark: var(--accent-hover);
+  --a2ui-color-primary-hover: var(--accent-hover);
+  --a2ui-color-on-primary: var(--on-accent);
+
+  --a2ui-color-secondary: var(--surface-2);
+  --a2ui-color-secondary-light: var(--surface-3);
+  --a2ui-color-secondary-dark: var(--surface-3);
+  --a2ui-color-secondary-hover: var(--surface-3);
+  --a2ui-color-on-secondary: var(--text);
+
+  --a2ui-color-border: var(--border-strong);
+  --a2ui-border-width: 1px;
+  --a2ui-border: 1px solid var(--border-strong);
+  --a2ui-border-radius: var(--radius);
+
+  --a2ui-color-input: var(--surface);
+  --a2ui-color-on-input: var(--text);
+
+  --a2ui-font-family-title: var(--font);
+  --a2ui-font-family-monospace: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  font-family: var(--font);
+  color: var(--text);
+}
+
+/* Buttons use the app accent in both themes, whatever the renderer's own defaults say. */
+.a2ui-theme .a2ui-button.a2ui-button-primary {
+  background: var(--accent);
+  --_a2ui-text-color: var(--on-accent);
+  color: var(--on-accent);
+}
+.a2ui-theme .a2ui-button.a2ui-button-primary:hover:not(:disabled) {
+  background-color: var(--accent-hover);
+}
+.a2ui-theme .a2ui-button.a2ui-button-borderless { color: var(--accent); }
+
+/* Media the lab refuses to load: the URL is shown as text and never requested. */
+.a2ui-theme .a2ui-blocked {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 0.875rem;
+  min-width: 0;
+}
+.a2ui-theme .a2ui-blocked strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.a2ui-theme .a2ui-blocked code {
+  font-family: var(--a2ui-font-family-monospace);
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+/* Image variants (A2UI basic catalog: icon, avatar, smallFeature, mediumFeature, largeFeature, header). */
+.a2ui-theme .a2ui-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+}
+.a2ui-theme .a2ui-image-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 0;
+}
+.a2ui-theme .a2ui-image-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+}
+.a2ui-theme .a2ui-image-smallFeature {
+  width: 50px;
+  height: 50px;
+}
+.a2ui-theme .a2ui-image-mediumFeature {
+  width: 100%;
+  max-width: 150px;
+  height: 150px;
+}
+.a2ui-theme .a2ui-image-largeFeature {
+  width: 100%;
+  max-width: 400px;
+  height: 200px;
+}
+.a2ui-theme .a2ui-image-header {
+  width: 100%;
+  height: 240px;
+  border-radius: 0;
+}
+
+.a2ui-theme .a2ui-video {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  border-radius: var(--radius);
+  background: var(--surface-3);
+}
+
+.a2ui-theme .a2ui-audio {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 100%;
+}
+.a2ui-theme .a2ui-audio figcaption {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.a2ui-theme .a2ui-audio audio {
+  width: 100%;
+}
+
+/* Text rendered as Markdown (LabMarkdown). */
+.a2ui-theme .a2ui-markdown {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.a2ui-theme .a2ui-markdown { font-size: 0.875rem; line-height: 1.5; }
+.a2ui-theme .a2ui-markdown > :first-child { margin-top: 0; }
+.a2ui-theme .a2ui-markdown > :last-child { margin-bottom: 0; }
+.a2ui-theme .a2ui-markdown a { color: var(--accent); }
+.a2ui-theme .a2ui-markdown pre,
+.a2ui-theme .a2ui-markdown code {
+  font-family: var(--a2ui-font-family-monospace);
+  background: var(--code-bg);
+  border-radius: 4px;
+}
+.a2ui-theme .a2ui-markdown pre {
+  padding: 8px 10px;
+  overflow-x: auto;
+}
+.a2ui-theme .a2ui-markdown :not(pre) > code { padding: 1px 4px; }
+.a2ui-theme .a2ui-markdown table { border-collapse: collapse; }
+.a2ui-theme .a2ui-markdown th,
+.a2ui-theme .a2ui-markdown td {
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+}

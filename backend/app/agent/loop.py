@@ -281,6 +281,9 @@ def tool_loop(
             proposal = getattr(outcome, "proposal", None)
             if proposal is not None:
                 result.proposed_topics = proposal
+            surface = getattr(outcome, "surface", None)
+            if surface is not None:
+                result.surfaces.append(surface)
             messages.append(Message(role="tool", text=outcome.result, tool_call_id=call.id))
             error = _error_text(outcome.result)
             if error is not None:

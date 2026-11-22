@@ -412,6 +412,16 @@ export interface ChatReply {
   assistant_message_id: string
   /** Set by the outline agent: topics to review in the editor (nothing is saved). */
   proposed_topics?: ProposedTopics | null
+  /** A2UI surfaces the agent made in this answer (quiz, practice, lesson). */
+  surfaces?: SurfaceOut[]
+}
+
+/** A stored A2UI surface: the messages the renderer replays, in order. */
+export interface SurfaceOut {
+  id: string
+  kind: 'quiz' | 'practice' | 'lesson'
+  title: string
+  messages: Record<string, unknown>[]
 }
 
 export interface ChatRequest {
@@ -450,6 +460,7 @@ export interface StoredChatMessage {
   fallback_used: boolean
   effort: Effort | null
   created_at: string
+  surfaces?: SurfaceOut[]
 }
 
 export interface ChatSessionDetail extends ChatSessionSummary {
@@ -885,6 +896,8 @@ export const api = {
   saveAreaAgents: (domain: string, body: { instructions: string; tools: string[] | null }) =>
     request<AreaAgentSettings>(`/api/agents/areas/${domain}`, json('PUT', body)),
   chat: (body: ChatRequest) => request<ChatReply>('/api/agent/chat', json('POST', body)),
+  a2uiAction: (surfaceId: string, action: Record<string, unknown>) =>
+    request<{ messages: Record<string, unknown>[] }>(`/api/a2ui/surfaces/${surfaceId}/actions`, json('POST', action)),
   chatSessions: () => request<{ sessions: ChatSessionSummary[]; total: number }>('/api/agent/sessions'),
   chatSession: (id: string) => request<ChatSessionDetail>(`/api/agent/sessions/${id}`),
   renameChatSession: (id: string, title: string) =>

@@ -17,6 +17,8 @@ from typing import Any
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from app.a2ui.content import LessonContent, QuizContent, parse_lesson, parse_quiz
+from app.a2ui.interface import ContentSink, InteractiveRequest, InteractiveRunner
 from app.agent.messages import ToolSpec
 from app.db import Lesson, NodeResource, Note
 from app.kh.service import KhReconnect, KhSearchError, KhSearchFn, KhUnreachable
@@ -50,6 +52,8 @@ class ToolOutcome:
     proposal: dict[str, Any] | None = None
     # Id of a note the assistant saved: the chat answer tells the app to refresh the list.
     changed_note: str | None = None
+    # An interactive surface ({id, kind, title, messages}) for the chat answer.
+    surface: dict[str, Any] | None = None
 
 
 class ToolInputError(Exception):
@@ -180,6 +184,7 @@ SPECS: tuple[ToolSpec, ...] = (
 
 # Offered only to the chat assistant (never to the lesson writer or the outline agent).
 ASSISTANT_AGENT = "assistant"
+INTERACTIVE_TOOL = "show_interactive"
 ASSISTANT_SPECS: tuple[ToolSpec, ...] = (
     ToolSpec(
         "save_learned_note",
@@ -200,6 +205,41 @@ ASSISTANT_SPECS: tuple[ToolSpec, ...] = (
                 },
             },
             "required": ["title", "markdown"],
+        },
+    ),
+    ToolSpec(
+        INTERACTIVE_TOOL,
+        "Show the user an interactive quiz, practice questions or an interactive lesson in the "
+        "chat. Use it when the user asks to be quizzed, to practise, or for an interactive or "
+        "creative lesson. Another agent makes the content and the app builds the surface; the "
+        "result only names it. Then reply with one or two sentences that introduce it and never "
+        "repeat the questions or answers.",
+        {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "enum": ["quiz", "practice", "lesson"],
+                    "description": "quiz: generated questions; practice: questions from the "
+                    "area's question bank when it has one; lesson: an interactive lesson.",
+                },
+                "topic": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "What to cover, from the page or the user's message.",
+                },
+                "node_id": {
+                    "type": "string",
+                    "description": "Roadmap node, e.g. devops/docker; left out when none fits.",
+                },
+                "count": {
+                    "type": "integer",
+                    "minimum": 3,
+                    "maximum": 10,
+                    "description": "Number of questions (quiz or practice); default 5.",
+                },
+            },
+            "required": ["kind", "topic"],
         },
     ),
 )
@@ -240,7 +280,36 @@ OUTLINE_SPECS: tuple[ToolSpec, ...] = (
 )
 
 
-_AGENT_ONLY = {"propose_topics", "save_learned_note"}
+# Offered only to the a2ui agent (the interactive tutor), one of them by the content kind.
+A2UI_AGENT = "a2ui"
+A2UI_READ_TOOLS = ("search_notes", "read_note", "read_lesson", "list_roadmap")
+QUIZ_TOOL = "make_quiz"
+LESSON_TOOL = "make_lesson"
+NODE_ID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*$")
+TOPIC_LIMIT = 200
+
+
+def content_spec(kind: str) -> ToolSpec:
+    """The a2ui agent's one content tool; its parameters are the content's JSON Schema."""
+    if kind == "quiz":
+        return ToolSpec(
+            QUIZ_TOOL,
+            "Make the interactive quiz: a title and 3 to 10 questions, each with 2 to 6 options, "
+            "the number of the one correct option (from 1) and a short explanation. Plain text "
+            "or Markdown only. Refused with the reason when the content is out of limits: fix "
+            "it and call again.",
+            QuizContent.model_json_schema(),
+        )
+    return ToolSpec(
+        LESSON_TOOL,
+        "Make the interactive lesson: a title and 3 to 8 sections (concept, example, tip or a "
+        "check-yourself question). Markdown text only. Refused with the reason when the content "
+        "is out of limits: fix it and call again.",
+        LessonContent.model_json_schema(),
+    )
+
+
+_AGENT_ONLY = {"propose_topics", "save_learned_note", INTERACTIVE_TOOL, QUIZ_TOOL, LESSON_TOOL}
 
 
 class AgentTools:
@@ -255,7 +324,13 @@ class AgentTools:
         store: FileStore | None = None,
         allowed: set[str] | None = None,
         kh_search: KhSearchFn | None = None,
+        interactive: InteractiveRunner | None = None,
+        content_sink: ContentSink | None = None,
     ) -> None:
+        # Only for the assistant: hands interactive requests to the runner.
+        self._interactive = interactive
+        # Only for the a2ui agent: where its validated content goes.
+        self._sink = content_sink
         # Given only for a connected user on a server with the connector.
         self._kh_search = kh_search
         self._store = store
@@ -278,6 +353,9 @@ class AgentTools:
             "propose_topics": self.propose_topics,
             "save_learned_note": self.save_learned_note,
             KH_TOOL: self.kh_search,
+            INTERACTIVE_TOOL: self.show_interactive,
+            QUIZ_TOOL: self.make_quiz,
+            LESSON_TOOL: self.make_lesson,
         }
 
     @property
@@ -292,10 +370,16 @@ class AgentTools:
         return None if self._allowed is None else set(self._allowed)
 
     def specs(self) -> tuple[ToolSpec, ...]:
-        if self._agent_id == OUTLINE_AGENT:
+        if self._agent_id == A2UI_AGENT:
+            specs = tuple(s for s in SPECS if s.name in A2UI_READ_TOOLS)
+            if self._sink is not None:
+                specs += (content_spec(self._sink.kind),)
+        elif self._agent_id == OUTLINE_AGENT:
             specs = SPECS + OUTLINE_SPECS
         else:
             specs = SPECS + ASSISTANT_SPECS if self._agent_id == ASSISTANT_AGENT else SPECS
+        if self._interactive is None:
+            specs = tuple(s for s in specs if s.name != INTERACTIVE_TOOL)
         if self._kh_search is None:
             specs = tuple(s for s in specs if s.name != KH_TOOL)
         if self._allowed is None:
@@ -309,6 +393,7 @@ class AgentTools:
             handler is None
             or (name in _AGENT_ONLY and name not in offered)
             or (name == KH_TOOL and self._kh_search is None)
+            or (self._agent_id == A2UI_AGENT and name not in offered)
         ):
             return _error(f"unknown tool '{name}'")
         if self._allowed is not None and name not in self._allowed:
@@ -534,6 +619,52 @@ class AgentTools:
             ),
         }
         return _ok(data, f"Searched Knowledge Hub for '{query[:80]}'")
+
+    def show_interactive(self, args: dict[str, Any]) -> ToolOutcome:
+        if self._interactive is None:
+            return _error(f"unknown tool '{INTERACTIVE_TOOL}'")
+        kind = args.get("kind")
+        if kind not in ("quiz", "practice", "lesson"):
+            raise ToolInputError("'kind' must be quiz, practice or lesson")
+        topic = _text(args, "topic")
+        if len(topic) > TOPIC_LIMIT:
+            raise ToolInputError(f"'topic' must be at most {TOPIC_LIMIT} characters")
+        node_id = args.get("node_id")
+        if node_id is not None and (not isinstance(node_id, str) or not NODE_ID.match(node_id)):
+            raise ToolInputError("'node_id' must look like domain/node (lowercase kebab-case)")
+        count = args.get("count")
+        if count is not None and (
+            isinstance(count, bool) or not isinstance(count, int) or not 3 <= count <= 10
+        ):
+            raise ToolInputError("'count' must be a whole number from 3 to 10")
+        result = self._interactive(InteractiveRequest(kind, topic, node_id, count))
+        if result.error:
+            return _error(result.error)
+        return ToolOutcome(
+            result=json.dumps(result.model_result, ensure_ascii=False),
+            summary=result.summary,
+            surface=result.surface,
+        )
+
+    def _accept_content(self, parsed: QuizContent | LessonContent | str) -> ToolOutcome:
+        if isinstance(parsed, str):
+            return _error(parsed)
+        if self._sink is not None:
+            self._sink.content = parsed
+        return _ok(
+            {"result": "Saved. Reply with one short sentence; do not call more tools."},
+            f"Wrote the interactive content: {parsed.title[:80]}",
+        )
+
+    def make_quiz(self, args: dict[str, Any]) -> ToolOutcome:
+        if self._sink is None or self._sink.kind != "quiz":
+            return _error(f"unknown tool '{QUIZ_TOOL}'")
+        return self._accept_content(parse_quiz(args))
+
+    def make_lesson(self, args: dict[str, Any]) -> ToolOutcome:
+        if self._sink is None or self._sink.kind != "lesson":
+            return _error(f"unknown tool '{LESSON_TOOL}'")
+        return self._accept_content(parse_lesson(args))
 
     def propose_topics(self, args: dict[str, Any]) -> ToolOutcome:
         area = _text(args, "area")

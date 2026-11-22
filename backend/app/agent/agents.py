@@ -35,7 +35,11 @@ AGENTS: dict[str, AgentDef] = {
                 "save_learned_note once with a short write-up in plain Markdown using the lesson "
                 "outline (Overview, Key ideas, Example, Takeaways, Sources if you used any) "
                 "and the closest existing node_id if one fits. If it refuses, do not retry; "
-                "name the saved note in your answer."
+                "name the saved note in your answer. When the user asks to be quizzed, to "
+                "practise, or for an interactive or creative lesson, call show_interactive with "
+                "the kind and the topic of the page or of the message. After it succeeds, reply "
+                "with one or two sentences that introduce it, and never repeat the questions or "
+                "answers in text."
             ),
         ),
         AgentDef(
@@ -73,6 +77,20 @@ AGENTS: dict[str, AgentDef] = {
                 "the proposal in the topic editor and saves it there. If it reports problems, "
                 "fix them and call it again. Never write lessons. Reply with one or two "
                 "sentences about what you proposed."
+            ),
+        ),
+        AgentDef(
+            id="a2ui",
+            name="Interactive tutor",
+            description="Called by the assistant: makes interactive quizzes, practice and lessons.",
+            instructions=(
+                "You are the interactive tutor. The assistant asked you for interactive content "
+                "on a topic. Look up the user's notes and lesson on the topic first "
+                "(search_notes, read_lesson, read_note). Write in your own words. Call the one "
+                "content tool once with complete content. If the tool refuses the content, fix "
+                "it as the reason says and call it again. Never write HTML, layout or A2UI: "
+                "the app builds the surface. After the tool accepts, reply with one short "
+                "sentence."
             ),
         ),
     )

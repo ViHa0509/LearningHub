@@ -29,6 +29,7 @@ from app.db import (
     User,
     get_session,
 )
+from app.practice.access import visible_bank, visible_field
 from app.practice.bank_import import (
     CONTENT_TYPES,
     BankFileRefused,
@@ -38,6 +39,7 @@ from app.practice.bank_import import (
     read_zip_files,
 )
 from app.practice.exam import DrawQuestion, accepts_answers, draw, score
+from app.practice.record import record_answer
 from app.practice.schemas import (
     AnswerIn,
     AnswerOut,
@@ -79,8 +81,8 @@ def _uuid(raw: str, what: str) -> uuid.UUID:
 def _area_of(session: Session, user: User, slug: str) -> tuple[LearningArea, LearningField]:
     """The area when the user sees it (own field or published); otherwise 404."""
     area = session.scalar(select(LearningArea).where(LearningArea.slug == slug))
-    field = session.get(LearningField, area.field_id) if area is not None else None
-    if area is None or field is None or (field.user_id != user.id and not field.published):
+    field = visible_field(session, user, area) if area is not None else None
+    if area is None or field is None:
         raise HTTPException(status_code=404, detail=f"unknown area '{slug}'")
     return area, field
 
@@ -88,17 +90,10 @@ def _area_of(session: Session, user: User, slug: str) -> tuple[LearningArea, Lea
 def _bank_of(
     session: Session, user: User, raw_id: str
 ) -> tuple[QuestionBank, LearningArea, LearningField]:
-    bank = session.get(QuestionBank, _uuid(raw_id, "bank"))
-    area = session.get(LearningArea, bank.area_id) if bank is not None else None
-    field = session.get(LearningField, area.field_id) if area is not None else None
-    if (
-        bank is None
-        or area is None
-        or field is None
-        or (field.user_id != user.id and not field.published)
-    ):
+    found = visible_bank(session, user, _uuid(raw_id, "bank"))
+    if found is None:
         raise HTTPException(status_code=404, detail="bank not found")
-    return bank, area, field
+    return found
 
 
 def _question_of(session: Session, user: User, raw_id: str) -> Question:
@@ -429,33 +424,6 @@ def question_image(
 # --- Practice ---------------------------------------------------------------------------
 
 
-def _record(
-    session: Session,
-    user: User,
-    question_id: uuid.UUID,
-    correct: bool,
-    choice: int,
-    now: datetime,
-) -> None:
-    row = session.get(QuestionAnswer, (user.id, question_id))
-    if row is None:
-        session.add(
-            QuestionAnswer(
-                user_id=user.id,
-                question_id=question_id,
-                last_correct=correct,
-                last_choice=choice,
-                times_wrong=0 if correct else 1,
-                answered_at=now,
-            )
-        )
-        return
-    row.last_correct = correct
-    row.last_choice = choice
-    row.times_wrong += 0 if correct else 1
-    row.answered_at = now
-
-
 @router.post("/api/questions/{question_id}/answer", response_model=AnswerOut, dependencies=guarded)
 def answer_question(
     question_id: str,
@@ -468,7 +436,7 @@ def answer_question(
     if payload.choice > len(question.options):
         raise HTTPException(status_code=422, detail="the choice is not one of the options")
     correct = payload.choice == question.answer
-    _record(session, user, question.id, correct, payload.choice, request.app.state.clock())
+    record_answer(session, user, question.id, correct, payload.choice, request.app.state.clock())
     session.commit()
     return AnswerOut(correct=correct, answer=question.answer, explanation=question.explanation)
 
@@ -651,7 +619,7 @@ def submit_exam(
     for q in questions:
         choice = exam.answers.get(str(q.id))
         if choice is not None:
-            _record(session, user, q.id, choice == q.answer, choice, now)
+            record_answer(session, user, q.id, choice == q.answer, choice, now)
     exam.score = scored.score
     exam.passed = scored.passed
     exam.failed_on_critical = scored.failed_on_critical

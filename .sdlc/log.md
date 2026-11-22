@@ -50,3 +50,10 @@ One entry per cycle, appended by `/ai-sdlc-kit:orchestrate` (or by the main sess
 - Agents: 1.1, 1.2 (spike), 2.2, 2.3 (media guard, Markdown) -> main session (opus, security); 2.1, 2.4-2.5, 3.1-3.2, 3.3-3.4, UI fixes -> implementer (sonnet); 4.1 -> qc-e2e (sonnet); 4.2 -> qc-ui (sonnet); 4.3 -> verifier (sonnet)
 - Verdicts: qc-e2e pass (rounds: 3; 1 product bug fixed: javascript: link rendered as an empty-href anchor; full suite 324 passed, 0 failed, 33 skipped), verifier pass (second run; first failed on an untested "Not signed in" scenario), qc-ui pass (5 minors fixed, 1 cosmetic left in evidence.md)
 - Needs human: none. Accepted: zod 3.25.76 advisory GHSA-mrhx-c7xc-m3w5 (no zod 3 fix; mitigated by the input size limit)
+
+## 2026-11-22 a2ui-chat-agent
+- Result: done (18/18)
+- Tasks: 1.1-1.4, 2.1-2.5, 3.1, 4.1-4.3, 5.1-5.3, 6.1-6.2
+- Agents: 1.1 (migration), 2.3 (runner, nested agent run, count rule), 3.1 (grading route), interface contract -> main session (opus, security); 1.2-1.4, 2.1-2.2, 2.4-2.5, 6.1, template fixes -> implementer (sonnet); 4.1-4.3, UI fixes -> implementer (sonnet); 5.1 -> implementer (sonnet); 5.2 -> qc-e2e (sonnet); 5.3 -> qc-ui (sonnet); 6.2 -> verifier (sonnet)
+- Verdicts: qc-e2e pass (rounds: 4; fixed a fake-LLM trigger catching the /quiz skill and the correct-option marking; final 379 passed, 0 failed), verifier pass, qc-ui pass (dark Check button colour left in evidence.md)
+- Needs human: none. Two full runs were stopped by low memory and rerun alone with the owner's go-ahead. A conflict-retry gap (surfaces lost on store_turn rollback) was found and fixed with a test.

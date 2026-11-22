@@ -274,6 +274,34 @@ class ChatMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class A2uiSurface(Base):
+    """An interactive A2UI surface of a chat answer (change a2ui-chat-agent).
+
+    ``messages`` are the A2UI v0.9 messages as first sent to the browser: they never hold an
+    answer. ``answer_key`` stays on the server ({question_id: {answer, explanation, options,
+    bank_question_id}}); ``answers`` holds the graded answers ({question_id: {choice, correct}}).
+    ``message_id`` is the assistant message it came with, set in the same commit as the turn.
+    """
+
+    __tablename__ = "a2ui_surfaces"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = user_fk()
+    message_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("chat_messages.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    kind: Mapped[str] = mapped_column(Text)  # "quiz", "practice" or "lesson"
+    title: Mapped[str] = mapped_column(Text)
+    messages: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
+    answer_key: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    answers: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, default=dict, server_default="{}", nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (Index("ix_a2ui_surfaces_user_id", "user_id"),)
+
+
 class LearningField(Base):
     """A field of learning (for example "Cloud") owned by a user; the admin may publish it.
 

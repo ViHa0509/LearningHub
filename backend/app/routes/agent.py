@@ -8,6 +8,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.a2ui.interface import ContentSink
+from app.a2ui.runner import ChatInteractiveRunner
+from app.a2ui.schemas import SurfaceOut
 from app.agent.agents import AGENTS
 from app.agent.history import (
     NewMessage,
@@ -22,7 +25,7 @@ from app.agent.ratelimit import RateLimiter
 from app.agent.resolve import ResolveError, resolve_chain
 from app.agent.tools import AgentTools
 from app.auth.current import CurrentUser
-from app.db import AreaAgentSetting, Note, User, get_session
+from app.db import A2uiSurface, AreaAgentSetting, Note, User, get_session
 from app.learning.catalog import UserCatalog
 from app.roadmaps import RoadmapCatalog
 from app.routes.guard import box_of, factory_of, require_app_header
@@ -109,6 +112,8 @@ class ChatOut(BaseModel):
     assistant_message_id: uuid.UUID
     # The outline agent's proposal (not saved): the panel opens it in the topic editor.
     proposed_topics: ProposedTopics | None = None
+    # Interactive surfaces made in this answer (no answers inside).
+    surfaces: list[SurfaceOut] = []
 
 
 def area_of_page(catalog: RoadmapCatalog, session: Session, user: User, page: Page) -> str | None:
@@ -192,6 +197,29 @@ def chat(
     area_row = session.get(AreaAgentSetting, (user.id, area)) if area is not None else None
     area_instructions = area_row.instructions if area_row else ""
     allowed = set(area_row.tools) if area_row and area_row.tools is not None else None
+    interactive: ChatInteractiveRunner | None = None
+    if agent.id == "assistant":
+        # The Interactive tutor runs inside the assistant's tool call, on its own provider chain
+        # and inside this request's count (design 1).
+        def tutor_tools(sink: ContentSink) -> AgentTools:
+            return AgentTools(
+                session,
+                catalog,
+                user_id=user.id,
+                agent_id="a2ui",
+                store=request.app.state.store,
+                content_sink=sink,
+            )
+
+        interactive = ChatInteractiveRunner(
+            session,
+            user,
+            catalog,
+            page,
+            area,
+            lambda: resolve_chain(session, user.id, box_of(request), factory_of(request), "a2ui"),
+            tutor_tools,
+        )
     try:
         result = run_agent(
             chat_model,
@@ -204,6 +232,7 @@ def chat(
                 store=request.app.state.store,
                 allowed=allowed,
                 kh_search=request.app.state.kh.search_for(user.id),
+                interactive=interactive,
             ),
             catalog,
             page,
@@ -215,6 +244,8 @@ def chat(
             area_instructions=area_instructions,
         )
     except ProviderError as exc:
+        # A surface the tutor already stored is dropped with the failed request.
+        session.rollback()
         if chat_model.shared:
             # The admin's configuration: name, model and error category only, never the
             # provider's own message (it may quote the base URL or the request).
@@ -245,7 +276,16 @@ def chat(
         )
     )
     try:
-        saved, rows = store_turn(session, user.id, payload.session_id, new_messages, replace_from)
+        saved, rows = store_turn(
+            session,
+            user.id,
+            payload.session_id,
+            new_messages,
+            replace_from,
+            before_commit=lambda db, made: link_surfaces(
+                db, interactive.made if interactive else [], made[-1].id
+            ),
+        )
     except LookupError as exc:  # the chat was deleted while the agent was working
         raise HTTPException(status_code=404, detail="chat session not found") from exc
     return ChatOut(
@@ -265,4 +305,20 @@ def chat(
             if result.proposed_topics is not None
             else None
         ),
+        surfaces=[SurfaceOut.model_validate(s) for s in result.surfaces],
     )
+
+
+def link_surfaces(session: Session, made: list[A2uiSurface], message_id: uuid.UUID) -> None:
+    """Attach the surfaces made in this request to the stored assistant message; runs inside
+    the commit of the turn, so the rows stand or fall with it. They are added again here: when
+    store_turn rolls back and retries after a write conflict, the rollback dropped the pending
+    rows, and adding them again inserts them with the retried turn."""
+    if not made:
+        return
+    # The new chat messages first: the surfaces' message_id must point at an existing row (no
+    # ORM relationship tells the flush that order).
+    session.flush()
+    for row in made:
+        row.message_id = message_id
+        session.add(row)

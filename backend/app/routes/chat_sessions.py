@@ -9,9 +9,11 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.a2ui.grading import replay
+from app.a2ui.schemas import SurfaceOut
 from app.agent.history import find_session, messages_of
 from app.auth.current import CurrentUser
-from app.db import ChatMessage, ChatSession, get_session
+from app.db import A2uiSurface, ChatMessage, ChatSession, get_session
 from app.routes.guard import require_app_header
 
 router = APIRouter(prefix="/api/agent/sessions", tags=["agent"])
@@ -57,6 +59,7 @@ class MessageOut(BaseModel):
     fallback_used: bool
     effort: str | None
     created_at: datetime
+    surfaces: list[SurfaceOut] = []
 
 
 class SessionDetail(SessionSummary):
@@ -101,7 +104,7 @@ def owned(db: Session, user_id: uuid.UUID, session_id: uuid.UUID) -> ChatSession
     return chat
 
 
-def message_out(message: ChatMessage) -> MessageOut:
+def message_out(message: ChatMessage, surfaces: list[SurfaceOut] | None = None) -> MessageOut:
     provider = (
         StoredProvider(name=message.provider_name, model=message.model_name or "")
         if message.provider_name is not None
@@ -120,6 +123,7 @@ def message_out(message: ChatMessage) -> MessageOut:
         fallback_used=message.fallback_used,
         effort=message.effort,
         created_at=message.created_at,
+        surfaces=surfaces or [],
     )
 
 
@@ -157,7 +161,23 @@ def read_session(
     session_id: uuid.UUID, db: Annotated[Session, Depends(get_session)], user: CurrentUser
 ) -> SessionDetail:
     chat = owned(db, user.id, session_id)
-    messages = [message_out(m) for m in messages_of(db, chat)]
+    stored = messages_of(db, chat)
+    # Surfaces are reached through the chat's messages, and only the user's own.
+    rows = db.scalars(
+        select(A2uiSurface)
+        .where(
+            A2uiSurface.user_id == user.id,
+            A2uiSurface.message_id.in_([m.id for m in stored]),
+        )
+        .order_by(A2uiSurface.created_at, A2uiSurface.id)
+    )
+    by_message: dict[uuid.UUID, list[SurfaceOut]] = {}
+    for row in rows:
+        if row.message_id is not None:
+            by_message.setdefault(row.message_id, []).append(
+                SurfaceOut(id=row.id, kind=row.kind, title=row.title, messages=replay(row))
+            )
+    messages = [message_out(m, by_message.get(m.id)) for m in stored]
     return SessionDetail(**summary(chat, len(messages)).model_dump(), messages=messages)
 
 

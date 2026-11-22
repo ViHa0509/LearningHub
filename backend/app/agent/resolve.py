@@ -290,6 +290,8 @@ def merged(before: AgentResult, after: AgentResult) -> AgentResult:
     changed += [c for c in after.changed_lessons if c not in changed]
     notes = list(before.changed_notes)
     notes += [c for c in after.changed_notes if c not in notes]
+    surfaces = list(before.surfaces)
+    surfaces += [x for x in after.surfaces if x not in surfaces]
     return AgentResult(
         reply=after.reply,
         steps=[*before.steps, *after.steps],
@@ -297,6 +299,7 @@ def merged(before: AgentResult, after: AgentResult) -> AgentResult:
         changed_notes=notes,
         stopped=after.stopped,
         proposed_topics=after.proposed_topics or before.proposed_topics,
+        surfaces=surfaces,
     )
 
 
@@ -335,6 +338,11 @@ class AgentModel:
         """Take the daily count when the request runs on shared rows (ResolveError 429)."""
         if self.shared and not self.counted:
             take_shared_count(session, user_id, limit)
+        self.counted = True
+
+    def count_as_part_of_request(self) -> None:
+        """For a run inside a request that already took its count (the `a2ui` agent called from
+        the assistant's tool): one chat request is one count, so no second count is taken."""
         self.counted = True
 
     @property

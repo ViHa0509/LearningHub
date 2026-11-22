@@ -6,6 +6,7 @@ import { parseLabInput } from './parseLabInput'
 import { LAB_SAMPLES, type LabSample } from './samples'
 import { LabMarkdown } from './LabMarkdown'
 import { useA2uiLab, type LabLogEntry } from './useA2uiLab'
+import './a2ui-theme.css'
 import './a2ui-lab.css'
 
 const DRAFT_DELAY_MS = 400
@@ -308,7 +309,7 @@ export default function A2uiLabPage() {
   ]
 
   return (
-    <section className={`a2ui-lab a2ui-lab-page a2ui-${screenClass}`} aria-label="A2UI Lab">
+    <section className={`a2ui-theme a2ui-lab a2ui-lab-page a2ui-${screenClass}`} aria-label="A2UI Lab">
       <header className="a2ui-header">
         <h1>A2UI Lab</h1>
         <p className="muted">A local playground for the A2UI v0.9 protocol. No agent is involved.</p>

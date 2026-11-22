@@ -453,6 +453,81 @@ def _kh(payload: dict) -> tuple[dict | None, str | None]:
     return call, None
 
 
+# "quiz me" not followed by a colon: the /quiz skill expands to "Quiz me: write 5 questions ..."
+INTERACTIVE_TRIGGERS = (
+    (re.compile(r"quiz me\b(?!:)", re.IGNORECASE), "quiz"),
+    (re.compile(r"practice", re.IGNORECASE), "practice"),
+    (re.compile(r"interactive lesson", re.IGNORECASE), "lesson"),
+)
+INTERACTIVE_DONE = {"quiz": "Here is your quiz.", "practice": "Here is your practice.", "lesson": "Here is your lesson."}
+XSS_QUESTION = 'Which driver? <img src=x onerror="window.__xss=1"> ![t](https://tracker.example/p.png)'
+
+
+def _quiz_content() -> dict:
+    questions = [
+        {
+            "text": text,
+            "options": ["Option one", "Option two", "Option three"],
+            "answer": 2,
+            "explanation": f"Explanation {n}.",
+        }
+        for n, text in enumerate(["Which network mode is the default?", "How do containers find each other?", XSS_QUESTION], 1)
+    ]
+    return {"title": "Docker networking quiz", "questions": questions}
+
+
+def _lesson_content() -> dict:
+    check = {
+        "text": "Where do volumes live?",
+        "options": ["Inside the container", "Outside the container"],
+        "answer": 2,
+        "explanation": "Volumes live outside the container.",
+    }
+    return {
+        "title": "Docker volumes",
+        "sections": [
+            {"kind": "concept", "heading": "What is a volume", "body": "A volume keeps data after a container ends."},
+            {"kind": "concept", "heading": "Why", "body": "Data must outlive the container."},
+            {"kind": "example", "heading": "Try it", "body": "Run `docker volume create data`."},
+            {"kind": "check", "heading": "Check yourself", "question": check},
+        ],
+    }
+
+
+def _a2ui(payload: dict) -> tuple[dict | None, str | None]:
+    """The interactive tutor scripts: show_interactive from "quiz me" / "practice" / "interactive
+    lesson" (chat agent), and make_quiz / make_lesson (the a2ui agent, found by its offered tools)."""
+    names = {(t.get("function") or {}).get("name") for t in payload.get("tools") or []}
+    messages = payload.get("messages") or []
+    last_user = max((i for i, m in enumerate(messages) if m.get("role") == "user"), default=-1)
+    text = _text(messages[last_user].get("content")) if last_user >= 0 else ""
+    results = [_text(m.get("content")) for m in messages[last_user + 1 :] if m.get("role") == "tool"]
+    for tool, content in (("make_quiz", _quiz_content), ("make_lesson", _lesson_content)):
+        if tool in names:
+            if results:
+                return None, "Done."
+            call = {"id": f"call_{tool}", "type": "function", "function": {"name": tool, "arguments": json.dumps(content())}}
+            return call, None
+    if "show_interactive" not in names:
+        return None, None
+    hit = next(((rx, kind) for rx, kind in INTERACTIVE_TRIGGERS if rx.search(text)), None)
+    if hit is None:
+        return None, None
+    rx, kind = hit
+    if results:
+        try:
+            error = json.loads(results[-1]).get("error")
+        except (ValueError, AttributeError):
+            error = None
+        return None, f"I could not make it: {error}" if error else INTERACTIVE_DONE[kind]
+    rest = rx.sub(" ", text, count=1).strip(" \t\r\n.,;:!?")
+    args: dict = {"kind": kind, "topic": rest or "docker networking"}
+    if kind != "lesson":
+        args["count"] = 3
+    call = {"id": "call_interactive", "type": "function", "function": {"name": "show_interactive", "arguments": json.dumps(args)}}
+    return call, None
+
+
 def _cut(payload: dict) -> tuple[dict | None, str | None, bool]:
     """[[cut]] / [[cut-text]] in the last user message: answers cut by the output limit.
 
@@ -501,7 +576,14 @@ async def chat_completions(payload: dict) -> JSONResponse:
     learn_call, learn_text = _learn(payload)
     cut_call, cut_text, cut = _cut(payload)
     kh_call, kh_text = _kh(payload)
-    if kh_call is not None:
+    ui_call, ui_text = _a2ui(payload)
+    if ui_call is not None:
+        message = {"role": "assistant", "content": None, "tool_calls": [ui_call]}
+        finish = "tool_calls"
+    elif ui_text is not None:
+        message = {"role": "assistant", "content": ui_text}
+        finish = "stop"
+    elif kh_call is not None:
         message = {"role": "assistant", "content": None, "tool_calls": [kh_call]}
         finish = "tool_calls"
     elif kh_text is not None:

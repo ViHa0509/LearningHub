@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { lazy, Suspense, useEffect, useRef } from 'react'
 import Markdown from 'react-markdown'
 import type { ProposedTopics } from '../../api'
 import { effortLabel } from '../../lib/agentPrefs'
@@ -12,6 +12,9 @@ import type { Entry } from './useAgentChat'
 const STARTERS = ['What did I note about this topic?', 'Quiz me on what I learned', 'What should I learn next?']
 
 const MARKDOWN = MODEL_MARKDOWN
+
+// The A2UI code loads only when an answer has a surface.
+const ChatSurface = lazy(() => import('./ChatSurface'))
 
 interface Props {
   entries: Entry[]
@@ -149,6 +152,11 @@ function AssistantMessage({
             {entry.content}
           </Markdown>
         </div>
+        {entry.surfaces?.map((surface) => (
+          <Suspense key={surface.id} fallback={<p className="muted chat-surface-loading">Loading interactive part…</p>}>
+            <ChatSurface surface={surface} />
+          </Suspense>
+        ))}
         {entry.proposal && onReview && (
           <div className="agent-proposal">
             <p className="muted">

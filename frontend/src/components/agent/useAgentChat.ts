@@ -9,6 +9,7 @@ import {
   type ChatSessionDetail,
   type Effort,
   type ProposedTopics,
+  type SurfaceOut,
 } from '../../api'
 import type { ReadyAttachment } from '../../lib/attachments'
 import { useTime } from '../../lib/time'
@@ -37,6 +38,8 @@ export interface Entry {
   messageId?: string
   /** Topics the outline agent proposed with this answer (not stored with the chat). */
   proposal?: ProposedTopics
+  /** Interactive A2UI surfaces of this answer (quiz, practice, lesson). */
+  surfaces?: SurfaceOut[]
 }
 
 let seq = 0
@@ -64,6 +67,7 @@ function toEntries(detail: ChatSessionDetail): Entry[] {
           content: m.content,
           messageId: m.id,
           steps: m.steps,
+          ...(m.surfaces && m.surfaces.length > 0 ? { surfaces: m.surfaces } : {}),
           answeredBy: m.provider
             ? { name: m.provider.name, model: m.provider.model, fallback: m.fallback_used, effort: m.effort ?? 'medium' }
             : undefined,
@@ -148,6 +152,7 @@ export function useAgentChat({ effort, page }: Options) {
           steps: answer.steps,
           messageId: answer.assistant_message_id,
           ...(answer.proposed_topics ? { proposal: answer.proposed_topics } : {}),
+          ...(answer.surfaces && answer.surfaces.length > 0 ? { surfaces: answer.surfaces } : {}),
           answeredBy: {
             name: answer.provider.name,
             model: answer.provider.model,

@@ -18,3 +18,28 @@ describe('MessageList pending row', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 })
+
+describe('MessageList images', () => {
+  const answer = (content: string) => [{ id: 1, role: 'assistant' as const, content }]
+  const show = (content: string) => {
+    Element.prototype.scrollIntoView = vi.fn()
+    return render(<MessageList entries={answer(content)} busy={false} onRetry={() => {}} onStarter={() => {}} />)
+  }
+
+  it('shows an outside image as a placeholder with its alt text and address, and no img', () => {
+    const { container } = show('![tracker](https://evil.example/p.png?q=1)')
+    expect(container.querySelector('img')).toBeNull()
+    const blocked = container.querySelector('.md-blocked-image')
+    expect(blocked).not.toBeNull()
+    expect(blocked).toHaveTextContent('tracker')
+    expect(blocked).toHaveTextContent('https://evil.example/p.png?q=1')
+  })
+
+  it('renders an image of the app itself', () => {
+    const { container } = show('![Logo](/brand/logo-mark.svg)')
+    const img = container.querySelector('img')
+    expect(img?.getAttribute('src')).toBe('/brand/logo-mark.svg')
+    expect(img?.getAttribute('alt')).toBe('Logo')
+    expect(container.querySelector('.md-blocked-image')).toBeNull()
+  })
+})

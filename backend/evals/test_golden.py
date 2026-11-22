@@ -13,9 +13,12 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from app.a2ui.content import QuizContent
+from app.a2ui.interface import ContentSink, InteractiveRequest, InteractiveResult
+from app.agent.agents import AGENTS
 from app.agent.llm import catalog
 from app.agent.llm.factory import ChatModel, LLMFactory, ProviderSettings
-from app.agent.loop import AgentResult, Page, run_agent
+from app.agent.loop import AgentResult, Page, run_agent, system_prompt, tool_loop
 from app.agent.messages import Message
 from app.agent.tools import AgentTools
 from app.config import Settings
@@ -163,3 +166,58 @@ def test_golden(client: TestClient, golden: Golden) -> None:
         assert lesson["source"] == "agent" and len(lesson["body"]) > 40
     for node, lesson in before.items():
         assert client.get(f"/api/lessons/{node}").json() == lesson, f"{node} changed"
+
+
+@pytest.mark.skipif(LIVE is None, reason=f"{SETTING} is not set; evals need a real provider")
+def test_quiz_me_hands_over_and_the_tutor_content_is_valid(client: TestClient) -> None:
+    """The assistant calls show_interactive with kind quiz; the Interactive tutor's quiz passes
+    the content limits (the same model plays both agents)."""
+    assert LIVE is not None
+    seed(client, GOLDEN[0])
+    app: Any = client.app
+    requests: list[InteractiveRequest] = []
+    sink = ContentSink("quiz")
+
+    with app.state.session_factory() as session:
+
+        def run_tutor(request: InteractiveRequest) -> InteractiveResult:
+            requests.append(request)
+            assert LIVE is not None
+            tutor = AgentTools(
+                session,
+                app.state.catalog,
+                user_id=user_id_of(app),
+                agent_id="a2ui",
+                content_sink=sink,
+            )
+            task = f"Make a quiz of {request.count or 5} questions about: {request.topic}."
+            system = system_prompt(Page(), app.state.catalog, AGENTS["a2ui"].instructions)
+            tool_loop(LIVE, system, [Message(role="user", text=task)], tutor, 6)
+            if not isinstance(sink.content, QuizContent):
+                return InteractiveResult(
+                    None, {"error": "no valid quiz"}, "No quiz", "no valid quiz"
+                )
+            made = len(sink.content.questions)
+            return InteractiveResult(
+                None,
+                {"surface": {"kind": "quiz", "title": sink.content.title, "questions": made}},
+                f"Made an interactive quiz: {sink.content.title} ({made} questions)",
+            )
+
+        result = run_agent(
+            LIVE,
+            [Message(role="user", text="quiz me on Redis eviction")],
+            AgentTools(
+                session,
+                app.state.catalog,
+                user_id=user_id_of(app),
+                interactive=run_tutor,
+            ),
+            app.state.catalog,
+            Page(),
+            app.state.settings.agent_max_steps,
+        )
+    assert [s.tool for s in result.steps if s.tool == "show_interactive"], "no handover"
+    assert [r.kind for r in requests] == ["quiz"]
+    assert isinstance(sink.content, QuizContent)
+    assert QuizContent.model_validate(sink.content.model_dump())

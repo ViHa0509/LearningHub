@@ -89,6 +89,7 @@ def test_list_agents(client: TestClient) -> None:
         ("assistant", "Learning assistant"),
         ("lesson-writer", "Lesson writer"),
         ("outline", "Topic outline"),
+        ("a2ui", "Interactive tutor"),
     ]
     for agent in agents:
         assert agent["description"]

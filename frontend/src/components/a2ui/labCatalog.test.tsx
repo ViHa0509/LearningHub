@@ -78,4 +78,15 @@ describe('LabMarkdown', () => {
     expect(ok.getAttribute('target')).toBe('_blank')
     expect(ok.getAttribute('rel')).toBe('noopener noreferrer')
   })
+
+  it('shows an outside image as a placeholder, and renders an image of the app', () => {
+    const { container } = render(<LabMarkdown markdown={'![pixel](https://evil.example/p.png)'} />)
+    expect(container.querySelector('img')).toBeNull()
+    const blocked = container.querySelector('.md-blocked-image')
+    expect(blocked).toHaveTextContent('pixel')
+    expect(blocked).toHaveTextContent('https://evil.example/p.png')
+
+    const ok = render(<LabMarkdown markdown={'![Logo](/brand/logo-mark.svg)'} />)
+    expect(ok.container.querySelector('img')?.getAttribute('src')).toBe('/brand/logo-mark.svg')
+  })
 })

@@ -44,6 +44,7 @@ def test_web_search_is_off_by_default_and_saved_per_agent(client: TestClient) ->
         ("assistant", False),
         ("lesson-writer", False),
         ("outline", False),
+        ("a2ui", False),
     ]
     response = set_web_search(client, "assistant", True)
     assert response.status_code == 200, response.text

@@ -610,6 +610,46 @@ test.describe('phone only', () => {
     await shotBoth(page, 'a2ui-lab')
   })
 
+  test('Quiz in the chat on a phone: the Agent drawer shows the quiz without sideways scroll and answers grade', async ({ page, request }) => {
+    // The Interactive tutor uses this file's fake provider too.
+    await request.put(`${API}/api/agents/a2ui/provider`, { headers: H, data: { primary_provider_id: providerId, fallback_provider_id: null } })
+    const message = `${NOTE_PREFIX} quiz me ${RUN}`
+    try {
+      await page.goto('/')
+      await page.getByRole('button', { name: 'Agent', exact: true }).tap()
+      const drawer = page.getByRole('dialog', { name: 'Agent' })
+      await drawer.getByRole('textbox', { name: 'Message the agent' }).fill(message)
+      await drawer.getByRole('button', { name: 'Send' }).tap()
+      const log = drawer.getByRole('log', { name: 'Conversation' })
+      await expect(log.getByRole('heading', { name: 'Docker networking quiz' })).toBeVisible({ timeout: 25_000 })
+      const checkButtons = log.getByRole('button', { name: 'Check', exact: true })
+      await expect(checkButtons).toHaveCount(3)
+      await log.getByText('Option two', { exact: true }).first().tap()
+      await checkButtons.first().tap()
+      await expect(log.getByText('Correct. Explanation 1.')).toBeVisible()
+      await log.getByText('Option one', { exact: true }).nth(1).tap()
+      await checkButtons.nth(1).tap()
+      await expect(log.getByText('Not quite. The answer is "Option two". Explanation 2.')).toBeVisible()
+      expect((await overflow(page)).html).toBeLessThanOrEqual(0)
+      // The quiz stays inside the drawer's width.
+      const vp = page.viewportSize()!
+      const quiz = await box(log.getByRole('heading', { name: 'Docker networking quiz' }))
+      expect(quiz.x + quiz.width).toBeLessThanOrEqual(vp.width)
+      for (const b of await checkButtons.all()) {
+        const c = await box(b)
+        expect(c.x + c.width).toBeLessThanOrEqual(vp.width)
+        expect(c.x).toBeGreaterThanOrEqual(0)
+      }
+      await shotBoth(page, 'a2ui-chat-quiz')
+    } finally {
+      await request.put(`${API}/api/agents/a2ui/provider`, { headers: H, data: { primary_provider_id: null, fallback_provider_id: null } })
+      const sessions = (await (await request.get(`${API}/api/agent/sessions?limit=200`)).json()) as { sessions: { id: string; title: string }[] }
+      for (const s of sessions.sessions.filter((x) => x.title.startsWith(NOTE_PREFIX))) {
+        await request.delete(`${API}/api/agent/sessions/${s.id}`, { headers: H })
+      }
+    }
+  })
+
   test('Roadmap map on small screens: the Zoom controls change the zoom', async ({ page }) => {
     await page.goto('/#/roadmap/frontend')
     await expect(page.getByTestId('node-frontend/web-basics')).toBeVisible({ timeout: 15_000 })

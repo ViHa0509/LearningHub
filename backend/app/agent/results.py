@@ -21,6 +21,8 @@ class AgentResult:
     stopped: bool = False
     # A topic proposal of the outline agent (not saved): {"area": ..., "topics": [...]}.
     proposed_topics: dict[str, Any] | None = None
+    # Interactive surfaces made in this request ({id, kind, title, messages}).
+    surfaces: list[dict[str, Any]] = field(default_factory=list)
 
 
 def stopped_reply(max_steps: int) -> str:
