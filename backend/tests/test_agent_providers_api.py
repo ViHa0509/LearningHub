@@ -145,6 +145,25 @@ def test_different_providers_per_agent(client: TestClient) -> None:
     assert "## " in fake.by_name["Local qwen"].calls[0]["system"]
     assert "Key takeaways" in fake.by_name["Local qwen"].calls[0]["system"]
     assert "Key takeaways" not in fake.by_name["Claude main"].calls[0]["system"]
+    # Scenario: Fixed outline for the writer - sections in order, no HTML or CSS, writer only.
+    writer_system = fake.by_name["Local qwen"].calls[0]["system"]
+    sections = [
+        "Overview",
+        "Key ideas",
+        "How it works",
+        "Example",
+        "Common pitfalls",
+        "Key takeaways",
+        "Sources",
+    ]
+    outline = writer_system[writer_system.index("Lesson format") :]
+    positions = [outline.index(name) for name in sections]
+    assert positions == sorted(positions) and len(set(positions)) == len(sections)
+    assert "no HTML or CSS" in writer_system
+    assistant_system = fake.by_name["Claude main"].calls[0]["system"]
+    assert "Lesson format" not in assistant_system
+    assert "How it works" not in assistant_system
+    assert "no HTML or CSS" not in assistant_system
     used = client.get(f"/api/ai-providers/{claude}").json()["used_by"]
     assert used == [
         {"agent_id": "assistant", "agent_name": "Learning assistant", "role": "primary"}

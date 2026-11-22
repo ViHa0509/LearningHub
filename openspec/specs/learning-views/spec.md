@@ -65,7 +65,7 @@ The center panel SHALL draw the roadmap of the selected domain as a graph of nod
 - **THEN** the map shows the DevOps roadmap
 
 ### Requirement: Two-way selection between list and map
-Opening a note from the list SHALL also select its node, so that the map of its domain, when shown, highlights that node. Opening a node's lesson page from the map SHALL highlight that node's notes in the list.
+Opening a note from the list SHALL also select its node, so that the map of its domain, when shown, highlights that node. Opening a node's lesson page from the map SHALL highlight that node's notes in the list. While a note is open, the list MUST mark only that note, not the other notes of its node; on other pages no note is marked.
 
 #### Scenario: From list to map
 - **WHEN** the user opens a note linked to `devops/ci-cd` from the list and then goes to the DevOps map
@@ -74,6 +74,11 @@ Opening a note from the list SHALL also select its node, so that the map of its 
 #### Scenario: From map to list
 - **WHEN** the user clicks the Caching node on the Backend map
 - **THEN** the Caching lesson page opens and the list highlights the notes linked to `backend/caching`
+
+#### Scenario: Only the open note is marked
+- **GIVEN** two notes linked to the same node
+- **WHEN** the user opens one of them
+- **THEN** the list marks that note only
 
 ### Requirement: Import from the UI
 The web app SHALL let the user pick or drop one or more HTML files to import, show the outcome per file, and then offer to link each new note to a node, which the user may skip.
@@ -87,15 +92,24 @@ The web app SHALL let the user pick or drop one or more HTML files to import, sh
 - **THEN** the note appears under Unsorted
 
 ### Requirement: Read a note
-Clicking a note in the learned list, in the Archived section, or in a lesson page, SHALL open it directly without a separate open button. The note page shows its title, the original page in an isolated frame, and controls to rename it (with Save and Cancel, never saved on blur), edit its page, change or remove its link, archive or restore it, and delete it after a confirmation. The link control MUST be labelled "Linked to", and a changed link MUST be saved only through a Save button (with Cancel), never on change, blur or leaving. When the note is linked to an existing node, the page MUST offer an "Open lesson" link to that node's lesson page. An archived note's page MUST say that the note is archived.
+Clicking a note in the learned list, the Archived section or a lesson page SHALL open it directly. The note page shows its title as a heading, the original page in an isolated frame, and a More actions menu (Rename, Edit page, Export PDF, Archive or Restore, Delete). A rename or a changed "Linked to" link MUST be saved only with Save, never on blur or leaving, and MUST offer Undo for a few seconds. A linked note offers "Open lesson"; an archived note's page says it is archived.
 
 #### Scenario: Open a note
 - **WHEN** the user clicks a note title in the list
 - **THEN** the original page is shown with the note's title and link controls, and the list has no separate "Open" button
 
 #### Scenario: Rename on the note page
-- **WHEN** the user changes the title field
-- **THEN** Save and Cancel appear, Save stores the title, and leaving the field without saving does not change it
+- **WHEN** the user chooses Rename, changes the title field and clicks Save
+- **THEN** the title is stored; Escape or Cancel closes the field without a change, and leaving the field without saving does not change it
+
+#### Scenario: The title is not a text field
+- **WHEN** the user opens a note
+- **THEN** the title is shown as a heading and no title field is shown until Rename is chosen
+
+#### Scenario: Undo a rename
+- **GIVEN** the user renamed "Agentic Engineer" to "chuong 1"
+- **WHEN** the user clicks Undo on the status line
+- **THEN** the note is titled "Agentic Engineer" again
 
 #### Scenario: Change the link with Save
 - **GIVEN** a note linked to `backend/redis`
@@ -108,6 +122,11 @@ Clicking a note in the learned list, in the Archived section, or in a lesson pag
 - **GIVEN** a note linked to `backend/redis` and `devops/docker` picked but not saved
 - **WHEN** the user clicks Cancel link change, or leaves the page
 - **THEN** the note stays linked to `backend/redis` and the picker shows it again
+
+#### Scenario: Undo a link change
+- **GIVEN** the user linked an unsorted note to `o-to-hang-b/chuong-1` with Save link
+- **WHEN** the user clicks Undo on the status line
+- **THEN** the note is unsorted again
 
 #### Scenario: Open the lesson of the linked node
 - **GIVEN** a note linked to `backend/redis`
@@ -125,6 +144,25 @@ Clicking a note in the learned list, in the Archived section, or in a lesson pag
 #### Scenario: Archived note page
 - **WHEN** the user opens an archived note
 - **THEN** the page says the note is archived and offers Restore, and restoring it puts it back in the list
+
+#### Scenario: More actions menu
+- **GIVEN** a note that is not archived
+- **WHEN** the user presses More actions in the note header
+- **THEN** a menu opens with Rename, Edit page, Export PDF, Archive and Delete, and the header shows none of them as a separate button
+
+#### Scenario: Menu with the keyboard
+- **GIVEN** the More actions menu is open
+- **WHEN** the user presses Down and then Escape
+- **THEN** the focus moves to the next item, then the menu closes and the focus is back on the More actions button
+
+#### Scenario: Choosing an action closes the menu
+- **WHEN** the user chooses Archive in the menu
+- **THEN** the menu closes, the page says the note is archived, and the menu now offers Restore instead of Archive
+
+#### Scenario: Menu while editing the page
+- **GIVEN** the page editor is open
+- **WHEN** the user opens More actions
+- **THEN** the menu offers only Rename, Archive or Restore, and Delete
 
 ### Requirement: Empty state
 When there are no notes, the app SHALL explain how to import the first file instead of showing an empty list.
@@ -212,3 +250,26 @@ The note page SHALL offer Export PDF, which opens the note's page in a new tab a
 #### Scenario: Print view stays isolated
 - **WHEN** the print view of a note whose page runs JavaScript is opened
 - **THEN** its scripts cannot read the app's storage or call the app's API as the user
+
+### Requirement: Note page header and page loading
+The note page header SHALL keep the Back button and the More actions button on its first line at every window width, with More actions at the right end; the title field and the node picker shrink before the header wraps. The delete confirmation MUST be shown under the header, not inside its row. While the stored page of a note is loading, the page area MUST keep the app's background and show a loading indicator instead of an empty white frame; the indicator goes away when the page has loaded.
+
+#### Scenario: Header on a laptop-size window
+- **GIVEN** a window 1280 px wide with both side panels open
+- **WHEN** the user opens a note
+- **THEN** Back, the title field, the node picker and More actions are on one line, and More actions is at the right end of the header
+
+#### Scenario: Header on a phone
+- **GIVEN** a window 390 px wide
+- **WHEN** the user opens a note
+- **THEN** Back and More actions are on the header's first line, More actions at the right end, and the page does not scroll sideways
+
+#### Scenario: Delete confirmation under the header
+- **WHEN** the user chooses Delete in the More actions menu
+- **THEN** the confirmation appears under the header and More actions stays on the header's first line
+
+#### Scenario: Loading indicator
+- **GIVEN** the stored page of a note takes time to load
+- **WHEN** the user opens the note
+- **THEN** the page area shows "Loading page…" with a spinner on the app's background, and no white frame
+- **AND** when the page has loaded the indicator is gone and the page is shown

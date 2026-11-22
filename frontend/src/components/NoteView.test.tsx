@@ -378,6 +378,25 @@ describe('note view', () => {
     expect(state.calls.some((c) => c.method === 'PATCH')).toBe(false)
   })
 
+  it('drops an unsaved link change when the note is left, and shows the saved node on reopening', async () => {
+    const { user, article, state } = await openNote('Redis eviction')
+    // If leaving ever asks first, agree to discard: the scenario is about what happens to the link.
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await user.selectOptions(within(article).getByRole('combobox', { name: 'Linked to' }), 'devops/docker')
+    expect(within(article).getByRole('button', { name: 'Save link' })).toBeInTheDocument()
+
+    await user.click(within(article).getByRole('button', { name: '← Back' }))
+    await waitFor(() => expect(screen.queryByRole('article')).not.toBeInTheDocument())
+    expect(state.calls.some((c) => c.method === 'PATCH')).toBe(false)
+
+    await user.click(await screen.findByRole('button', { name: 'Redis eviction' }))
+    const reopened = await screen.findByRole('article', { name: 'Note: Redis eviction' })
+    expect(within(reopened).getByRole('combobox', { name: 'Linked to' })).toHaveValue('backend/caching')
+    expect(within(reopened).queryByRole('button', { name: 'Save link' })).not.toBeInTheDocument()
+    expect(state.calls.some((c) => c.method === 'PATCH')).toBe(false)
+    confirm.mockRestore()
+  })
+
   it('Open lesson links to the lesson of the linked node', async () => {
     const { article } = await openNote('Redis eviction')
     expect(within(article).getByRole('link', { name: 'Open lesson' })).toHaveAttribute('href', '#/lesson/backend/caching')

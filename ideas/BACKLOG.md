@@ -37,4 +37,11 @@
 - Size: M
 - Risks: Scheduling is easy to over-engineer; start with fixed intervals and no per-item ease factor. The quiz depends on the agent chat being live.
 
+### Ask before dropping an unsaved link change
+- Problem: On the note page, a node picked in "Linked to" but not saved is dropped without a question when the user leaves the note. The leave guard in `NoteView.tsx` only watches the page editor. This conflicts with the CLAUDE.md rule "unsaved changes ask before they are discarded". Found by the 2026-11-22 verifier follow-up on note-actions-menu.
+- Proposal: Extend the leave guard to a pending link change (and a pending title change, if one can also be dropped), using the same "Discard your unsaved changes" confirmation; update the "Cancel a link change" scenario to say leaving asks first.
+- Serves: correctness of every edit UI (Conventions)
+- Size: S
+- Risks: Two dirty sources share one confirmation; the message must not name only the page.
+
 ## Parking lot

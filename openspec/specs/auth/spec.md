@@ -22,7 +22,7 @@ The system SHALL let the Owner sign up with email and a password of at least 10 
 - **THEN** they can set a new password once, the old one stops working, and other sessions are logged out
 
 ### Requirement: Sign in with GitHub or Google
-The system SHALL offer GitHub and Google sign-in through the authorization code flow with state and PKCE, using only a verified email from the provider. A provider without configured client ID and secret MUST show as unavailable with the reason.
+The system SHALL offer GitHub and Google sign-in through the authorization code flow with state and PKCE, using only a verified email from the provider. A provider without configured client ID and secret MUST NOT be offered on the sign-in pages; the offered ones show the provider's logo.
 
 #### Scenario: Sign in with GitHub
 - **GIVEN** the Owner's GitHub identity is linked
@@ -36,7 +36,7 @@ The system SHALL offer GitHub and Google sign-in through the authorization code 
 #### Scenario: Not configured
 - **GIVEN** no Google client ID is configured
 - **WHEN** the login page shows
-- **THEN** Continue with Google is disabled with a note saying it is not configured
+- **THEN** Continue with Google is not shown, and Continue with GitHub is shown only if GitHub is configured
 
 ### Requirement: Magic link and email verification
 The system SHALL send a single-use sign-in link valid 15 minutes to the Owner's verified email on request, and a verification link after sign-up (after an email change: see the settings capability). Requests for unknown emails MUST answer the same as for the Owner's. Without SMTP configured, messages are written to the local outbox folder and the page says so.
@@ -88,7 +88,7 @@ The Settings page Sign-in SHALL let the Owner enter, change and remove the Clien
 #### Scenario: Remove a provider
 - **GIVEN** Google was set up in the app and no environment variable sets it
 - **WHEN** the Owner removes Google
-- **THEN** the login page shows Google as not configured
+- **THEN** the login page no longer offers Continue with Google
 
 #### Scenario: Secret never returned
 - **WHEN** the sign-in settings are read through the API
@@ -97,3 +97,15 @@ The Settings page Sign-in SHALL let the Owner enter, change and remove the Clien
 #### Scenario: Only the Owner
 - **WHEN** a request without a session reads or changes the sign-in settings
 - **THEN** it is answered 401 and nothing changes
+
+### Requirement: Sign-in page layout
+The login page SHALL have a Sign up button at the top right of the page and the Sign up page a Log in button there. On the first visit, when no GitHub or Google sign-in is configured, the page SHALL say they can be added later in Settings -> Sign-in.
+
+#### Scenario: Switch between log in and sign up
+- **WHEN** a signed-out visitor presses Sign up at the top of the login page
+- **THEN** the Sign up page shows, with Log in at the top that leads back
+
+#### Scenario: First visit without providers
+- **GIVEN** no GitHub or Google client is configured and no account exists
+- **WHEN** the first visitor opens the app
+- **THEN** the Create the admin account page offers no provider button and says GitHub and Google can be added later in Settings -> Sign-in

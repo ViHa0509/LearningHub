@@ -11,4 +11,4 @@
 ## 3. E2E and integration
 
 - [x] 3.1 `e2e/curation.e2e.ts`: at 1280 px with both panels, Back, title, picker and More actions share one line and More actions is at the header's right end, also with the delete confirmation open; a delayed stored page shows the indicator, then the page; `e2e/responsive.e2e.ts` (phone): Back and More actions on the first line, no sideways scroll; screenshots light and dark; rerun until `npm run e2e` passes
-- [ ] 3.2 Every check in `CLAUDE.md` passes and `openspec validate note-page-polish --strict` passes; verifier report (`ai-sdlc-kit:verifier`) on the change
+- [x] 3.2 Every check in `CLAUDE.md` passes and `openspec validate note-page-polish --strict` passes; verifier report (`ai-sdlc-kit:verifier`) on the change

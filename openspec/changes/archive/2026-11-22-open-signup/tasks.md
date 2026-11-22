@@ -11,7 +11,7 @@
 ## 3. E2E and integration
 
 - [x] 3.1 Update `e2e/auth.e2e.ts` and `e2e/members.e2e.ts` (what was refused now creates a member, which the test removes again); new e2e: sign up on the page, land signed in as a member with none of the admin's data, used email refused; screenshots light and dark; rerun until `npm run e2e` passes
-- [ ] 3.2 Every check in `CLAUDE.md` passes and `openspec validate open-signup --strict` passes; verifier report (`ai-sdlc-kit:verifier`) on the change
+- [x] 3.2 Every check in `CLAUDE.md` passes and `openspec validate open-signup --strict` passes; verifier report (`ai-sdlc-kit:verifier`) on the change
 
 ## Notes from the implementation (2026-11-13)
 

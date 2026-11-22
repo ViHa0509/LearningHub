@@ -12,4 +12,4 @@
 ## 3. Integration
 
 - [x] 3.1 e2e: a lesson with the template shows its cards and contents (light and dark screenshots); `npm run e2e` passes
-- [ ] 3.2 Every check in `CLAUDE.md` passes, `openspec validate lesson-template --strict` passes; verifier report on the change
+- [x] 3.2 Every check in `CLAUDE.md` passes, `openspec validate lesson-template --strict` passes; verifier report on the change

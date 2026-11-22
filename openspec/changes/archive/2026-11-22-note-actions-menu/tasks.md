@@ -13,7 +13,7 @@
 
 - [x] 3.1 Update `e2e/curation.e2e.ts`, `e2e/note-edit.e2e.ts`, `e2e/lesson-pdf.e2e.ts` (and `e2e/responsive.e2e.ts` if it touches these controls) to reach the actions through the menu; `qc-e2e` adds the menu scenarios (open, keyboard, action closes it, editing) with light and dark screenshots of the open menu on desktop and phone; rerun until `npm run e2e` passes
 - [x] 3.2 `qc-ui` inspects the new screenshots; fix what it reports; verify its report has no open defect
-- [ ] 3.3 Every check in `CLAUDE.md` passes and `openspec validate note-actions-menu --strict` passes; verifier report (`ai-sdlc-kit:verifier`) on the change
+- [x] 3.3 Every check in `CLAUDE.md` passes and `openspec validate note-actions-menu --strict` passes; verifier report (`ai-sdlc-kit:verifier`) on the change
 
 ## Workflow follow-up
 

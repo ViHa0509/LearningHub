@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Read a note
-Clicking a note in the learned list, in the Archived section, or in a lesson page, SHALL open it directly without a separate open button. The note page shows its title as a heading, the original page in an isolated frame, and controls to rename it, edit its page, change or remove its link, archive or restore it, and delete it after a confirmation. Renaming MUST be an explicit action (a Rename button or the Rename item of More actions) that opens the title field with Save and Cancel; the title is never editable otherwise and never saved on blur. The link control MUST be labelled "Linked to", and a changed link MUST be saved only through a Save button (with Cancel), never on change, blur or leaving. After a rename or a saved link change, the page MUST offer Undo for a few seconds, which puts the previous title or link back. When the note is linked to an existing node, the page MUST offer an "Open lesson" link to that node's lesson page. An archived note's page MUST say that the note is archived.
+Clicking a note in the learned list, the Archived section or a lesson page SHALL open it directly. The note page shows its title as a heading, the original page in an isolated frame, and a More actions menu (Rename, Edit page, Export PDF, Archive or Restore, Delete). A rename or a changed "Linked to" link MUST be saved only with Save, never on blur or leaving, and MUST offer Undo for a few seconds. A linked note offers "Open lesson"; an archived note's page says it is archived.
 
 #### Scenario: Open a note
 - **WHEN** the user clicks a note title in the list
@@ -20,11 +20,6 @@ Clicking a note in the learned list, in the Archived section, or in a lesson pag
 - **WHEN** the user clicks Undo on the status line
 - **THEN** the note is titled "Agentic Engineer" again
 
-#### Scenario: Undo a link change
-- **GIVEN** the user linked an unsorted note to `o-to-hang-b/chuong-1` with Save link
-- **WHEN** the user clicks Undo on the status line
-- **THEN** the note is unsorted again
-
 #### Scenario: Change the link with Save
 - **GIVEN** a note linked to `backend/redis`
 - **WHEN** the user picks `devops/docker` in "Linked to"
@@ -36,6 +31,11 @@ Clicking a note in the learned list, in the Archived section, or in a lesson pag
 - **GIVEN** a note linked to `backend/redis` and `devops/docker` picked but not saved
 - **WHEN** the user clicks Cancel link change, or leaves the page
 - **THEN** the note stays linked to `backend/redis` and the picker shows it again
+
+#### Scenario: Undo a link change
+- **GIVEN** the user linked an unsorted note to `o-to-hang-b/chuong-1` with Save link
+- **WHEN** the user clicks Undo on the status line
+- **THEN** the note is unsorted again
 
 #### Scenario: Open the lesson of the linked node
 - **GIVEN** a note linked to `backend/redis`
@@ -53,3 +53,22 @@ Clicking a note in the learned list, in the Archived section, or in a lesson pag
 #### Scenario: Archived note page
 - **WHEN** the user opens an archived note
 - **THEN** the page says the note is archived and offers Restore, and restoring it puts it back in the list
+
+#### Scenario: More actions menu
+- **GIVEN** a note that is not archived
+- **WHEN** the user presses More actions in the note header
+- **THEN** a menu opens with Rename, Edit page, Export PDF, Archive and Delete, and the header shows none of them as a separate button
+
+#### Scenario: Menu with the keyboard
+- **GIVEN** the More actions menu is open
+- **WHEN** the user presses Down and then Escape
+- **THEN** the focus moves to the next item, then the menu closes and the focus is back on the More actions button
+
+#### Scenario: Choosing an action closes the menu
+- **WHEN** the user chooses Archive in the menu
+- **THEN** the menu closes, the page says the note is archived, and the menu now offers Restore instead of Archive
+
+#### Scenario: Menu while editing the page
+- **GIVEN** the page editor is open
+- **WHEN** the user opens More actions
+- **THEN** the menu offers only Rename, Archive or Restore, and Delete

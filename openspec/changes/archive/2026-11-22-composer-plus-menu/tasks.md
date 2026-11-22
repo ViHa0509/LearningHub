@@ -12,4 +12,4 @@
 ## 3. E2E and integration
 
 - [x] 3.1 `e2e/agent-chat.e2e.ts`: Skills, effort and Attach go through the menu; screenshots of the open menu, light and dark; rerun until `npm run e2e` passes
-- [ ] 3.2 Every check in `CLAUDE.md` passes and `openspec validate composer-plus-menu --strict` passes; verifier report (`ai-sdlc-kit:verifier`) on the change
+- [x] 3.2 Every check in `CLAUDE.md` passes and `openspec validate composer-plus-menu --strict` passes; verifier report (`ai-sdlc-kit:verifier`) on the change

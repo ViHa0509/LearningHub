@@ -7,4 +7,4 @@
 ## 2. E2E and integration
 
 - [x] 2.1 Update `e2e/auth.e2e.ts`, `e2e/owner.setup.ts`, `e2e/signin-settings.e2e.ts` (a provider that is not configured is absent, not disabled); screenshots of the login and Sign up pages, light and dark; rerun until `npm run e2e` passes
-- [ ] 2.2 Every check in `CLAUDE.md` passes and `openspec validate auth-page-polish --strict` passes; verifier report (`ai-sdlc-kit:verifier`) on the change
+- [x] 2.2 Every check in `CLAUDE.md` passes and `openspec validate auth-page-polish --strict` passes; verifier report (`ai-sdlc-kit:verifier`) on the change
