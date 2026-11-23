@@ -1,6 +1,6 @@
 # Tasks
 
-Contract: `design.md` and `specs/settings/spec.md`. Rewritten 2026-11-23 for admin + members.
+Contract: `design.md` and `specs/settings/spec.md`. Rewritten 2026-11-23 for admin + members, then for a separate Profile page and left-column navigation.
 
 ## 1. Backend
 
@@ -11,13 +11,13 @@ Contract: `design.md` and `specs/settings/spec.md`. Rewritten 2026-11-23 for adm
 
 ## 2. Frontend
 
-- [ ] 2.1 Tabs Profile (replacing Account, `#/settings/account` opens it), Security and Preferences in `SettingsNav` and `route.ts`. Verify: Vitest for the routes and nav.
-- [ ] 2.2 Profile tab: name, bio, avatar upload and remove, email change, time zone (moved from Account), Delete account for members; avatar in the avatar menu. Save and Cancel on every form, discard prompt. Verify: Vitest for each spec scenario of Profile, Avatar, Email change, Delete account.
-- [ ] 2.3 Security tab (password, linked methods, sessions) and Preferences tab; the composer's starting effort from the account; Delete all notes in Data & sync. Verify: Vitest for each scenario; `npm run lint`, `npm run build`.
+- [ ] 2.1 Left-column navigation: `AppShell` shows `SettingsNav` on Settings pages and `ProfileNav` on Profile pages instead of `LearnedList` (same width, collapse and phone drawer); the tab row above Settings content is removed; `#/profile`, `#/profile/security`, `#/profile/preferences` in `route.ts`, `#/settings/account` opens Profile; "Profile" in `AccountMenu`. Verify: Vitest for the routes, the nav per role, and the Learned list coming back on other pages.
+- [ ] 2.2 Profile General: name, bio, time zone (moved from Account), email with its state, Verify email, Change email, avatar upload and remove, avatar in the avatar menu, Delete account for members. Save and Cancel on every form, discard prompt. Verify: Vitest for each scenario of Profile details, Avatar, Email change, Delete account.
+- [ ] 2.3 Profile Security (password, linked methods, sessions) and Preferences; the composer's starting effort from the account; Delete all notes in Data & sync. Verify: Vitest for each scenario; `npm run lint`, `npm run build`.
 
 ## 3. E2E and verification
 
-- [ ] 3.1 qc-e2e: one e2e file per tab from the spec scenarios (emails read from the outbox, OAuth through the fake provider); screenshots light, dark and phone. Verify: `npm run e2e` passes.
+- [ ] 3.1 qc-e2e: e2e files for the left-column navigation and each Profile section from the spec scenarios; existing Settings e2e updated for the moved tabs (tests changed only where the spec changed the UI) (emails read from the outbox, OAuth through the fake provider); screenshots light, dark and phone. Verify: `npm run e2e` passes.
 - [ ] 3.2 qc-ui inspects the new screenshots. Verify: no open defect, or each is listed in `evidence.md`.
 - [ ] 3.3 Every check in `CLAUDE.md` passes and `openspec validate settings-tabs --strict` passes. Verify: verifier report in `verifier-report.md`.
 

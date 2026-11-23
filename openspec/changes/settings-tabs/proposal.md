@@ -1,31 +1,31 @@
 ## Why
 
-Settings grew page by page (AI providers, Agents, Users, Sign-in, Data & sync, Account with only the time zone). A signed-in person still cannot edit their name, bio or avatar, change their email or password from the app, see and end their sessions, link a second sign-in method, set how the agent answers, or leave the app. Part of the backend exists (change password, sessions) with no screen. This change was first written for a single owner (2026-11); it is rewritten for the admin + members model (2026-11-23).
+Settings grew page by page, with its tabs as a row above the content while the left column keeps showing the Learned list, which has nothing to do with settings. A signed-in person also has no place for their own account: name, bio and avatar cannot be edited, the email cannot be changed or verified from a page, and password, sessions and sign-in methods have backend routes but no screen. First written for a single owner; rewritten 2026-11-23 for admin + members, and again the same day on the owner's request: a separate Profile page, and both pages navigated from the left column.
 
 ## What Changes
 
-- Settings keeps its vertical tab list with an address per tab. The **Account** tab becomes **Profile** (`#/settings/profile`; `#/settings/account` keeps working and opens Profile). New tabs **Security** (`#/settings/security`) and **Preferences** (`#/settings/preferences`). AI providers, Agents, Users (admin), Sign-in (admin) and Data & sync stay as they are.
-- **Profile** (every user):
-  - display name and bio, with Save and Cancel
-  - avatar: PNG, JPEG or WebP up to 1 MB, checked by its content, not its name; shown in the avatar menu; Remove goes back to initials
-  - email change: a verification link goes to the new address, and the email changes only when that link is opened; the old address gets a notice; until then the old email stays in use
-  - the time zone setting that is there today
-  - **Delete account** (members only): after typing their email, the member's account, sessions and all their data are removed, the same as when the admin deletes a member. The admin cannot delete their own account (as today in Users).
-- **Security** (every user): change password (set one when the account has none), linked sign-in methods (email and password, GitHub, Google) with Link and Unlink, never removing the last method, and active sessions with Revoke and Log out everywhere else.
-- **Preferences** (every user): the agent's answer language (Auto, English, Vietnamese) added to the agent's instructions, and the default effort for new chats; saved to the account with Save. The theme stays the top bar switch.
-- **Data & sync** gets **Delete all notes** (typed confirmation): the user's notes and their links are removed; lessons stay; files are released only when no other note uses them.
-- Dropped from the first version: a separate export (the backup .zip in Data & sync already exports without keys), a theme preference on the account, and the select on narrow screens (the tab list already scrolls).
+- **Left-column navigation.** On Settings and on Profile, the left column (where the Learned list sits on other pages, same width, collapse and phone drawer behaviour) shows that page's sections instead of the Learned list, with the current one marked. The row of tabs above the content goes away.
+  - Settings sections: **AI providers**, **Agents**, **Users** (admin), **Sign-in** (admin), **Data & sync**. Addresses stay as today (`#/settings`, `#/settings/agents`, `#/settings/users`, `#/settings/sign-in`, `#/settings/data`, provider pages).
+  - The **Account** section leaves Settings; `#/settings/account` opens Profile.
+- **Profile page** (`#/profile`, opened from a new "Profile" item in the avatar menu, for every user), sections:
+  - **General** (`#/profile`): avatar (PNG, JPEG or WebP up to 1 MB, checked by content; Remove goes back to initials), display name, bio, email with its verification state (Verify email resends the link; Change email sends a link to the new address and changes it only when opened), time zone (moved from Account).
+  - **Security** (`#/profile/security`): change or set password, linked sign-in methods (password, GitHub, Google) with Link and Unlink (never the last one), active sessions with Revoke and Log out everywhere else.
+  - **Preferences** (`#/profile/preferences`): the agent's answer language (Auto, English, Vietnamese) and the default effort for new chats.
+  - **Delete account** at the bottom of General, members only: after typing their email, the account and all its data are removed, as when the admin deletes a member. The admin cannot delete their own account.
+- **Data & sync** gets **Delete all notes** (typed DELETE): only the user's notes and links; lessons stay; shared files released only when unused.
+- Every form has Save and Cancel and asks before discarding changes.
+- Dropped: a separate export (the backup .zip covers it), a theme preference on the account (the top bar switch stays).
 
 ## Capabilities
 
 ### New Capabilities
-- `settings`: the Profile, Security and Preferences tabs, account deletion by the member, and Delete all notes.
+- `settings`: the left-column navigation of Settings, the Profile page with General, Security and Preferences, account deletion by a member, and Delete all notes.
 
 ### Modified Capabilities
-- none (the auth spec already sends email change to the settings capability; change password and sessions keep their auth requirements and get a screen here)
+- none (the auth spec sends email change to this capability; change password and sessions keep their auth requirements and get a screen here)
 
 ## Impact
 
-- Backend: `PUT /api/auth/profile`, avatar upload, read and delete, email change request and confirm, `DELETE /api/auth/account`, link start for GitHub and Google from a signed-in session and unlink, `PUT /api/auth/preferences` (stored in the existing `users.preferences` JSONB), the language line in the agent's system prompt, `DELETE /api/notes` (all of the user's notes). No migration expected: `users` already has `display_name`, `bio`, `avatar_key` and `preferences`; email change tokens use the existing email token table if it has a purpose column (checked in task 1.1).
-- Frontend: `ProfileSettings`, `SecuritySettings`, `PreferencesSettings` tab components, `SettingsNav`, `route.ts`, avatar in `AccountMenu`, Delete all notes in `DataSettings`, the chat's default effort from the account.
-- Security: avatar files are untrusted (content checked, served with `X-Content-Type-Options: nosniff` and an image type, only to signed-in users); email change and link flows use single-use hashed tokens and state bound to the session; no password, token or link is logged.
+- Backend: `PUT /api/auth/profile`, avatar upload/read/delete, email change request and confirm, `DELETE /api/auth/account`, GitHub/Google link from a signed-in session and unlink, `PUT /api/auth/preferences` (existing `users.preferences` JSONB), the language line in the agent prompt, `DELETE /api/notes`. No migration expected (`users` has `display_name`, `bio`, `avatar_key`, `preferences`); one only if the email token table lacks a purpose/payload column.
+- Frontend: `AppShell` picks the left column per page (`LearnedList`, `SettingsNav`, `ProfileNav`); new `ProfilePage` with `ProfileGeneral`, `ProfileSecurity`, `ProfilePreferences`; `route.ts` (`#/profile...`, `#/settings/account` → Profile); "Profile" in `AccountMenu` and the avatar image; `SettingsNav` moves into the left column; Delete all notes in `DataSettings`; the composer's starting effort from the account.
+- Security: avatar files are untrusted (content check, `nosniff`, image type, session only); email change and link use single-use hashed tokens and session-bound state; nothing secret is logged.

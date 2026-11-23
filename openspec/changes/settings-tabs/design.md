@@ -26,6 +26,8 @@
 
 6. **Delete all notes.** `DELETE /api/notes` `{confirm: "DELETE"}` collects the user's storage keys, deletes the notes (links cascade), and releases each key through `release_blob`.
 
+7. **Left column per page.** `AppShell` already renders the left column around `LearnedList`; it chooses the content by route: `SettingsNav` for Settings routes, `ProfileNav` for Profile routes, `LearnedList` otherwise. The column keeps its width, collapse button and phone drawer, so no new layout. The nav is a list of links (`aria-current="page"` on the current one), not a tablist, since each item is its own address. Alternative: a second sidebar inside the center pane; rejected, it would squeeze the content between two side columns at 1440 px. Confirmed by the owner (2026-11-23): the sections replace the Learned list in that column.
+
 ## Risks / Trade-offs
 
 - [JPEG avatars keep their EXIF data, which may include a location] → the upload hint says so; re-encoding is a later change.

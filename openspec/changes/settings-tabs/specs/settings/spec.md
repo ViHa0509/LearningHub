@@ -1,30 +1,50 @@
 ## Purpose
 
-The personal parts of Settings: the user's profile, sign-in security, agent preferences, leaving the app, and removing all of their notes.
+The personal and app settings screens: left-column navigation for Settings and Profile, the user's profile, sign-in security, agent preferences, leaving the app, and removing all of one's notes.
 
 ## ADDED Requirements
 
-### Requirement: Settings tabs
-Settings SHALL show Profile, Security and Preferences tabs next to the existing ones, each with its own address under `#/settings/`. `#/settings/account` MUST open Profile.
+### Requirement: Left-column navigation
+On Settings and on Profile, the left column SHALL list that page's sections instead of the Learned list, with the current section marked, and each section SHALL have its own address. Settings lists AI providers, Agents, Users and Sign-in (admin only) and Data & sync. On a phone the list opens in the same drawer as the Learned list.
 
-#### Scenario: Open a tab by address
-- **WHEN** the user opens `#/settings/security`
-- **THEN** the Security tab is selected and its content is shown
+#### Scenario: Settings sections in the left column
+- **WHEN** the admin opens `#/settings/agents`
+- **THEN** the left column lists AI providers, Agents, Users, Sign-in and Data & sync with Agents marked, and the Learned list is not shown
+
+#### Scenario: Member sees fewer sections
+- **WHEN** a member opens Settings
+- **THEN** the left column lists AI providers, Agents and Data & sync only
+
+#### Scenario: Back to the Learned list
+- **WHEN** the user leaves Settings for the home page
+- **THEN** the left column shows the Learned list again
+
+### Requirement: Profile page
+Every signed-in user SHALL have a Profile page at `#/profile`, opened from "Profile" in the avatar menu, with sections General, Security (`#/profile/security`) and Preferences (`#/profile/preferences`) in the left column. `#/settings/account` MUST open Profile.
+
+#### Scenario: Open Profile from the avatar menu
+- **WHEN** the user opens the avatar menu and picks Profile
+- **THEN** the Profile page shows General, with the sections in the left column
 
 #### Scenario: Old account address
 - **WHEN** the user opens `#/settings/account`
-- **THEN** the Profile tab is shown
+- **THEN** the Profile page is shown
 
 ### Requirement: Profile details
-The Profile tab SHALL let every user change their display name (1 to 80 characters) and bio (up to 500 characters) with Save and Cancel.
+General SHALL let the user change their display name (1 to 80 characters), bio (up to 500 characters) and time zone with Save and Cancel, and SHALL show the email with its verification state and a Verify email action when it is not verified.
 
 #### Scenario: Change display name
 - **WHEN** the user edits the display name and clicks Save
 - **THEN** the avatar menu shows the new name
 
 #### Scenario: Leave without saving
-- **WHEN** the user edits the bio and leaves the tab
+- **WHEN** the user edits the bio and opens another page
 - **THEN** the app asks before discarding, and the stored bio is unchanged
+
+#### Scenario: Unverified email
+- **GIVEN** the user's email is not verified
+- **WHEN** they open Profile and click Verify email
+- **THEN** a verification link is sent and the page says so
 
 ### Requirement: Avatar
 The user SHALL be able to upload a PNG, JPEG or WebP avatar up to 1 MB, checked by the file's content. Other files MUST be refused with the reason. The avatar MUST be served only to signed-in users, with an image content type and `X-Content-Type-Options: nosniff`. Remove MUST go back to initials.
@@ -49,14 +69,14 @@ The user SHALL be able to request an email change. A single-use verification lin
 - **THEN** the account keeps the old email, and sign-in with the old email still works
 
 ### Requirement: Password in Security
-The Security tab SHALL let the user change their password by giving the current one, or set a password when the account has none. A new password follows the auth password rules.
+Security SHALL let the user change their password by giving the current one, or set a password when the account has none. A new password follows the auth password rules.
 
 #### Scenario: Change password
 - **WHEN** the user gives the right current password and a valid new one
 - **THEN** the new password works at the next sign-in and the old one does not
 
 ### Requirement: Linked sign-in methods
-The Security tab SHALL list the sign-in methods of the account (password, GitHub, Google). The user SHALL be able to link GitHub or Google while signed in, and to unlink a method. The last method MUST NOT be removable. An identity already linked to another account MUST be refused.
+Security SHALL list the sign-in methods of the account (password, GitHub, Google). The user SHALL be able to link GitHub or Google while signed in, and to unlink a method. The last method MUST NOT be removable. An identity already linked to another account MUST be refused.
 
 #### Scenario: Last method
 - **GIVEN** GitHub is the only sign-in method
@@ -73,14 +93,14 @@ The Security tab SHALL list the sign-in methods of the account (password, GitHub
 - **THEN** it is refused and neither account changes
 
 ### Requirement: Sessions in Security
-The Security tab SHALL list the user's active sessions (device, address, last seen, which is current) with Revoke and Log out everywhere else.
+Security SHALL list the user's active sessions (device, address, last seen, which is current) with Revoke and Log out everywhere else.
 
 #### Scenario: Revoke another session
 - **WHEN** the user revokes a session that is not the current one
 - **THEN** that session is signed out and disappears from the list
 
 ### Requirement: Preferences
-The Preferences tab SHALL set the agent's answer language (Auto, English or Vietnamese) and the default effort for new chats, saved to the account with Save. With English or Vietnamese, the agent's instructions MUST ask it to answer in that language; with Auto, in the language the user writes in.
+Preferences SHALL set the agent's answer language (Auto, English or Vietnamese) and the default effort for new chats, saved to the account with Save. With English or Vietnamese, the agent's instructions MUST ask it to answer in that language; with Auto, in the language the user writes in.
 
 #### Scenario: Answer language
 - **GIVEN** the answer language is Vietnamese
