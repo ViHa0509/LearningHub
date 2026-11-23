@@ -13,5 +13,5 @@ Implement after `learning-fields` is in (it changes the same catalog and agent f
 
 ## 3. E2E and integration
 
-- [ ] 3.1 e2e with the fake LLM (a trigger that calls `save_learned_note`): asking about a new topic adds a note at the top with the badge; asking again adds none; screenshots; `npm run e2e` passes
-- [ ] 3.2 Every check in `CLAUDE.md`, `openspec validate agent-learned-notes --strict`; verifier report
+- [x] 3.1 e2e with the fake LLM (a trigger that calls `save_learned_note`): asking about a new topic adds a note at the top with the badge; asking again adds none; screenshots; `npm run e2e` passes
+- [x] 3.2 Every check in `CLAUDE.md`, `openspec validate agent-learned-notes --strict`; verifier report

@@ -18,5 +18,5 @@
 
 ## 4. E2E and integration
 
-- [ ] 4.1 e2e `learning-fields.e2e.ts`: create field and area, edit topics, link a note, lesson page, publish to a member (read only), screenshots light/dark and phone; `npm run e2e` passes
-- [ ] 4.2 Every check in `CLAUDE.md` passes, `openspec validate learning-fields --strict` passes; verifier report
+- [x] 4.1 e2e `learning-fields.e2e.ts`: create field and area, edit topics, link a note, lesson page, publish to a member (read only), screenshots light/dark and phone; `npm run e2e` passes
+- [x] 4.2 Every check in `CLAUDE.md` passes, `openspec validate learning-fields --strict` passes; verifier report

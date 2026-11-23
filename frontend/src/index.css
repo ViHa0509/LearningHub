@@ -620,6 +620,7 @@ details.provider-section[open] > summary { margin-bottom: 10px; }
 }
 .agent-pane .ghost:hover:not(:disabled) { background: var(--surface-2); color: var(--text); border-color: transparent; }
 .agent-pane .ghost:active:not(:disabled) { background: var(--surface-3); }
+.agent-pane .ghost[aria-pressed='true'], .agent-pane .ghost[aria-pressed='true']:hover:not(:disabled) { background: var(--accent-soft); color: var(--accent); }
 .agent-pane .icon-btn { width: 32px; padding: 0; justify-content: center; }
 .agent-pane .icon-btn.small, .agent-pane .ghost.small { height: 28px; border-radius: 8px; font-size: 12px; }
 .agent-pane .icon-btn.small { width: 28px; }
@@ -761,7 +762,7 @@ details.provider-section[open] > summary { margin-bottom: 10px; }
   padding: 6px 8px; background: transparent; border: 0; border-radius: 8px; text-align: left; color: inherit;
 }
 .agent-pane .history-row:disabled { opacity: 0.6; cursor: default; }
-.history-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: 13px; }
+.history-name { color: var(--text); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: 13px; }
 .history-meta { font-size: 12px; }
 .history-item.editing { gap: 6px; padding: 6px; background: var(--surface-2); }
 .history-item.editing input { flex: 1 1 100%; min-width: 0; }
@@ -868,6 +869,9 @@ details.provider-section[open] > summary { margin-bottom: 10px; }
 .agent-pane .send-button:hover:not(:disabled) { background: var(--accent-hover); }
 .agent-pane .send-button:active:not(:disabled) { transform: scale(0.94); }
 .agent-pane .send-button:disabled { box-shadow: none; }
+.agent-pane .send-button.stop-button:disabled { opacity: 0.8; }
+.agent-pane .send-button.stop-button:has(.stop-label) { width: auto; border-radius: 18px; padding: 0 12px; gap: 6px; grid-auto-flow: column; font-size: 12px; }
+.agent-stopped { font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; }
 
 .attachment-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
 .attachment-chip {

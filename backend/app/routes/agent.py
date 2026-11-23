@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.a2ui.interface import ContentSink
 from app.a2ui.runner import ChatInteractiveRunner
 from app.a2ui.schemas import SurfaceOut
-from app.agent.agents import AGENTS
+from app.agent.agents import AGENTS, AgentDef
 from app.agent.history import (
     NewMessage,
     find_session,
@@ -22,7 +22,16 @@ from app.agent.history import (
 from app.agent.loop import Attachment, Effort, Page, run_agent
 from app.agent.messages import Message, ProviderError
 from app.agent.ratelimit import RateLimiter
-from app.agent.resolve import ResolveError, resolve_chain
+from app.agent.resolve import AgentModel, ResolveError, resolve_chain
+from app.agent.stop import (
+    RunInUse,
+    StopCheck,
+    end_run,
+    never_stop,
+    request_stop,
+    start_run,
+    stop_check,
+)
 from app.agent.tools import AgentTools
 from app.auth.current import CurrentUser
 from app.db import A2uiSurface, AreaAgentSetting, Note, User, get_session
@@ -66,6 +75,8 @@ class ChatIn(BaseModel):
     session_id: uuid.UUID | None = None
     # Retry from a stored user message of that chat: it and what follows are replaced.
     retry_from: uuid.UUID | None = None
+    # Made by the client before sending, so it can stop this answer while it runs.
+    run_id: uuid.UUID | None = None
 
 
 class StepOut(BaseModel):
@@ -191,6 +202,58 @@ def chat(
     except ResolveError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
+    factory = request.app.state.session_factory
+    should_stop: StopCheck = never_stop
+    if payload.run_id is not None:
+        try:
+            start_run(factory, user.id, payload.run_id)
+        except RunInUse as exc:
+            raise HTTPException(status_code=409, detail="this run id is already in use") from exc
+        should_stop = stop_check(factory, payload.run_id)
+    try:
+        return _answer(
+            payload,
+            request,
+            catalog,
+            session,
+            user,
+            agent,
+            chat_model,
+            stored,
+            replace_from,
+            should_stop,
+        )
+    finally:
+        if payload.run_id is not None:
+            end_run(factory, payload.run_id)
+
+
+@router.post(
+    "/runs/{run_id}/stop",
+    status_code=204,
+    response_model=None,
+    dependencies=[Depends(require_app_header)],
+)
+def stop_run(
+    run_id: uuid.UUID, session: Annotated[Session, Depends(get_session)], user: CurrentUser
+) -> None:
+    """Stop the user's running answer. The same answer for an unknown, ended or another user's
+    run, so a run id tells nothing."""
+    request_stop(session, user.id, run_id)
+
+
+def _answer(
+    payload: ChatIn,
+    request: Request,
+    catalog: RoadmapCatalog,
+    session: Session,
+    user: User,
+    agent: AgentDef,
+    chat_model: AgentModel,
+    stored: list[Message],
+    replace_from: int | None,
+    should_stop: StopCheck,
+) -> ChatOut:
     conversation = stored + [Message(role=m.role, text=m.content) for m in payload.messages]
     page = Page(**payload.page.model_dump())
     area = area_of_page(catalog, session, user, page)
@@ -209,6 +272,7 @@ def chat(
                 agent_id="a2ui",
                 store=request.app.state.store,
                 content_sink=sink,
+                should_stop=should_stop,
             )
 
         interactive = ChatInteractiveRunner(
@@ -233,6 +297,7 @@ def chat(
                 allowed=allowed,
                 kh_search=request.app.state.kh.search_for(user.id),
                 interactive=interactive,
+                should_stop=should_stop,
             ),
             catalog,
             page,

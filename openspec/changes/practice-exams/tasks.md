@@ -16,5 +16,5 @@ Depends on `learning-fields` (areas and topics).
 
 ## 3. E2E and integration
 
-- [ ] 3.1 e2e with a synthetic bank file in `e2e/fixtures` (made-up questions, no real exam data): import, practise, pass a test, fail on a critical question, history; screenshots light/dark and phone; `npm run e2e` passes
-- [ ] 3.2 Every check in `CLAUDE.md` passes, `openspec validate practice-exams --strict` passes; verifier report
+- [x] 3.1 e2e with a synthetic bank file in `e2e/fixtures` (made-up questions, no real exam data): import, practise, pass a test, fail on a critical question, history; screenshots light/dark and phone; `npm run e2e` passes
+- [x] 3.2 Every check in `CLAUDE.md` passes, `openspec validate practice-exams --strict` passes; verifier report

@@ -274,6 +274,22 @@ class ChatMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class AgentRun(Base):
+    """A running agent chat request (change agent-stop). The row lives only while the request
+    runs; ``stop_requested_at`` is set by the user's Stop and read by the agent loop."""
+
+    __tablename__ = "agent_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    stop_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
 class A2uiSurface(Base):
     """An interactive A2UI surface of a chat answer (change a2ui-chat-agent).
 

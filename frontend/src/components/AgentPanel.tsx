@@ -232,6 +232,8 @@ export function AgentPanel({ open, onToggle, page, request, drawer = false, onRe
             }}
             decoration={petShown ? <ChatPet busy={chat.busy} entries={chat.entries} /> : null}
             busy={working}
+            onStop={chat.busy ? chat.stop : undefined}
+            stopping={chat.stopping}
             canSend={draft.trim() !== '' || files.length > 0}
             dropping={dropping}
             onSubmit={submit}

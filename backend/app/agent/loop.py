@@ -8,6 +8,7 @@ from typing import Literal
 from app.agent.llm.factory import ChatModel, runs_own_loop
 from app.agent.messages import Message
 from app.agent.results import AgentResult, Step, stopped_reply
+from app.agent.stop import STOPPED_BY_USER
 from app.agent.tools import AgentTools
 from app.roadmaps import RoadmapCatalog
 
@@ -222,6 +223,12 @@ def with_sources(reply: str, sources: Sequence[tuple[str, str]]) -> str:
     return f"{reply}\n\nSources:\n{lines}"
 
 
+def _stopped_by_user(result: AgentResult) -> AgentResult:
+    result.stopped = True
+    result.reply = STOPPED_BY_USER
+    return result
+
+
 def tool_loop(
     chat_model: ChatModel,
     system: str,
@@ -238,6 +245,8 @@ def tool_loop(
     sources: list[tuple[str, str]] = []
     failures: dict[tuple[str, str, str], int] = {}
     for _ in range(max_steps):
+        if tools.should_stop():
+            return _stopped_by_user(result)
         # Only a model that can search the web is asked to (Anthropic's server tool).
         if web_search:
             turn = chat_model.complete(system, messages, tools.specs(), web_search=True)  # type: ignore[call-arg]
@@ -271,6 +280,8 @@ def tool_loop(
                     result.reply = stopped_reply(max_steps)
                     return result
                 continue
+            if tools.should_stop():
+                return _stopped_by_user(result)
             outcome = tools.run(call.name, call.input)
             result.steps.append(Step(tool=call.name, input=call.input, summary=outcome.summary))
             if outcome.changed_lesson and outcome.changed_lesson not in result.changed_lessons:

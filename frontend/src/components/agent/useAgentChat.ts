@@ -40,6 +40,8 @@ export interface Entry {
   proposal?: ProposedTopics
   /** Interactive A2UI surfaces of this answer (quiz, practice, lesson). */
   surfaces?: SurfaceOut[]
+  /** The run was stopped (by the user or by its step cap). */
+  stopped?: boolean
 }
 
 let seq = 0
@@ -68,6 +70,7 @@ function toEntries(detail: ChatSessionDetail): Entry[] {
           messageId: m.id,
           steps: m.steps,
           ...(m.surfaces && m.surfaces.length > 0 ? { surfaces: m.surfaces } : {}),
+          ...(m.stopped ? { stopped: true } : {}),
           answeredBy: m.provider
             ? { name: m.provider.name, model: m.provider.model, fallback: m.fallback_used, effort: m.effort ?? 'medium' }
             : undefined,
@@ -90,6 +93,10 @@ export function useAgentChat({ effort, page }: Options) {
   // The stored chat this conversation belongs to; null until its first answer.
   const [sessionId, setSessionId] = useState<string | null>(null)
   const session = useRef<string | null>(null)
+  // The run of the pending send, and whether its stop was already posted.
+  const runId = useRef<string | null>(null)
+  const stopSent = useRef(false)
+  const [stopping, setStopping] = useState(false)
 
   const setSession = (id: string | null) => {
     session.current = id
@@ -129,6 +136,9 @@ export function useAgentChat({ effort, page }: Options) {
     setEntries([...base, question])
     setBusy(true)
     const current = session.current
+    const run = crypto.randomUUID()
+    runId.current = run
+    stopSent.current = false
     try {
       // The server holds the conversation of a stored chat: only the new message is sent.
       const answer = await api.chat({
@@ -136,6 +146,7 @@ export function useAgentChat({ effort, page }: Options) {
         messages: [{ role: 'user', content: turn.content, display: turn.display }],
         page,
         effort,
+        run_id: run,
         ...(current ? { session_id: current } : {}),
         ...(current && retryFrom ? { retry_from: retryFrom } : {}),
         ...(turn.attachments.length > 0
@@ -153,6 +164,7 @@ export function useAgentChat({ effort, page }: Options) {
           messageId: answer.assistant_message_id,
           ...(answer.proposed_topics ? { proposal: answer.proposed_topics } : {}),
           ...(answer.surfaces && answer.surfaces.length > 0 ? { surfaces: answer.surfaces } : {}),
+          ...(answer.stopped ? { stopped: true } : {}),
           answeredBy: {
             name: answer.provider.name,
             model: answer.provider.model,
@@ -195,8 +207,20 @@ export function useAgentChat({ effort, page }: Options) {
       if (current && message === 'chat session not found') setSession(null)
       setEntries((list) => list.map((entry) => (entry.id === question.id ? { ...entry, error: message } : entry)))
     } finally {
+      runId.current = null
+      setStopping(false)
       setBusy(false)
     }
+  }
+
+  /** Asks the server to stop the pending run; the chat request is not aborted, its answer still arrives. */
+  const stop = () => {
+    if (!runId.current || stopSent.current) return
+    stopSent.current = true
+    setStopping(true)
+    api.stopAgentRun(runId.current).catch(() => {
+      // The answer or the error of the chat request ends the wait either way.
+    })
   }
 
   /**
@@ -226,5 +250,5 @@ export function useAgentChat({ effort, page }: Options) {
     if (session.current === id) newChat()
   }
 
-  return { entries, busy, loading, sessionId, send, retry, open, newChat, forget }
+  return { entries, busy, stopping, stop, loading, sessionId, send, retry, open, newChat, forget }
 }

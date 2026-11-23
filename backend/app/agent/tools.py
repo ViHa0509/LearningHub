@@ -326,7 +326,10 @@ class AgentTools:
         kh_search: KhSearchFn | None = None,
         interactive: InteractiveRunner | None = None,
         content_sink: ContentSink | None = None,
+        should_stop: Callable[[], bool] = lambda: False,
     ) -> None:
+        # True once the user pressed Stop; the loops check it before each model and tool call.
+        self.should_stop = should_stop
         # Only for the assistant: hands interactive requests to the runner.
         self._interactive = interactive
         # Only for the a2ui agent: where its validated content goes.

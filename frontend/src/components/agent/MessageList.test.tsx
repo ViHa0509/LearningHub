@@ -1,5 +1,6 @@
 /** Spec: visual-polish - Thinking indicator (the status semantics stay). */
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { MessageList } from './MessageList'
 
@@ -41,5 +42,32 @@ describe('MessageList images', () => {
     expect(img?.getAttribute('src')).toBe('/brand/logo-mark.svg')
     expect(img?.getAttribute('alt')).toBe('Logo')
     expect(container.querySelector('.md-blocked-image')).toBeNull()
+  })
+})
+
+describe('MessageList stopped answers', () => {
+  const run = (stopped: boolean, onRetry = vi.fn()) => {
+    Element.prototype.scrollIntoView = vi.fn()
+    render(
+      <MessageList
+        entries={[{ id: 1, role: 'assistant', content: 'Stopped by you.', ...(stopped ? { stopped: true } : {}) }]}
+        busy={false}
+        onRetry={onRetry}
+        onStarter={() => {}}
+      />,
+    )
+    return onRetry
+  }
+
+  it('marks a stopped answer and keeps Retry working', async () => {
+    const onRetry = run(true)
+    expect(screen.getByText('Stopped')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(onRetry).toHaveBeenCalledWith(1)
+  })
+
+  it('shows no mark on a normal answer', () => {
+    run(false)
+    expect(screen.queryByText('Stopped')).not.toBeInTheDocument()
   })
 })

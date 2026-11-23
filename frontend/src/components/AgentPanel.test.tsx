@@ -61,6 +61,7 @@ describe('agent panel', () => {
       messages: [{ role: 'user', content: 'what about redis?', display: 'what about redis?' }],
       page: { kind: 'roadmap', domain: 'backend' },
       effort: 'medium',
+      run_id: expect.stringMatching(/^[0-9a-f-]{36}$/),
     })
   })
 

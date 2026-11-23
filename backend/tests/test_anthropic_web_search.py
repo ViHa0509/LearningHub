@@ -117,6 +117,10 @@ class NoTools:
     def run(self, name: str, args: dict[str, Any]) -> Any:
         return NS(result='{"notes": []}', summary="Searched notes", changed_lesson=None)
 
+    @staticmethod
+    def should_stop() -> bool:
+        return False
+
 
 def test_the_tool_loop_shows_searches_lists_sources_and_sends_the_server_blocks_back() -> None:
     with_tool = search_response("redis eviction", ("Redis docs", "https://redis.test/eviction"))

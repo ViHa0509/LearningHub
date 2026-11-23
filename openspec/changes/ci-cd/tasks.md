@@ -11,7 +11,7 @@
 ## 3. CD
 
 - [x] 3.1 `Dockerfile` (frontend build stage, Python slim runtime), `.dockerignore`, `docker/entrypoint.sh` (migrate then serve), `docker-compose.release.yml`
-- [ ] 3.2 `.github/workflows/release.yml` on `v*`: checks, build and push to GHCR, GitHub Release with notes and the compose file
+- [x] 3.2 `.github/workflows/release.yml` on `v*`: checks, build and push to GHCR, GitHub Release with notes and the compose file
 - [x] 3.3 README: CI badge, cutting a release, running a release (the Claude Code provider needs the CLI outside the image)
 
 ## 4. Public access (Cloudflare Tunnel; after owner-auth is on)

@@ -29,8 +29,8 @@
 ## 6. E2E and integration
 
 - [x] 6.1 `qc-e2e` writes `frontend/e2e/chat-history.e2e.ts` from the three spec deltas (first message creates a chat, reopen and continue, New chat, rename, delete the open chat, reload keeps the chat, another member sees none of the admin's chats, backup and restore carry the history) with light and dark screenshots of the History view; send each failure to the developer who owns the area and rerun until `npm run e2e` passes
-- [ ] 6.2 `qc-ui` inspects the new screenshots (desktop, and the agent drawer on a phone); fix what it reports; verify its report has no open defect
-- [ ] 6.3 Every check in `CLAUDE.md` passes and `openspec validate chat-session-history --strict` passes; verifier report (`ai-sdlc-kit:verifier`) on the change
+- [x] 6.2 `qc-ui` inspects the new screenshots (desktop, and the agent drawer on a phone); fix what it reports; verify its report has no open defect
+- [x] 6.3 Every check in `CLAUDE.md` passes and `openspec validate chat-session-history --strict` passes; verifier report (`ai-sdlc-kit:verifier`) on the change
 
 ## Workflow follow-up
 
@@ -44,5 +44,5 @@
 - 3.1: a restored message may hold up to 1 000 000 characters (an answer has no request limit, so the 20 000 cap of design.md would refuse the server's own backups); the typed text, file names and steps keep the request limits.
 - 5.1: New chat and History are icon buttons at every width (accessible names "New chat" and "History"), not labelled buttons that lose the label in the narrow panel.
 - 6.1: written and run by the main session (`qc-e2e` was not available). The scenario "another member sees none of the admin's chats" is covered in `backend/tests/test_chat_sessions.py`, not in e2e; e2e checks that a request without a session is answered 401.
-- 6.2: the screenshots (`chat-history*.png`, desktop light and dark, phone drawer) were inspected by the main session, not by `qc-ui`.
+- 6.2: `qc-ui` inspected the screenshots on 2026-11-23 (two dark-theme contrast fixes in `index.css`, re-check pass; cosmetic items in `evidence.md`).
 - Not covered by a UI test: the History rows being disabled while the agent is working (the fake chat answers at once).

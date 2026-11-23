@@ -136,10 +136,13 @@ class ChatInteractiveRunner:
         agent = AGENTS[A2UI_AGENT]
         system = system_prompt(self._page, self._catalog, agent.instructions)
         conversation = [Message(role="user", text=_task_text(request))]
+        tools = self._tools_for(sink)
         try:
-            model.run(system, conversation, self._tools_for(sink), self._max_steps)
+            model.run(system, conversation, tools, self._max_steps)
         except ProviderError as exc:
             return f"the Interactive tutor's provider failed ({exc.category})"
+        if tools.should_stop():
+            return "the user stopped the answer"
         if sink.content is None:
             return "the Interactive tutor did not produce valid content"
         return sink.content

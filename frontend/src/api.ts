@@ -436,6 +436,8 @@ export interface ChatRequest {
   session_id?: string
   /** Retry from this stored user message of the chat: it and what follows are replaced. */
   retry_from?: string
+  /** Made by the client per send; `stopAgentRun` ends this run. */
+  run_id?: string
 }
 
 export interface ChatSessionSummary {
@@ -896,6 +898,8 @@ export const api = {
   saveAreaAgents: (domain: string, body: { instructions: string; tools: string[] | null }) =>
     request<AreaAgentSettings>(`/api/agents/areas/${domain}`, json('PUT', body)),
   chat: (body: ChatRequest) => request<ChatReply>('/api/agent/chat', json('POST', body)),
+  /** Asks the running chat turn to stop; answers 204 whatever the run is. */
+  stopAgentRun: (runId: string) => request<void>(`/api/agent/runs/${runId}/stop`, { method: 'POST' }),
   a2uiAction: (surfaceId: string, action: Record<string, unknown>) =>
     request<{ messages: Record<string, unknown>[] }>(`/api/a2ui/surfaces/${surfaceId}/actions`, json('POST', action)),
   chatSessions: () => request<{ sessions: ChatSessionSummary[]; total: number }>('/api/agent/sessions'),

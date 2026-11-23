@@ -57,3 +57,10 @@ One entry per cycle, appended by `/ai-sdlc-kit:orchestrate` (or by the main sess
 - Agents: 1.1 (migration), 2.3 (runner, nested agent run, count rule), 3.1 (grading route), interface contract -> main session (opus, security); 1.2-1.4, 2.1-2.2, 2.4-2.5, 6.1, template fixes -> implementer (sonnet); 4.1-4.3, UI fixes -> implementer (sonnet); 5.1 -> implementer (sonnet); 5.2 -> qc-e2e (sonnet); 5.3 -> qc-ui (sonnet); 6.2 -> verifier (sonnet)
 - Verdicts: qc-e2e pass (rounds: 4; fixed a fake-LLM trigger catching the /quiz skill and the correct-option marking; final 379 passed, 0 failed), verifier pass, qc-ui pass (dark Check button colour left in evidence.md)
 - Needs human: none. Two full runs were stopped by low memory and rerun alone with the owner's go-ahead. A conflict-retry gap (surfaces lost on store_turn rollback) was found and fixed with a test.
+
+## 2026-11-23 partly done changes, agent-stop, settings-tabs rewrite
+- Result: agent-learned-notes, learning-fields, practice-exams, chat-session-history, ci-cd done; agent-stop done (9/9); settings-tabs specs rewritten for admin + members (0/10, waits for owner review)
+- Tasks: agent-learned-notes 3.1-3.2; learning-fields 4.1-4.2; practice-exams 3.1-3.2; chat-session-history 6.2-6.3; ci-cd 3.2 (workflow already in the repo, box was unticked); agent-stop 1.1-3.3
+- Agents: e2e of the four changes -> qc-e2e (sonnet); chat-history dark contrast fixes, ci-cd 3.2, agent-stop 2.1-2.2 and backend tests -> implementer (sonnet); qc-ui x3; settings-tabs state -> scout (haiku); agent-stop spec, migration 0024 and stop path, settings-tabs rewrite -> main session (opus)
+- Verdicts: qc-e2e pass (no product bugs), qc-ui pass (cosmetic items in evidence.md), verifier pass on the final run (pytest 1311, vitest 712, e2e 381). Two earlier verifier runs failed because agent-stop work was edited in the same tree during the run (conftest TRUNCATE list, a test stub)
+- Needs human: review settings-tabs; vercel-deploy 7.3, 8.2-8.4; anthropic-web-search 3.1 (real key); kh-connector 4.1 (KH admin)

@@ -35,6 +35,7 @@ from app.agent.llm import catalog
 from app.agent.llm.errors import ErrorCategory, ProviderError
 from app.agent.messages import Message, ToolSpec, Turn
 from app.agent.results import AgentResult, Step, stopped_reply
+from app.agent.stop import STOPPED_BY_USER, StopCheck, never_stop, throttled
 
 if TYPE_CHECKING:
     from app.agent.tools import AgentTools
@@ -593,10 +594,21 @@ class ClaudeCodeAgent:
         web_search: bool = False,
         user_id: uuid.UUID | None = None,
         allowed: set[str] | None = None,
+        should_stop: StopCheck = never_stop,
     ) -> AgentResult:
         if not self.model or self.model.startswith("-"):
             raise ProviderError("the model name cannot start with '-'", "invalid_config")
         reader = StreamReader(max_steps, with_tools)
+        stop = throttled(should_stop)
+        stopped_by_user = False
+
+        def on_line(line: str) -> bool:
+            nonlocal stopped_by_user
+            if stop():
+                stopped_by_user = True
+                return False  # the runner kills the whole process tree
+            return reader.feed(line)
+
         folder = Path(tempfile.mkdtemp(prefix="lh-claude-"))
         try:
             work = folder / "work"
@@ -620,7 +632,7 @@ class ClaudeCodeAgent:
                     cwd=work,
                     stdin=render_conversation(messages),
                     timeout=self._timeout,
-                    on_line=reader.feed,
+                    on_line=on_line,
                 )
             except FileNotFoundError as exc:
                 raise ProviderError(NOT_INSTALLED, "invalid_config") from exc
@@ -630,6 +642,14 @@ class ClaudeCodeAgent:
                 ) from exc
         finally:
             shutil.rmtree(folder, ignore_errors=True)
+        if stopped_by_user:
+            return AgentResult(
+                reply=STOPPED_BY_USER,
+                steps=reader.steps,
+                changed_lessons=reader.changed_lessons,
+                changed_notes=reader.changed_notes,
+                stopped=True,
+            )
         if outcome.timed_out:
             raise ProviderError(f"Claude Code did not answer within {self._timeout:g} s", "timeout")
         if reader.over_limit:
@@ -679,6 +699,7 @@ class ClaudeCodeAgent:
             web_search=web_search,
             user_id=tools.user_id if tools is not None else None,
             allowed=tools.allowed if tools is not None else None,
+            should_stop=tools.should_stop if tools is not None else never_stop,
         )
 
     def complete(self, system: str, messages: Sequence[Message], tools: Sequence[ToolSpec]) -> Turn:

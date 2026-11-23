@@ -550,6 +550,37 @@ def _cut(payload: dict) -> tuple[dict | None, str | None, bool]:
     return call, None, True
 
 
+SLOW_RE = re.compile(r"\[\[slow-tool:([A-Za-z0-9_-]+)\]\]")
+slow_calls: dict[str, int] = {}  # run marker -> model calls seen (GET /slow-control)
+SLOW_DELAY_S = 4
+
+
+@app.get("/slow-control")
+def slow_control() -> dict:
+    return slow_calls
+
+
+async def _slow(payload: dict) -> tuple[dict | None, str | None]:
+    """[[slow-tool:<marker>]] in the last user message (agent-stop e2e): the first model call asks
+    for a search_notes call at once, the second waits SLOW_DELAY_S seconds and asks for another one,
+    the third answers "SLOW done". Gives the test a window in which a stop lands between two calls."""
+    names = {(t.get("function") or {}).get("name") for t in payload.get("tools") or []}
+    messages = payload.get("messages") or []
+    last_user = max((i for i, m in enumerate(messages) if m.get("role") == "user"), default=-1)
+    found = SLOW_RE.search(_text(messages[last_user].get("content"))) if last_user >= 0 else None
+    if not found or "search_notes" not in names:
+        return None, None
+    marker = found.group(1)
+    slow_calls[marker] = slow_calls.get(marker, 0) + 1
+    results = sum(1 for m in messages[last_user + 1 :] if m.get("role") == "tool")
+    if results >= 2:
+        return None, "SLOW done"
+    if results == 1:
+        await asyncio.sleep(SLOW_DELAY_S)
+    args = json.dumps({"query": f"{marker}-{results + 1}"})
+    return {"id": f"call_slow{results}", "type": "function", "function": {"name": "search_notes", "arguments": args}}, None
+
+
 def error_response(status: int, kind: str, message: str, code: str | None) -> JSONResponse:
     body = {"error": {"message": message, "type": kind, "param": None, "code": code}}
     return JSONResponse(body, status_code=status)
@@ -577,7 +608,14 @@ async def chat_completions(payload: dict) -> JSONResponse:
     cut_call, cut_text, cut = _cut(payload)
     kh_call, kh_text = _kh(payload)
     ui_call, ui_text = _a2ui(payload)
-    if ui_call is not None:
+    slow_call, slow_text = await _slow(payload)
+    if slow_call is not None:
+        message = {"role": "assistant", "content": None, "tool_calls": [slow_call]}
+        finish = "tool_calls"
+    elif slow_text is not None:
+        message = {"role": "assistant", "content": slow_text}
+        finish = "stop"
+    elif ui_call is not None:
         message = {"role": "assistant", "content": None, "tool_calls": [ui_call]}
         finish = "tool_calls"
     elif ui_text is not None:

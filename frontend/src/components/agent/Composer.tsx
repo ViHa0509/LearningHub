@@ -21,6 +21,9 @@ interface Props {
   /** Decoration drawn inside the composer (the chat pet). */
   decoration?: ReactNode
   busy: boolean
+  /** Stops the pending answer; the Stop button replaces Send while busy. */
+  onStop?: () => void
+  stopping?: boolean
   canSend: boolean
   dropping: boolean
   onSubmit: () => void
@@ -282,9 +285,23 @@ export function Composer(props: Props) {
           </div>
           {props.effort !== 'medium' && <span className="composer-effort">{effortLabel(props.effort)} effort</span>}
           <span className="composer-hint">Enter to send · Shift+Enter for a new line · drop files here</span>
-          <button type="submit" className="send-button" aria-label="Send" title="Send" disabled={busy || !canSend}>
-            <Icon name="send" size={17} />
-          </button>
+          {busy && props.onStop ? (
+            <button
+              type="button"
+              className="send-button stop-button"
+              aria-label="Stop"
+              title={props.stopping ? 'Stopping…' : 'Stop'}
+              disabled={props.stopping}
+              onClick={props.onStop}
+            >
+              <Icon name="stop" size={17} />
+              {props.stopping && <span className="stop-label">Stopping…</span>}
+            </button>
+          ) : (
+            <button type="submit" className="send-button" aria-label="Send" title="Send" disabled={busy || !canSend}>
+              <Icon name="send" size={17} />
+            </button>
+          )}
         </div>
         {props.dropping && (
           <div className="drop-overlay" aria-hidden="true">

@@ -191,6 +191,7 @@ function AssistantMessage({
           >
             <Icon name="retry" size={14} />
           </button>
+          {entry.stopped && <span className="agent-stopped">Stopped</span>}
           {by && (
             <p className="agent-caption">
               <span>
