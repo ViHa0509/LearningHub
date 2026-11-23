@@ -179,11 +179,12 @@ const PAGES: PageCase[] = [
     setup: fakeNews,
     ready: (p) => expect(p.getByText(/Responsive item 1/).first()).toBeVisible({ timeout: 15_000 }),
   },
-  { name: 'settings', hash: () => '#/settings', ready: (p) => expect(p.getByRole('navigation', { name: 'Settings sections' })).toBeVisible() },
+  // The section list sits in the left column, a closed drawer on a phone: wait for the page's own heading.
+  { name: 'settings', hash: () => '#/settings', ready: (p) => expect(p.getByRole('heading', { level: 1, name: 'AI providers' })).toBeVisible() },
   { name: 'settings-agents', hash: () => '#/settings/agents', ready: (p) => expect(p.getByRole('region', { name: 'Areas' })).toBeVisible({ timeout: 15_000 }) },
   { name: 'settings-users', hash: () => '#/settings/users', ready: (p) => expect(p.getByRole('table')).toBeVisible({ timeout: 15_000 }) },
-  { name: 'settings-signin', hash: () => '#/settings/sign-in', ready: (p) => expect(p.getByRole('navigation', { name: 'Settings sections' })).toBeVisible() },
-  { name: 'settings-data', hash: () => '#/settings/data', ready: (p) => expect(p.getByRole('navigation', { name: 'Settings sections' })).toBeVisible() },
+  { name: 'settings-signin', hash: () => '#/settings/sign-in', ready: (p) => expect(p.getByRole('heading', { level: 1, name: 'Sign-in' })).toBeVisible() },
+  { name: 'settings-data', hash: () => '#/settings/data', ready: (p) => expect(p.getByRole('heading', { level: 1, name: 'Data & sync' })).toBeVisible() },
 ]
 
 for (const pc of PAGES) {
@@ -354,6 +355,34 @@ test.describe('phone only', () => {
     await drawer.getByRole('button', { name: 'Import HTML or PDF files' }).tap()
     await expect(page.getByRole('dialog', { name: 'Import HTML or PDF files' })).toBeVisible()
     await expect(drawer).toBeHidden()
+  })
+
+  test('Left-column navigation on a phone: Profile and Settings list their sections in the same drawer', async ({ page }) => {
+    await page.goto('/#/profile')
+    await expect(page.getByRole('heading', { name: 'General', level: 1 })).toBeVisible()
+    const opener = page.getByRole('button', { name: 'Profile', exact: true })
+    await expect(opener).toHaveAttribute('aria-expanded', 'false')
+    await opener.tap()
+    const drawer = page.getByRole('dialog', { name: 'Profile' })
+    await expect(drawer).toBeVisible()
+    await expect(drawer.getByRole('navigation', { name: 'Profile sections' }).getByRole('link')).toHaveText(['General', 'Security', 'Preferences'])
+    await expect(drawer.getByRole('link', { name: 'General' })).toHaveAttribute('aria-current', 'page')
+    const w = await box(drawer)
+    expect(w.width).toBeLessThanOrEqual(390)
+    await shotBoth(page, 'profile-drawer')
+    await drawer.getByRole('link', { name: 'Security' }).tap()
+    await expect(page).toHaveURL(/#\/profile\/security$/)
+    await expect(page.getByRole('heading', { name: 'Security', level: 1 })).toBeVisible()
+    // Like the Learned list, picking a section closes the drawer.
+    await expect(drawer).toBeHidden()
+
+    await page.goto('/#/settings/agents')
+    await page.reload()
+    await page.getByRole('button', { name: 'Settings', exact: true }).tap()
+    const settings = page.getByRole('dialog', { name: 'Settings' })
+    await expect(settings.getByRole('link', { name: 'Agents' })).toHaveAttribute('aria-current', 'page')
+    await expect(page.getByRole('dialog', { name: 'Learned' })).toHaveCount(0)
+    await shotBoth(page, 'settings-drawer')
   })
 
   test('Side panels as drawers on a phone: only one drawer is open at a time (Learned, then Agent)', async ({ page }) => {

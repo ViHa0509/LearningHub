@@ -13,14 +13,14 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.auth import invitations
+from app.auth.accounts import OWN_DELETE, WRONG_CONFIRM, delete_user_data
 from app.auth.current import AdminUser
 from app.auth.mail import Mail, try_send
 from app.auth.schemas import Email
 from app.auth.sessions import clock_of, end_sessions
-from app.db import Invitation, Note, User, UserSession, get_session
+from app.db import Invitation, User, UserSession, get_session
 from app.routes.auth import BAD_EMAIL, EMAIL_RE, link, normalize_email
 from app.routes.guard import require_app_header
-from app.storage import FileStore
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 guarded = [Depends(require_app_header)]
@@ -29,8 +29,6 @@ DbDep = Annotated[Session, Depends(get_session)]
 INVITE_MAIL_FAILED = "The invitation was created but the email could not be sent"
 HAS_ACCOUNT = "That email already has an account"
 OWN_DISABLE = "You cannot disable your own account"
-OWN_DELETE = "You cannot delete your own account"
-WRONG_CONFIRM = "Type the member's email to confirm"
 
 
 class InviteIn(BaseModel):
@@ -197,12 +195,4 @@ def delete_user(
         raise HTTPException(status_code=422, detail=OWN_DELETE)
     if body.confirm_email.strip().lower() != user.email:
         raise HTTPException(status_code=422, detail=WRONG_CONFIRM)
-    # Read before the cascade removes the rows.
-    keys = set(db.scalars(select(Note.storage_key).where(Note.user_id == user.id)))
-    db.delete(user)
-    db.commit()
-    store: FileStore = request.app.state.store
-    for key in keys:
-        left = db.scalar(select(func.count()).select_from(Note).where(Note.storage_key == key))
-        if not left:
-            store.delete(key)
+    delete_user_data(db, request.app.state.store, user)

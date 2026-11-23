@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-export type AuthPage = 'login' | 'create' | 'signup' | 'forgot' | 'reset' | 'magic' | 'verify' | 'invite'
+export type AuthPage = 'login' | 'create' | 'signup' | 'forgot' | 'reset' | 'magic' | 'verify' | 'invite' | 'email-change'
 
 export interface AuthRoute {
   page: AuthPage
@@ -8,11 +8,11 @@ export interface AuthRoute {
   params: URLSearchParams
 }
 
-const PAGES: AuthPage[] = ['login', 'create', 'signup', 'forgot', 'reset', 'magic', 'verify', 'invite']
+const PAGES: AuthPage[] = ['login', 'create', 'signup', 'forgot', 'reset', 'magic', 'verify', 'invite', 'email-change']
 
 /** An auth page address (`#/auth/<page>[?query]`), or null for any other hash. */
 export function parseAuthRoute(hash: string): AuthRoute | null {
-  const match = hash.match(/^#\/auth\/([a-z]+)\/?(?:\?(.*))?$/)
+  const match = hash.match(/^#\/auth\/([a-z-]+)\/?(?:\?(.*))?$/)
   if (!match || !PAGES.includes(match[1] as AuthPage)) return null
   return { page: match[1] as AuthPage, params: new URLSearchParams(match[2] ?? '') }
 }

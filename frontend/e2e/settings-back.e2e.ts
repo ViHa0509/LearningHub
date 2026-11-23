@@ -36,7 +36,8 @@ test('Back to the lesson after opening Settings and a provider page', async ({ p
   await page.getByRole('menu', { name: 'Account' }).getByRole('menuitem', { name: 'Settings' }).click()
   await expect(page).toHaveURL(/#\/settings$/)
   const settings = page.getByRole('region', { name: 'Settings' })
-  await expect(settings.getByRole('link', { name: '← Back', exact: true })).toBeVisible()
+  // The Back link sits at the top of the left column (settings-tabs), above the section list.
+  await expect(page.getByRole('link', { name: '← Back', exact: true })).toBeVisible()
   await shot(page, 'settings-back-link')
 
   // Open the provider page, then return to Settings with its own back link.
@@ -48,14 +49,14 @@ test('Back to the lesson after opening Settings and a provider page', async ({ p
   await expect(page).toHaveURL(/#\/settings$/)
 
   // Back skips the provider page and Settings itself: the lesson is shown again.
-  await page.getByRole('region', { name: 'Settings' }).getByRole('link', { name: '← Back', exact: true }).click()
+  await page.getByRole('link', { name: '← Back', exact: true }).click()
   await expect(page).toHaveURL(/#\/lesson\/devops\/helm$/)
   await expect(page.getByRole('article', { name: 'Lesson: Helm' })).toBeVisible()
 })
 
 test('Settings opened directly: Back leads to the home page', async ({ page }) => {
   await page.goto('/#/settings')
-  const back = page.getByRole('region', { name: 'Settings' }).getByRole('link', { name: '← Back', exact: true })
+  const back = page.getByRole('link', { name: '← Back', exact: true })
   await expect(back).toBeVisible()
   await back.click()
   await expect(page.getByRole('region', { name: 'Home' })).toBeVisible()

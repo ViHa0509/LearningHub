@@ -54,6 +54,8 @@ export function AuthPages({ route, status, next }: Props) {
       return token ? <MagicOpenPage token={token} status={status} /> : <MagicRequestPage status={status} />
     case 'verify':
       return <VerifyPage token={token} />
+    case 'email-change':
+      return <EmailChangePage token={token} />
     case 'invite':
       return <InvitePage token={token} status={status} next={next} />
   }
@@ -621,6 +623,61 @@ function VerifyPage({ token }: { token: string | null }) {
       <p className="muted">Signed in, you can ask for a new link from the account menu.</p>
       <p className="auth-links">
         <a href="#/">Open Learning Hub</a>
+      </p>
+    </Card>
+  )
+}
+
+function EmailChangePage({ token }: { token: string | null }) {
+  const client = useQueryClient()
+  const [state, setState] = useState<'working' | 'done' | 'failed'>(token ? 'working' : 'failed')
+  const [problem, setProblem] = useState<string | null>(token ? null : 'This link is incomplete. Ask for a new one.')
+
+  useEffect(() => {
+    if (!token) return
+    let live = true
+    once(`email-change:${token}`, () => api.confirmEmailChange(token)).then(
+      (user) => {
+        dropQuery('email-change')
+        client.setQueryData(queryKeys.me, user)
+        if (live) setState('done')
+      },
+      (failure: unknown) => {
+        dropQuery('email-change')
+        if (!live) return
+        setProblem(linkProblem(failure))
+        setState('failed')
+      },
+    )
+    return () => {
+      live = false
+    }
+  }, [token, client])
+
+  if (state === 'working') {
+    return (
+      <Card title="Changing your email">
+        <p className="muted" role="status">
+          Checking your link…
+        </p>
+      </Card>
+    )
+  }
+  if (state === 'done') {
+    return (
+      <Card title="Your email is changed">
+        <p className="muted">Use the new address to sign in.</p>
+        <p className="auth-links">
+          <a href="#/profile">Open Profile</a>
+        </p>
+      </Card>
+    )
+  }
+  return (
+    <Card title="Email not changed">
+      <Problem text={problem} />
+      <p className="auth-links">
+        <a href="#/profile">Open Profile</a>
       </p>
     </Card>
   )

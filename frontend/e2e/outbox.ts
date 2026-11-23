@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { E2E_ENV } from '../playwright.config.ts'
 
-export type LinkKind = 'verify' | 'reset' | 'magic' | 'invite'
+export type LinkKind = 'verify' | 'reset' | 'magic' | 'invite' | 'email-change'
 
 /** The newest token link of one kind in the outbox (verify, reset, magic or invite). */
 export function outboxToken(kind: LinkKind): string {
@@ -49,3 +49,22 @@ export function latestOutboxToken(kind: LinkKind): string | null {
   }
 }
 
+
+/** The decoded text (headers and body) of every outbox email addressed to `to`, oldest first. */
+export function outboxMailsTo(to: string): string[] {
+  const dir = join(E2E_ENV.LH_STORAGE_DIR, 'outbox')
+  if (!existsSync(dir)) return []
+  const found: string[] = []
+  for (const file of readdirSync(dir).filter((f) => f.endsWith('.eml')).sort()) {
+    const raw = readFileSync(join(dir, file), 'utf-8')
+    const split = raw.search(/\r?\n\r?\n/)
+    const head = raw.slice(0, split)
+    if (!head.toLowerCase().includes(to.toLowerCase())) continue
+    const body = raw.slice(split).trim()
+    const text = /Content-Transfer-Encoding:\s*base64/i.test(head)
+      ? Buffer.from(body.replace(/\s+/g, ''), 'base64').toString('utf-8')
+      : body.replace(/=\r?\n/g, '').replace(/=3D/g, '=')
+    found.push(`${head}\n\n${text}`)
+  }
+  return found
+}

@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.auth.passwords import MAX_LENGTH
 
@@ -28,6 +28,15 @@ class AuthStatus(BaseModel):
     max_upload_bytes: int
 
 
+AnswerLanguage = Literal["auto", "en", "vi"]
+Effort = Literal["low", "medium", "high"]
+
+
+class PreferencesOut(BaseModel):
+    answer_language: AnswerLanguage = "auto"
+    default_effort: Effort = "medium"
+
+
 class MeOut(BaseModel):
     id: UUID
     email: str
@@ -39,6 +48,7 @@ class MeOut(BaseModel):
     has_password: bool
     linked: list[str]
     timezone: str | None
+    preferences: PreferencesOut
 
 
 class SignupIn(BaseModel):
@@ -59,6 +69,23 @@ class PasswordChangeIn(BaseModel):
 
 class TimezoneIn(BaseModel):
     timezone: str
+
+
+class ProfileIn(BaseModel):
+    display_name: Annotated[str, Field(min_length=1, max_length=80)]
+    bio: str = Field(default="", max_length=500)
+
+    @field_validator("display_name")
+    @classmethod
+    def trimmed(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("display name must not be empty")
+        return value
+
+
+class DeleteAccountIn(BaseModel):
+    confirm_email: Email
 
 
 class EmailIn(BaseModel):

@@ -1,7 +1,6 @@
 import type { ProviderOut, ProviderRef } from '../api'
 import { useAgents, useProviders, useProviderTypes, useSharedStatus } from '../hooks'
 import { typeLabel } from '../lib/providers'
-import { SettingsNav } from './SettingsNav'
 import { WithdrawnWarning } from './SharedProvider'
 import { sharedProviders, usageLine } from '../lib/shared'
 import { StatusBadge } from './StatusBadge'
@@ -13,7 +12,6 @@ export function SettingsPage() {
   const sharedOn = sharedProviders(useAgents().data)
   return (
     <section className="settings-page" aria-label="Settings">
-      <SettingsNav current="providers" />
       <div className="settings-header">
         <h1>AI providers</h1>
         <a className="button-link primary" href="#/settings/providers/new">

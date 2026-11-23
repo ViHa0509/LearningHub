@@ -18,13 +18,16 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth import invitations, tokens
+from app.auth.accounts import OWN_DELETE, WRONG_CONFIRM, delete_user_data
 from app.auth.mail import Mail, Mailer, send_quietly
 from app.auth.oauth import (
     PENDING_COOKIE,
     PENDING_SECONDS,
     Identity,
     OAuthError,
+    Pending,
     PendingStore,
+    Provider,
     ProviderName,
     authorize_url,
     fetch_identity,
@@ -35,6 +38,7 @@ from app.auth.ratelimit import AuthLimiter
 from app.auth.schemas import (
     AcceptIn,
     AuthStatus,
+    DeleteAccountIn,
     EmailIn,
     InvitationInfo,
     LoginIn,
@@ -42,6 +46,8 @@ from app.auth.schemas import (
     MeOut,
     MessageOut,
     PasswordChangeIn,
+    PreferencesOut,
+    ProfileIn,
     ProviderStatus,
     ResetIn,
     RevokedOut,
@@ -137,11 +143,16 @@ def me_out(db: Session, user: User) -> MeOut:
         role=user.role,
         display_name=user.display_name,
         bio=user.bio,
-        # Avatar upload is not served yet; the frontend shows initials.
-        avatar_url=None,
+        # The content key changes with the picture, so the browser never shows a stale one.
+        avatar_url=(
+            f"/api/auth/avatar/{user.id}?v={user.avatar_key.rsplit('/', 1)[-1][:12]}"
+            if user.avatar_key
+            else None
+        ),
         has_password=user.password_hash is not None,
         linked=sorted(set(linked)),
         timezone=user.timezone,
+        preferences=PreferencesOut(**(user.preferences or {})),
     )
 
 
@@ -249,6 +260,35 @@ def set_timezone(body: TimezoneIn, signed: SignedDep, db: DbDep) -> MeOut:
     signed.user.timezone = name
     db.commit()
     return me_out(db, signed.user)
+
+
+@router.put("/profile", response_model=MeOut, dependencies=guarded)
+def set_profile(body: ProfileIn, signed: SignedDep, db: DbDep) -> MeOut:
+    signed.user.display_name = body.display_name
+    signed.user.bio = body.bio.strip() or None
+    db.commit()
+    return me_out(db, signed.user)
+
+
+@router.put("/preferences", response_model=MeOut, dependencies=guarded)
+def set_preferences(body: PreferencesOut, signed: SignedDep, db: DbDep) -> MeOut:
+    # A new dict: JSONB changes are not tracked in place.
+    signed.user.preferences = {**(signed.user.preferences or {}), **body.model_dump()}
+    db.commit()
+    return me_out(db, signed.user)
+
+
+@router.delete("/account", status_code=204, response_model=None, dependencies=guarded)
+def delete_account(
+    body: DeleteAccountIn, request: Request, response: Response, signed: SignedDep, db: DbDep
+) -> None:
+    user = signed.user
+    if user.role == "admin":
+        raise HTTPException(status_code=422, detail=OWN_DELETE)
+    if body.confirm_email.strip().lower() != user.email:
+        raise HTTPException(status_code=422, detail=WRONG_CONFIRM)
+    delete_user_data(db, request.app.state.store, user)
+    clear_session_cookie(response, request)
 
 
 # --- email and password
@@ -656,15 +696,22 @@ def oauth_callback(
         config = provider_config(settings, provider, db, box_of(request))
         if config is None:
             raise OAuthError("not_configured")
-        identity = fetch_identity(settings, config, code, pending.verifier)
-        user = user_for(db, identity, request)
-        token = create_session(db, user, request)
-        db.commit()
-        response = RedirectResponse(app_url(settings, pending.next), status_code=302)
-        set_session_cookie(response, request, token)
+        if pending.link_user_id is not None:
+            # Linking, not signing in: only for the same signed-in user who started it.
+            signed = find_session(db, request)
+            if signed is None or signed.user.id != pending.link_user_id:
+                raise OAuthError("state_mismatch")
+            identity = fetch_identity(settings, config, code, pending.verifier)
+            response = link_identity(db, settings, signed.user, identity)
+        else:
+            response = sign_in_with(db, request, settings, config, code, pending)
     except OAuthError as problem:
         db.rollback()
-        response = failed(settings, problem.code)
+        response = (
+            linked_redirect(settings, f"error={problem.code}")
+            if pending is not None and pending.link_user_id is not None
+            else failed(settings, problem.code)
+        )
     response.delete_cookie(
         PENDING_COOKIE,
         path="/api/auth/oauth",
@@ -672,4 +719,53 @@ def oauth_callback(
         samesite="lax",
         secure=is_secure(request, settings),
     )
+    return response
+
+
+def linked_redirect(settings: Settings, query: str) -> RedirectResponse:
+    return RedirectResponse(app_url(settings, f"#/profile/security?{query}"), status_code=302)
+
+
+def link_identity(
+    db: Session, settings: Settings, user: User, identity: Identity
+) -> RedirectResponse:
+    """Add the identity to ``user``; refused when another account has it or the user already
+    has another identity of that provider."""
+    owner = db.scalar(
+        select(OAuthAccount.user_id).where(
+            OAuthAccount.provider == identity.provider,
+            OAuthAccount.provider_user_id == identity.provider_user_id,
+        )
+    )
+    if owner is not None and owner != user.id:
+        raise OAuthError("identity_taken")
+    if owner is None:
+        already = db.scalar(
+            select(OAuthAccount.id).where(
+                OAuthAccount.user_id == user.id, OAuthAccount.provider == identity.provider
+            )
+        )
+        if already is not None:
+            raise OAuthError("already_linked")
+        db.add(
+            OAuthAccount(
+                user_id=user.id,
+                provider=identity.provider,
+                provider_user_id=identity.provider_user_id,
+                email=identity.email,
+            )
+        )
+        db.commit()
+    return linked_redirect(settings, f"linked={identity.provider}")
+
+
+def sign_in_with(
+    db: Session, request: Request, settings: Settings, config: Provider, code: str, pending: Pending
+) -> RedirectResponse:
+    identity = fetch_identity(settings, config, code, pending.verifier)
+    user = user_for(db, identity, request)
+    token = create_session(db, user, request)
+    db.commit()
+    response = RedirectResponse(app_url(settings, pending.next), status_code=302)
+    set_session_cookie(response, request, token)
     return response

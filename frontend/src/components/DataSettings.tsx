@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api, queryKeys, type RestoreResult } from '../api'
 import { useTime } from '../lib/time'
-import { SettingsNav } from './SettingsNav'
 
 const COUNT_LABELS: [keyof RestoreResult['counts'], string][] = [
   ['notes', 'notes'],
@@ -36,7 +35,6 @@ function ResultSummary({ title, result }: { title: string; result: RestoreResult
 export function DataSettings() {
   return (
     <section className="settings-page" aria-label="Data & sync">
-      <SettingsNav current="data" />
       <div className="settings-header">
         <h1>Data &amp; sync</h1>
       </div>
@@ -45,6 +43,7 @@ export function DataSettings() {
         <RestoreCard />
         <ReceiveCard />
         <SendCard />
+        <DeleteNotesCard />
       </div>
     </section>
   )
@@ -303,6 +302,60 @@ function SendCard() {
       {send.isError && (
         <p className="error" role="alert">
           {messageOf(send.error)}
+        </p>
+      )}
+    </article>
+  )
+}
+
+/** Removes every note of the user (lessons stay); the typed word unlocks the button. */
+function DeleteNotesCard() {
+  const client = useQueryClient()
+  const [typed, setTyped] = useState('')
+  const remove = useMutation({
+    mutationFn: api.deleteAllNotes,
+    onSuccess: () => {
+      setTyped('')
+      for (const key of [queryKeys.notes, queryKeys.domains, ['counts']]) void client.invalidateQueries({ queryKey: key })
+    },
+  })
+  const ready = typed === 'DELETE' && !remove.isPending
+  return (
+    <article className="provider-card" aria-label="Delete all notes">
+      <header className="provider-header">
+        <h2>Delete all notes</h2>
+      </header>
+      <p className="muted small">Removes all of your notes and their files. Your lessons stay. This cannot be undone.</p>
+      <form
+        className="provider-card-form"
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (ready) remove.mutate()
+        }}
+      >
+        <label className="field" htmlFor="delete-notes-confirm">
+          Type DELETE to confirm
+        </label>
+        <input
+          id="delete-notes-confirm"
+          type="text"
+          autoComplete="off"
+          value={typed}
+          onChange={(e) => {
+            setTyped(e.target.value)
+            remove.reset()
+          }}
+        />
+        <div className="provider-actions">
+          <button type="submit" disabled={!ready}>
+            Delete all notes
+          </button>
+          {remove.isSuccess && <span role="status">All notes deleted.</span>}
+        </div>
+      </form>
+      {remove.isError && (
+        <p className="error" role="alert">
+          {messageOf(remove.error)}
         </p>
       )}
     </article>

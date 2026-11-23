@@ -1,7 +1,7 @@
 /**
  * Spec checks for the change user-timezone (openspec/changes/user-timezone/specs/accounts): the
  * "Your time zone" dialog for a member without a zone (Save, Not now, Escape, not asked again),
- * Settings -> Account, the API refusals (unknown name, missing header), and times shown in the
+ * Profile (was Settings -> Account), the API refusals (unknown name, missing header), and times shown in the
  * user's zone (or the browser's zone while there is none).
  *
  * Every test makes its own fresh member through the sign-up API in a browser context of its own
@@ -142,7 +142,7 @@ test('Each user chooses a time zone > Not now: "Not now" and Escape store nothin
   await expect(dialogOf(page)).toHaveCount(0)
 })
 
-test('Each user chooses a time zone > Change in Settings: Account saves a new zone and it is still shown after a reload', async ({
+test('Each user chooses a time zone > Change in Profile: General saves a new zone and it is still shown after a reload', async ({
   browser,
 }) => {
   const { page } = await newMember(browser, 'Europe/Berlin')
@@ -150,18 +150,21 @@ test('Each user chooses a time zone > Change in Settings: Account saves a new zo
   await dialogOf(page).getByRole('button', { name: 'Save' }).click()
   await expect(dialogOf(page)).toHaveCount(0)
 
-  const account = page.getByRole('region', { name: 'Account' })
-  await expect(account.getByRole('heading', { name: 'Account', level: 1 })).toBeVisible()
+  // `#/settings/account` opens Profile (settings-tabs): the time zone is in General.
+  const account = page.getByRole('region', { name: 'Profile' })
+  await expect(account.getByRole('heading', { name: 'General', level: 1 })).toBeVisible()
   const select = account.getByLabel('Time zone', { exact: true })
+  // General holds several forms (details, email, time zone): the buttons are those of the zone form.
+  const zone = account.locator('form').filter({ hasText: 'Times in the app are shown in this time zone' })
   await expect(select).toHaveValue('Europe/Berlin')
   // The Save rule: disabled until something changed.
-  await expect(account.getByRole('button', { name: 'Save' })).toBeDisabled()
-  await expect(account.getByRole('button', { name: 'Cancel' })).toBeDisabled()
+  await expect(zone.getByRole('button', { name: 'Save' })).toBeDisabled()
+  await expect(zone.getByRole('button', { name: 'Cancel' })).toBeDisabled()
 
   await select.selectOption('Asia/Tokyo')
-  await expect(account.getByRole('button', { name: 'Save' })).toBeEnabled()
+  await expect(zone.getByRole('button', { name: 'Save' })).toBeEnabled()
   // Cancel returns the field to the stored zone without saving.
-  await account.getByRole('button', { name: 'Cancel' }).click()
+  await zone.getByRole('button', { name: 'Cancel' }).click()
   await expect(select).toHaveValue('Europe/Berlin')
   expect((await meOf(page)).timezone).toBe('Europe/Berlin')
 
@@ -171,12 +174,12 @@ test('Each user chooses a time zone > Change in Settings: Account saves a new zo
   await page.emulateMedia({ colorScheme: 'dark' })
   await shot(page, 'settings-account-dark')
   await page.emulateMedia({ colorScheme: 'light' })
-  await account.getByRole('button', { name: 'Save' }).click()
-  await expect(account.getByText('Saved.')).toBeVisible()
+  await zone.getByRole('button', { name: 'Save' }).click()
+  await expect(zone.getByText('Saved.')).toBeVisible()
   expect((await meOf(page)).timezone).toBe('Asia/Tokyo')
 
   await page.reload()
-  await expect(page.getByRole('region', { name: 'Account' }).getByLabel('Time zone', { exact: true })).toHaveValue('Asia/Tokyo')
+  await expect(page.getByRole('region', { name: 'Profile' }).getByLabel('Time zone', { exact: true })).toHaveValue('Asia/Tokyo')
   await expect(dialogOf(page)).toHaveCount(0)
 })
 

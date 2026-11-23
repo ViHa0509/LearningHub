@@ -13,13 +13,18 @@ export function effortLabel(effort: Effort): string {
   return EFFORTS.find((e) => e.id === effort)?.label ?? effort
 }
 
-export function readEffort(): Effort {
+/** The browser's remembered effort, or null when nothing valid is stored. */
+export function storedEffort(): Effort | null {
   try {
     const value = localStorage.getItem(EFFORT_KEY)
-    return value === 'low' || value === 'medium' || value === 'high' ? value : 'medium'
+    return value === 'low' || value === 'medium' || value === 'high' ? value : null
   } catch {
-    return 'medium'
+    return null
   }
+}
+
+export function readEffort(): Effort {
+  return storedEffort() ?? 'medium'
 }
 
 export function saveEffort(effort: Effort) {

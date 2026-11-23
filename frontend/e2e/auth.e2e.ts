@@ -218,7 +218,7 @@ test.describe('Signed out', () => {
     await expect(button).toHaveAttribute('aria-expanded', 'true')
     await expect(page.getByText(OWNER.email, { exact: true })).toBeVisible()
     const menu = page.getByRole('menu', { name: 'Account' })
-    await expect(menu.getByRole('menuitem')).toHaveText(['Settings', 'Log out'])
+    await expect(menu.getByRole('menuitem')).toHaveText(['Profile', 'Settings', 'Log out'])
     await shot(page, 'account-menu')
 
     // Settings opens from the menu.

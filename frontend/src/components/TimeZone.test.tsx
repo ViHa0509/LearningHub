@@ -9,6 +9,7 @@ import { browserZone } from '../lib/time'
 const HCM = 'Asia/Ho_Chi_Minh'
 const dialog = () => screen.findByRole('dialog', { name: 'Your time zone' })
 const noDialog = () => expect(screen.queryByRole('dialog', { name: 'Your time zone' })).not.toBeInTheDocument()
+const zoneForm = () => screen.getByLabelText('Time zone').closest('form') as HTMLElement
 const puts = (state: FakeState) => state.calls.filter((c) => c.url === '/api/auth/timezone')
 
 function setup(timezone: string | null | undefined) {
@@ -119,8 +120,8 @@ describe('Settings > Account', () => {
     const { user, unmount } = await renderAppReady('#/settings/account')
     const field = await screen.findByLabelText('Time zone')
     expect(field).toHaveValue(HCM)
-    const save = screen.getByRole('button', { name: 'Save' })
-    const cancel = screen.getByRole('button', { name: 'Cancel' })
+    const save = within(zoneForm()).getByRole('button', { name: 'Save' })
+    const cancel = within(zoneForm()).getByRole('button', { name: 'Cancel' })
     expect(save).toBeDisabled()
     await user.selectOptions(field, 'Asia/Tokyo')
     expect(save).toBeEnabled()
@@ -139,9 +140,9 @@ describe('Settings > Account', () => {
     const { user } = await renderAppReady('#/settings/account')
     const field = await screen.findByLabelText('Time zone')
     await user.selectOptions(field, 'Asia/Tokyo')
-    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    await user.click(within(zoneForm()).getByRole('button', { name: 'Cancel' }))
     expect(field).toHaveValue(HCM)
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(within(zoneForm()).getByRole('button', { name: 'Save' })).toBeDisabled()
     expect(puts(state)).toHaveLength(0)
   })
 
@@ -150,9 +151,9 @@ describe('Settings > Account', () => {
     state.auth.timezoneError = 'unknown time zone'
     const { user } = await renderAppReady('#/settings/account')
     await user.selectOptions(await screen.findByLabelText('Time zone'), 'Asia/Tokyo')
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(within(zoneForm()).getByRole('button', { name: 'Save' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('unknown time zone')
-    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+    expect(within(zoneForm()).getByRole('button', { name: 'Save' })).toBeEnabled()
   })
 
   it('shows the browser zone while none is chosen', async () => {
@@ -161,7 +162,7 @@ describe('Settings > Account', () => {
     await user.click(within(await dialog()).getByRole('button', { name: 'Not now' }))
     await waitFor(() => noDialog())
     expect(screen.getByLabelText('Time zone')).toHaveValue(browserZone())
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(within(zoneForm()).getByRole('button', { name: 'Save' })).toBeDisabled()
   })
 })
 

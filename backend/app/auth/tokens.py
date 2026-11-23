@@ -9,18 +9,22 @@ from sqlalchemy.orm import Session
 from app.auth.sessions import hash_token, new_token
 from app.db import AuthToken, User
 
-Purpose = Literal["verify_email", "reset_password", "magic_link"]
+Purpose = Literal["verify_email", "reset_password", "magic_link", "change_email"]
 
 LIFETIMES: dict[Purpose, timedelta] = {
     "verify_email": timedelta(days=2),
     "reset_password": timedelta(minutes=30),
     "magic_link": timedelta(minutes=15),
+    "change_email": timedelta(hours=24),
 }
 
 
-def issue(db: Session, purpose: Purpose, user: User, now: datetime) -> str:
+def issue(
+    db: Session, purpose: Purpose, user: User, now: datetime, email: str | None = None
+) -> str:
     """Store a new token (not committed) and return it raw. Older unused tokens of the
-    same purpose stop working, so only the latest emailed link is valid."""
+    same purpose stop working, so only the latest emailed link is valid. ``email`` is the
+    address the token is for when it is not the user's own (an email change)."""
     db.execute(
         update(AuthToken)
         .where(
@@ -36,7 +40,7 @@ def issue(db: Session, purpose: Purpose, user: User, now: datetime) -> str:
             purpose=purpose,
             token_hash=hash_token(token),
             user_id=user.id,
-            email=user.email,
+            email=email or user.email,
             expires_at=now + LIFETIMES[purpose],
             created_at=now,
         )

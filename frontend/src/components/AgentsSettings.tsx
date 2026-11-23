@@ -4,7 +4,6 @@ import { api, ApiError, queryKeys, type AgentOut, type AgentTool, type AreaAgent
 import { useAgents, useAgentTools, useAreaAgents, useProviders, useRefreshProviders, useSharedStatus } from '../hooks'
 import { providerLabel } from '../lib/providers'
 import { useUnsavedGuard } from '../lib/unsavedGuard'
-import { SettingsNav } from './SettingsNav'
 import { WithdrawnWarning } from './SharedProvider'
 import { sharedLine, usageLine } from '../lib/shared'
 import { StatusBadge } from './StatusBadge'
@@ -22,7 +21,6 @@ export function AgentsSettings() {
   const providers = useProviders()
   return (
     <section className="settings-page" aria-label="Agents">
-      <SettingsNav current="agents" />
       <div className="settings-header">
         <h1>Agents</h1>
       </div>

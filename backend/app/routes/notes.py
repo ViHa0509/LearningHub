@@ -4,7 +4,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, select
+from pydantic import BaseModel
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.auth.current import CurrentUser
@@ -42,6 +43,11 @@ PRINT_HEADERS = {
 PRINT_SCRIPT = (
     b"<script>addEventListener('load',function(){setTimeout(function(){print()},300)})</script>"
 )
+
+
+class DeleteAllIn(BaseModel):
+    confirm: str
+
 
 SessionDep = Annotated[Session, Depends(get_session)]
 
@@ -290,6 +296,22 @@ def replace_content(
     if old_key != key:
         release_blob(session, store, old_key)
     return note_detail(note, catalog)
+
+
+@router.delete("", status_code=204, dependencies=[Depends(require_app_header)])
+def delete_all_notes(
+    body: DeleteAllIn, request: Request, session: SessionDep, user: CurrentUser
+) -> Response:
+    """All of the user's notes (links cascade); lessons stay."""
+    if body.confirm != "DELETE":
+        raise HTTPException(status_code=422, detail="Type DELETE to confirm")
+    keys = set(session.scalars(select(Note.storage_key).where(Note.user_id == user.id)))
+    session.execute(delete(Note).where(Note.user_id == user.id))
+    session.commit()
+    store = get_store(request)
+    for key in keys:
+        release_blob(session, store, key)
+    return Response(status_code=204)
 
 
 @router.delete("/{note_id}", status_code=204)

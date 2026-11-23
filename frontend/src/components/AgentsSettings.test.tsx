@@ -19,7 +19,7 @@ describe('agents page', () => {
     installFakeApi()
     await renderAppReady('#/settings/agents')
     const page = await screen.findByRole('region', { name: 'Agents' })
-    const nav = within(page).getByRole('navigation', { name: 'Settings sections' })
+    const nav = screen.getByRole('navigation', { name: 'Settings sections' })
     expect(within(nav).getByRole('link', { name: 'Agents' })).toHaveAttribute('aria-current', 'page')
     expect(within(nav).getByRole('link', { name: 'AI providers' })).not.toHaveAttribute('aria-current')
     expect(within(page).getByRole('heading', { level: 1, name: 'Agents' })).toBeInTheDocument()

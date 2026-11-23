@@ -548,6 +548,10 @@ class OAuthPending(Base):
     state: Mapped[str] = mapped_column(Text)
     verifier_enc: Mapped[str] = mapped_column(Text)
     next: Mapped[str] = mapped_column(Text)
+    # Set when a signed-in user started linking an identity (not a sign-in).
+    link_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 

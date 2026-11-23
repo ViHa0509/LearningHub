@@ -18,6 +18,7 @@ import type {
   NewsRefreshStatus,
   Note,
   OAuthProvider,
+  Preferences,
   RestoreResult,
   ProviderIn,
   ProviderOut,
@@ -507,12 +508,23 @@ export interface FakeOwner {
   display_name: string | null
   email_verified: boolean
   avatar_url: string | null
+  bio?: string | null
   /** The chosen IANA time zone; null = none chosen yet (the dialog asks). Undefined = 'UTC', so tests see no dialog. */
   timezone?: string | null
+  /** Linked sign-in providers (default none). */
+  linked?: string[]
+  preferences?: Preferences
+}
+
+export interface FakeSession {
+  id: string
+  user_agent: string | null
+  ip: string | null
+  current: boolean
 }
 
 export interface FakeAuthToken {
-  purpose: 'reset_password' | 'magic_link' | 'verify_email'
+  purpose: 'reset_password' | 'magic_link' | 'verify_email' | 'email_change'
   token: string
   used: boolean
 }
@@ -533,6 +545,14 @@ export interface FakeAuth {
   limited: string | null
   /** When set, PUT /api/auth/timezone answers 422 with this detail. */
   timezoneError?: string
+  /** When set, POST /api/auth/avatar answers this status and detail. */
+  avatarError?: { status: number; detail: string }
+  /** Addresses another account uses: confirming a change to one answers 409. */
+  takenEmails?: string[]
+  /** The address of the last POST /api/auth/email request (the link's target). */
+  pendingEmail?: string
+  /** GET /api/auth/sessions; two browsers (the first is this one) until a test sets its own. */
+  sessions?: FakeSession[]
 }
 
 /** The state behind the fake /api/kh routes. */
@@ -761,10 +781,11 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
     email: owner.email,
     email_verified: owner.email_verified,
     display_name: owner.display_name,
-    bio: null,
+    bio: owner.bio ?? null,
     avatar_url: owner.avatar_url,
     has_password: owner.password !== null,
-    linked: [],
+    linked: owner.linked ?? [],
+    preferences: owner.preferences ?? { answer_language: 'auto', default_effort: 'medium' },
     timezone: owner.timezone === undefined ? 'UTC' : owner.timezone,
   })
   const issue = (purpose: FakeAuthToken['purpose']) => {
@@ -805,7 +826,82 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
       auth.owner.timezone = body?.timezone ?? null
       return respond(me(auth.owner))
     }
+    if (url === '/api/auth/profile' && method === 'PUT') {
+      if (!auth.signedIn || !auth.owner) return respond({ detail: 'Sign in to continue' }, 401)
+      const name = (body?.display_name ?? '').trim()
+      if (name.length < 1 || name.length > 80) return respond({ detail: 'Use 1 to 80 characters for the name.' }, 422)
+      auth.owner.display_name = name
+      auth.owner.bio = body?.bio ?? null
+      return respond(me(auth.owner))
+    }
+    if (url === '/api/auth/avatar' && (method === 'POST' || method === 'DELETE')) {
+      if (!auth.signedIn || !auth.owner) return respond({ detail: 'Sign in to continue' }, 401)
+      if (method === 'POST' && auth.avatarError) return respond({ detail: auth.avatarError.detail }, auth.avatarError.status)
+      auth.owner.avatar_url = method === 'POST' ? '/api/auth/avatar/u1?v=1' : null
+      return respond(me(auth.owner))
+    }
+    if (url === '/api/auth/account' && method === 'DELETE') {
+      if (!auth.signedIn || !auth.owner) return respond({ detail: 'Sign in to continue' }, 401)
+      if (auth.owner.role !== 'member' || body?.confirm_email !== auth.owner.email) {
+        return respond({ detail: 'Type your email to confirm.' }, 422)
+      }
+      auth.owner = null
+      auth.signedIn = false
+      return respond(null, 204)
+    }
+    const signedOut = !auth.signedIn || !auth.owner
+    if (url === '/api/auth/preferences' && method === 'PUT') {
+      if (signedOut || !auth.owner) return respond({ detail: 'Sign in to continue' }, 401)
+      auth.owner.preferences = body as unknown as Preferences
+      return respond(me(auth.owner))
+    }
+    if (url === '/api/auth/sessions' && method === 'GET') {
+      if (signedOut) return respond({ detail: 'Sign in to continue' }, 401)
+      auth.sessions ??= [
+        { id: 's1', user_agent: 'Edge on Windows', ip: '10.0.0.1', current: true },
+        { id: 's2', user_agent: 'Safari on iPhone', ip: '10.0.0.2', current: false },
+      ]
+      return respond(
+        auth.sessions.map((x) => ({
+          ...x,
+          created_at: '2026-11-20T09:00:00Z',
+          last_seen_at: '2026-11-21T09:00:00Z',
+          expires_at: '2026-12-20T09:00:00Z',
+        })),
+      )
+    }
+    const sessionOne = url.match(/^\/api\/auth\/sessions\/([\w-]+)$/)
+    if (sessionOne && method === 'DELETE') {
+      if (signedOut) return respond({ detail: 'Sign in to continue' }, 401)
+      auth.sessions = (auth.sessions ?? []).filter((x) => x.id !== sessionOne[1] || x.current)
+      return respond(null, 204)
+    }
+    const identityOne = url.match(/^\/api\/auth\/identities\/(github|google)$/)
+    if (identityOne && method === 'DELETE') {
+      if (signedOut || !auth.owner) return respond({ detail: 'Sign in to continue' }, 401)
+      const linked = auth.owner.linked ?? []
+      if (auth.owner.password === null && linked.length <= 1) {
+        return respond({ detail: 'Add another sign-in method before removing this one.' }, 422)
+      }
+      auth.owner.linked = linked.filter((p) => p !== identityOne[1])
+      return respond(me(auth.owner))
+    }
     if (method !== 'POST') return null
+    if (url === '/api/auth/sessions/logout-others') {
+      if (signedOut) return respond({ detail: 'Sign in to continue' }, 401)
+      const before = auth.sessions?.length ?? 0
+      auth.sessions = (auth.sessions ?? []).filter((x) => x.current)
+      return respond({ revoked: Math.max(0, before - auth.sessions.length) })
+    }
+    if (url === '/api/auth/password') {
+      if (signedOut || !auth.owner) return respond({ detail: 'Sign in to continue' }, 401)
+      if (auth.owner.password !== null && body?.current !== auth.owner.password) {
+        return respond({ detail: 'The current password is not right.' }, 400)
+      }
+      if ((body?.new ?? '').length < 10) return respond({ detail: 'Use at least 10 characters for the password.' }, 400)
+      auth.owner.password = body?.new ?? null
+      return respond(null, 204)
+    }
     if (auth.limited) return respond({ detail: auth.limited }, 429)
     const email = (body?.email ?? '').trim().toLowerCase()
     switch (url) {
@@ -880,6 +976,19 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
         if (!auth.owner || !take('verify_email', body?.token ?? '')) return respond({ detail: INVALID_LINK }, 400)
         auth.owner.email_verified = true
         return respond({ email_verified: true })
+      case '/api/auth/email':
+        if (!auth.signedIn || !auth.owner) return respond({ detail: 'Sign in to continue' }, 401)
+        auth.pendingEmail = email
+        issue('email_change')
+        return respond({ message: 'A confirmation link is on its way to the new address.' })
+      case '/api/auth/email/confirm':
+        if (!auth.owner || !take('email_change', body?.token ?? '')) return respond({ detail: INVALID_LINK }, 400)
+        if (auth.takenEmails?.includes(auth.pendingEmail ?? '')) {
+          return respond({ detail: 'That email is already used by another account.' }, 409)
+        }
+        auth.owner.email = auth.pendingEmail ?? auth.owner.email
+        auth.owner.email_verified = true
+        return respond(me(auth.owner))
       case '/api/auth/verify/resend':
         if (!auth.signedIn || !auth.owner) return respond({ detail: 'Sign in to continue' }, 401)
         if (auth.owner.email_verified) return respond({ message: 'Your email is verified already.' })
@@ -2124,6 +2233,11 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
           if (!found?.question.hasImage) return respond({ detail: 'no image' }, 404)
           return Promise.resolve(new Response('png', { status: 200, headers: { 'Content-Type': 'image/png' } }))
         }
+      }
+      if (url === '/api/notes' && method === 'DELETE') {
+        if (body?.confirm !== 'DELETE') return respond({ detail: 'Type DELETE to confirm' }, 422)
+        state.notes = []
+        return respond(null, 204)
       }
       if (url === '/api/notes' && method === 'GET') return respond(state.notes.filter((n) => !n.archived_at))
       if (url === '/api/notes?archived=true' && method === 'GET') {

@@ -4,7 +4,20 @@ import { authErrorMessage, displayName, initials, useLogout } from '../lib/auth'
 import { Icon } from './Icon'
 
 export function Avatar({ user }: { user: Me }) {
-  if (user.avatar_url) return <img className="avatar" src={user.avatar_url} alt="" width="28" height="28" />
+  const [failed, setFailed] = useState<string | null>(null)
+  // A picture that does not load falls back to the initials until the address changes.
+  if (user.avatar_url && failed !== user.avatar_url) {
+    return (
+      <img
+        className="avatar"
+        src={user.avatar_url}
+        alt=""
+        width="28"
+        height="28"
+        onError={() => setFailed(user.avatar_url)}
+      />
+    )
+  }
   return (
     <span className="avatar" aria-hidden="true">
       {initials(user)}
@@ -72,6 +85,9 @@ export function AccountMenu({ user }: { user: Me }) {
                 Verify your email
               </button>
             )}
+            <a role="menuitem" href="#/profile" onClick={() => setOpen(false)}>
+              Profile
+            </a>
             <a role="menuitem" href="#/settings" onClick={() => setOpen(false)}>
               <Icon name="settings" />
               Settings

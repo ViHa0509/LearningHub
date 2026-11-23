@@ -307,6 +307,7 @@ def _answer(
             [Attachment(name=a.name, text=a.text) for a in payload.attachments],
             web_search=chat_model.web_search,
             area_instructions=area_instructions,
+            language=str((user.preferences or {}).get("answer_language", "auto")),
         )
     except ProviderError as exc:
         # A surface the tutor already stored is dropped with the failed request.

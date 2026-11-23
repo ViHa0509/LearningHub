@@ -13,14 +13,16 @@ import {
 import { useAuth } from '../lib/auth'
 import { forgetReturn, parseAuthRoute, rememberReturn, returnRoute, useHash } from '../lib/authRoute'
 import { domainOf } from '../lib/grouping'
-import { navigate, useRoute } from '../lib/route'
+import { isSettings, navigate, useRoute } from '../lib/route'
 import { useScreenClass, type ScreenClass } from '../lib/useScreenClass'
 import { useTheme, type Theme } from '../lib/theme'
 import { forgetTimeZoneDismissal } from '../lib/timezonePrompt'
 import { AgentPanel, type AgentRequest } from './AgentPanel'
 import { AuthPages } from './AuthPages'
 import { TimeZoneDialog } from './TimeZoneDialog'
-import { AccountSettings } from './AccountSettings'
+import { ProfilePage } from './ProfilePage'
+import { ProfileNav } from './ProfileNav'
+import { SettingsNav } from './SettingsNav'
 import { AgentsSettings } from './AgentsSettings'
 import { DataSettings } from './DataSettings'
 import { SignInSettings } from './SignInSettings'
@@ -208,6 +210,11 @@ function MainApp({ theme, onThemeChange, health, user }: MainProps) {
     else navigate({ page: 'home' })
   }
 
+  // The left column lists the sections of Settings and of Profile; the Learned list elsewhere.
+  const leftKind = isSettings(route) ? 'settings' : route.page === 'profile' ? 'profile' : 'learned'
+  const leftTitle = { settings: 'Settings', profile: 'Profile', learned: 'Learned' }[leftKind]
+  const leftNoun = { settings: 'settings sections', profile: 'profile sections', learned: 'learned list' }[leftKind]
+
   const columns = phone ? ['1fr'] : [leftOpen ? 'minmax(240px, 22%)' : '44px', '1fr', rightOpen ? 'minmax(300px, 30%)' : '44px']
 
   let center: React.ReactNode = null
@@ -265,8 +272,8 @@ function MainApp({ theme, onThemeChange, health, user }: MainProps) {
     )
   } else if (route.page === 'data-settings') {
     center = <DataSettings />
-  } else if (route.page === 'account-settings') {
-    center = <AccountSettings />
+  } else if (route.page === 'profile') {
+    center = <ProfilePage section={route.section} />
   } else if (route.page === 'agents-settings') {
     center = <AgentsSettings />
   } else if (route.page === 'provider') {
@@ -320,6 +327,7 @@ function MainApp({ theme, onThemeChange, health, user }: MainProps) {
         onToggleLeft={() => setLeft(!leftOpen)}
         onToggleRight={() => setRight(!rightOpen)}
         leftPanelId={LEARNED_PANEL_ID}
+        leftLabel={leftTitle}
         rightPanelId={AGENT_PANEL_ID}
       />
       {health.state === 'down' && <ServiceUnavailable health={health} />}
@@ -343,17 +351,17 @@ function MainApp({ theme, onThemeChange, health, user }: MainProps) {
         <PanelFrame
           id={LEARNED_PANEL_ID}
           className="pane left"
-          asideLabel="Learned items"
-          drawerLabel="Learned"
+          asideLabel={leftKind === 'learned' ? 'Learned items' : leftTitle}
+          drawerLabel={leftTitle}
           drawer={phone}
           open={leftOpen}
           onClose={() => setLeftOpen(false)}
           openerId={LEARNED_OPENER_ID}
         >
           <div className="pane-header">
-            {leftOpen && <h2>Learned</h2>}
+            {leftOpen && <h2>{leftTitle}</h2>}
             {phone ? (
-              <button type="button" className="icon" data-drawer-close="" aria-label="Close learned list" onClick={() => setLeftOpen(false)}>
+              <button type="button" className="icon" data-drawer-close="" aria-label={`Close ${leftNoun}`} onClick={() => setLeftOpen(false)}>
                 ×
               </button>
             ) : (
@@ -361,7 +369,7 @@ function MainApp({ theme, onThemeChange, health, user }: MainProps) {
                 type="button"
                 className="icon"
                 aria-expanded={leftOpen}
-                aria-label={leftOpen ? 'Collapse learned list' : 'Expand learned list'}
+                aria-label={leftOpen ? `Collapse ${leftNoun}` : `Expand ${leftNoun}`}
                 onClick={() => setLeft(!leftOpen)}
               >
                 {leftOpen ? '«' : '»'}
@@ -369,7 +377,9 @@ function MainApp({ theme, onThemeChange, health, user }: MainProps) {
             )}
           </div>
           {/* Wait for roadmaps too, so notes do not flash under "Unsorted" before grouping. */}
-          {leftOpen && notes.data && roadmapsReady && (
+          {leftOpen && leftKind === 'settings' && <SettingsNav route={route} onPick={phone ? () => setLeftOpen(false) : undefined} />}
+          {leftOpen && leftKind === 'profile' && <ProfileNav route={route} onPick={phone ? () => setLeftOpen(false) : undefined} />}
+          {leftOpen && leftKind === 'learned' && notes.data && roadmapsReady && (
             <LearnedList
               notes={notes.data}
               archivedNotes={archived.data ?? []}
@@ -384,10 +394,10 @@ function MainApp({ theme, onThemeChange, health, user }: MainProps) {
               onChanged={refresh}
             />
           )}
-          {leftOpen && !notes.isError && !(notes.data && roadmapsReady) && (
+          {leftOpen && leftKind === 'learned' && !notes.isError && !(notes.data && roadmapsReady) && (
             <p className="list-loading muted">Loading your notes…</p>
           )}
-          {leftOpen && notes.isError && <p className="error">Could not load notes.</p>}
+          {leftOpen && leftKind === 'learned' && notes.isError && <p className="error">Could not load notes.</p>}
         </PanelFrame>
 
         <main className="pane center" aria-label="Content">

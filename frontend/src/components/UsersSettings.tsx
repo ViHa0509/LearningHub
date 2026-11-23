@@ -6,7 +6,6 @@ import { useTime } from '../lib/time'
 import { useUnsavedGuard } from '../lib/unsavedGuard'
 import { ActionMenu } from './ActionMenu'
 import { Icon } from './Icon'
-import { SettingsNav } from './SettingsNav'
 
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
 const OUTBOX_NOTE = 'Email is not configured: the link was written to storage/outbox on the server.'
@@ -19,7 +18,6 @@ export function UsersSettings() {
   const invitations = useQuery({ queryKey: queryKeys.adminInvitations, queryFn: api.adminInvitations })
   return (
     <section className="settings-page" aria-label="Users">
-      <SettingsNav current="users" />
       <div className="settings-header">
         <h1>Users</h1>
       </div>

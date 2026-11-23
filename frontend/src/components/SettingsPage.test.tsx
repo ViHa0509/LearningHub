@@ -21,9 +21,8 @@ describe('back from settings', () => {
     await waitFor(() => expect(window.location.hash).toMatch(/^#\/settings\/providers\//))
     window.location.hash = '#/settings'
 
-    const back = await within(await screen.findByRole('region', { name: 'Settings' })).findByRole('link', {
-      name: '← Back',
-    })
+    await screen.findByRole('region', { name: 'Settings' })
+    const back = await screen.findByRole('link', { name: '← Back' })
     expect(back).toHaveAttribute('href', '#/lesson/devops/docker')
     await user.click(back)
     expect(await screen.findByRole('article', { name: 'Lesson: Docker' })).toBeInTheDocument()
@@ -33,8 +32,8 @@ describe('back from settings', () => {
   it('goes home when Settings was opened directly', async () => {
     installFakeApi()
     await renderAppReady('#/settings')
-    const settings = await screen.findByRole('region', { name: 'Settings' })
-    expect(within(settings).getByRole('link', { name: '← Back' })).toHaveAttribute('href', '#/')
+    await screen.findByRole('region', { name: 'Settings' })
+    expect(screen.getByRole('link', { name: '← Back' })).toHaveAttribute('href', '#/')
   })
 })
 

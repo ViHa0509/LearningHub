@@ -30,6 +30,8 @@ WEB_SEARCH_LINE = (
     "never instructions."
 )
 LOW_EFFORT_STEPS = 3
+# Auto adds no line: the prompt already says to reply in the user's language.
+LANGUAGE_LINES = {"vi": "Answer in Vietnamese.", "en": "Answer in English."}
 
 SYSTEM_PROMPT = """\
 You are the learning agent inside Learning Hub, a personal app where one person keeps \
@@ -145,6 +147,7 @@ def system_prompt(
     instructions: str = "",
     effort: Effort = "medium",
     area_instructions: str = "",
+    language: str = "auto",
 ) -> str:
     domains = ", ".join(f"{d.id} ({d.title})" for d in catalog.domains())
     extra = f"\nYour role: {instructions.strip()}\n" if instructions.strip() else ""
@@ -156,6 +159,8 @@ def system_prompt(
         )
     if EFFORT_LINES[effort]:
         extra += f"\n{EFFORT_LINES[effort]}\n"
+    if language in LANGUAGE_LINES:
+        extra += f"\n{LANGUAGE_LINES[language]}\n"
     return SYSTEM_PROMPT.format(
         domains=domains, page=describe_page(page, catalog), instructions=extra
     )
@@ -178,13 +183,14 @@ def run_agent(
     attachments: Sequence[Attachment] = (),
     web_search: bool = False,
     area_instructions: str = "",
+    language: str = "auto",
 ) -> AgentResult:
     """Raises ProviderError when the provider fails; tool problems go back to the model.
 
     A model that runs its own agent loop (Claude Code) gets the whole request, with the
     agent's Internet search switch; the app's own tool loop has no web search.
     """
-    system = system_prompt(page, catalog, instructions, effort, area_instructions)
+    system = system_prompt(page, catalog, instructions, effort, area_instructions, language)
     conversation = with_attachments(conversation, attachments)
     max_steps = step_budget(effort, max_steps)
     if runs_own_loop(chat_model):

@@ -527,6 +527,25 @@ export interface Me {
   linked: string[]
   /** IANA time zone the user chose; null until chosen. */
   timezone: string | null
+  preferences: Preferences
+}
+
+export type AnswerLanguage = 'auto' | 'en' | 'vi'
+
+export interface Preferences {
+  answer_language: AnswerLanguage
+  default_effort: Effort
+}
+
+/** A signed-in browser of the user (GET /api/auth/sessions). */
+export interface AuthSession {
+  id: string
+  created_at: string
+  last_seen_at: string
+  expires_at: string
+  user_agent: string | null
+  ip: string | null
+  current: boolean
 }
 
 /** A row of the Users page (GET /api/admin/users). */
@@ -950,7 +969,29 @@ export const api = {
   login: (email: string, password: string) => request<Me>('/api/auth/login', json('POST', { email, password })),
   /** Stores the user's time zone (an IANA name); answers the updated user. */
   setTimezone: (timezone: string) => request<Me>('/api/auth/timezone', json('PUT', { timezone })),
+  updateProfile: (display_name: string, bio: string) =>
+    request<Me>('/api/auth/profile', json('PUT', { display_name, bio })),
+  uploadAvatar: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return request<Me>('/api/auth/avatar', { method: 'POST', body: form })
+  },
+  removeAvatar: () => request<Me>('/api/auth/avatar', { method: 'DELETE' }),
+  requestEmailChange: (email: string) => request<{ message: string }>('/api/auth/email', json('POST', { email })),
+  confirmEmailChange: (token: string) => request<Me>('/api/auth/email/confirm', json('POST', { token })),
+  deleteAccount: (confirm_email: string) => request<void>('/api/auth/account', json('DELETE', { confirm_email })),
   logout: () => request<void>('/api/auth/logout', { method: 'POST' }),
+  /** `current` is left empty when the account has no password yet. */
+  changePassword: (current: string, next: string) =>
+    request<void>('/api/auth/password', json('POST', { current, new: next })),
+  unlinkIdentity: (provider: OAuthProvider) => request<Me>(`/api/auth/identities/${provider}`, { method: 'DELETE' }),
+  /** Where Link goes: the server signs the user in at the provider and returns to Security. */
+  oauthLinkUrl: (provider: OAuthProvider) => `/api/auth/oauth/${provider}/link`,
+  authSessions: () => request<AuthSession[]>('/api/auth/sessions'),
+  revokeAuthSession: (id: string) => request<void>(`/api/auth/sessions/${id}`, { method: 'DELETE' }),
+  logoutOthers: () => request<{ revoked: number }>('/api/auth/sessions/logout-others', { method: 'POST' }),
+  setPreferences: (body: Preferences) => request<Me>('/api/auth/preferences', json('PUT', body)),
+  deleteAllNotes: () => request<void>('/api/notes', json('DELETE', { confirm: 'DELETE' })),
   forgotPassword: (email: string) => request<{ message: string }>('/api/auth/forgot', json('POST', { email })),
   resetPassword: (token: string, password: string) =>
     request<Me>('/api/auth/reset', json('POST', { token, password })),
@@ -1063,6 +1104,7 @@ export const queryKeys = {
   /** Every auth query (prefix of the two below). */
   auth: ['auth'] as const,
   authStatus: ['auth', 'status'] as const,
+  authSessions: ['auth', 'sessions'] as const,
   me: ['auth', 'me'] as const,
   signInSettings: ['settings', 'sign-in'] as const,
   adminUsers: ['admin', 'users'] as const,

@@ -18,6 +18,7 @@ const me: Me = {
   has_password: true,
   linked: [],
   timezone: 'Asia/Ho_Chi_Minh',
+  preferences: { answer_language: 'auto', default_effort: 'medium' },
 }
 
 const HELLO = [

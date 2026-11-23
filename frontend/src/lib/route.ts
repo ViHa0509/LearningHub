@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 
+export type ProfileSection = 'general' | 'security' | 'preferences'
+
 export type Route =
   | { page: 'home' }
   | { page: 'roadmap'; domain: string }
@@ -14,8 +16,8 @@ export type Route =
   | { page: 'data-settings' }
   /** Settings > Agents (providers per agent, instructions and tools per area). */
   | { page: 'agents-settings' }
-  /** Settings > Account (time zone). */
-  | { page: 'account-settings' }
+  /** The user's own Profile (`#/profile`, `#/profile/security`, `#/profile/preferences`). */
+  | { page: 'profile'; section: ProfileSection }
   | { page: 'news' }
   /** The A2UI Lab playground (`#/a2ui-lab`). */
   | { page: 'a2ui-lab' }
@@ -29,7 +31,8 @@ export type Route =
 const SEGMENT = /^[A-Za-z0-9_-]+$/
 
 export function parseRoute(hash: string): Route {
-  const parts = hash.replace(/^#\/?/, '').split('/').filter(Boolean)
+  // A query (`#/profile/security?linked=github`, after an OAuth redirect) is not part of the page.
+  const parts = hash.split('?')[0].replace(/^#\/?/, '').split('/').filter(Boolean)
   if (!parts.every((p) => SEGMENT.test(p))) return { page: 'home' }
   if (parts[0] === 'roadmap' && parts.length === 2) return { page: 'roadmap', domain: parts[1] }
   if (parts[0] === 'lesson' && parts.length === 3) return { page: 'lesson', domain: parts[1], node: parts[2] }
@@ -39,7 +42,12 @@ export function parseRoute(hash: string): Route {
   if (parts[0] === 'settings' && parts[1] === 'users' && parts.length === 2) return { page: 'users-settings' }
   if (parts[0] === 'settings' && parts[1] === 'data' && parts.length === 2) return { page: 'data-settings' }
   if (parts[0] === 'settings' && parts[1] === 'agents' && parts.length === 2) return { page: 'agents-settings' }
-  if (parts[0] === 'settings' && parts[1] === 'account' && parts.length === 2) return { page: 'account-settings' }
+  // Account moved to Profile.
+  if (parts[0] === 'settings' && parts[1] === 'account' && parts.length === 2) return { page: 'profile', section: 'general' }
+  if (parts[0] === 'profile' && parts.length === 1) return { page: 'profile', section: 'general' }
+  if (parts[0] === 'profile' && (parts[1] === 'security' || parts[1] === 'preferences') && parts.length === 2) {
+    return { page: 'profile', section: parts[1] }
+  }
   if (parts[0] === 'news' && parts.length === 1) return { page: 'news' }
   if (parts[0] === 'a2ui-lab' && parts.length === 1) return { page: 'a2ui-lab' }
   if (parts[0] === 'practice' && parts.length === 2) return { page: 'practice', area: parts[1] }
@@ -70,8 +78,8 @@ export function routeHash(route: Route): string {
       return '#/settings/data'
     case 'agents-settings':
       return '#/settings/agents'
-    case 'account-settings':
-      return '#/settings/account'
+    case 'profile':
+      return route.section === 'general' ? '#/profile' : `#/profile/${route.section}`
     case 'news':
       return '#/news'
     case 'a2ui-lab':
@@ -88,17 +96,16 @@ export function routeHash(route: Route): string {
 // The last page opened outside Settings and its provider pages: where Settings' Back goes.
 let outsideSettings: Route | null = null
 
-const isSettings = (route: Route) =>
+export const isSettings = (route: Route) =>
   route.page === 'settings' ||
   route.page === 'provider' ||
   route.page === 'sign-in-settings' ||
   route.page === 'users-settings' ||
   route.page === 'data-settings' ||
-  route.page === 'agents-settings' ||
-  route.page === 'account-settings'
+  route.page === 'agents-settings'
 
 function remember(route: Route): Route {
-  if (!isSettings(route)) outsideSettings = route
+  if (!isSettings(route) && route.page !== 'profile') outsideSettings = route
   return route
 }
 

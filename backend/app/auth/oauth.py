@@ -14,6 +14,7 @@ import secrets
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -122,6 +123,8 @@ class Pending:
     state: str
     verifier: str
     next: str
+    # The signed-in user linking this identity; None for a sign-in.
+    link_user_id: uuid.UUID | None = None
 
 
 def hash_key(key: str) -> str:
@@ -141,7 +144,9 @@ class PendingStore:
         self._box = box
         self._clock = clock
 
-    def start(self, provider: ProviderName, next_route: str) -> tuple[str, Pending]:
+    def start(
+        self, provider: ProviderName, next_route: str, link_user_id: uuid.UUID | None = None
+    ) -> tuple[str, Pending]:
         now = self._clock()
         key = secrets.token_urlsafe(32)
         pending = Pending(
@@ -149,6 +154,7 @@ class PendingStore:
             state=secrets.token_urlsafe(32),
             verifier=secrets.token_urlsafe(48),
             next=next_route,
+            link_user_id=link_user_id,
         )
         with self._sessions() as db:
             db.execute(delete(OAuthPending).where(OAuthPending.expires_at <= now))
@@ -167,6 +173,7 @@ class PendingStore:
                     state=pending.state,
                     verifier_enc=self._box.encrypt(pending.verifier),
                     next=next_route,
+                    link_user_id=link_user_id,
                     created_at=now,
                     expires_at=now + timedelta(seconds=PENDING_SECONDS),
                 )
@@ -188,6 +195,7 @@ class PendingStore:
                     OAuthPending.state,
                     OAuthPending.verifier_enc,
                     OAuthPending.next,
+                    OAuthPending.link_user_id,
                     OAuthPending.expires_at,
                 )
             ).first()
@@ -198,7 +206,13 @@ class PendingStore:
             verifier = self._box.decrypt(row.verifier_enc)
         except SecretUnreadable:
             return None
-        return Pending(provider=row.provider, state=row.state, verifier=verifier, next=row.next)
+        return Pending(
+            provider=row.provider,
+            state=row.state,
+            verifier=verifier,
+            next=row.next,
+            link_user_id=row.link_user_id,
+        )
 
 
 def authorize_url(settings: Settings, provider: Provider, pending: Pending) -> str:

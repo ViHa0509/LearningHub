@@ -46,6 +46,7 @@ from app.routes import (
     news,
     notes,
     practice,
+    profile,
     resources,
     search,
     settings_signin,
@@ -194,6 +195,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return JSONResponse(content={"status": "ok"})
 
     app.include_router(auth.router)
+    app.include_router(profile.router)
     # Every data router needs a session (when the login is on); health and auth do not.
     gate = [Depends(require_session)]
     for module in (

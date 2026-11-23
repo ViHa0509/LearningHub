@@ -21,6 +21,8 @@ interface Props {
   /** Ids of the two drawers, for `aria-controls`. */
   leftPanelId?: string
   rightPanelId?: string
+  /** The name of the left panel (Learned, Settings, Profile) for the phone opener. */
+  leftLabel?: string
 }
 
 const THEMES: { value: Theme; label: string; icon: IconName }[] = [
@@ -40,6 +42,7 @@ export function TopBar({
   onToggleRight,
   leftPanelId,
   rightPanelId,
+  leftLabel = 'Learned',
 }: Props) {
   const phone = screenClass === 'phone'
   const [searchRow, setSearchRow] = useState(false)
@@ -59,7 +62,7 @@ export function TopBar({
           type="button"
           className="top-icon-button"
           id={LEARNED_OPENER_ID}
-          aria-label="Learned"
+          aria-label={leftLabel}
           aria-expanded={leftOpen}
           aria-controls={leftPanelId}
           onClick={onToggleLeft}

@@ -1,7 +1,8 @@
 import { useEffect, useEffectEvent, useRef, useState, type DragEvent } from 'react'
 import type { ChatPage, Effort, ProposedTopics } from '../api'
 import { useAgentReady, useAgents, useProviders, useSharedStatus } from '../hooks'
-import { readEffort, readPet, saveEffort, savePet } from '../lib/agentPrefs'
+import { useMe } from '../lib/auth'
+import { readEffort, storedEffort, readPet, saveEffort, savePet } from '../lib/agentPrefs'
 import { useScreenClass } from '../lib/useScreenClass'
 import { ChatPet } from './agent/ChatPet'
 import { readAttachments, type Attachment, type ReadyAttachment } from '../lib/attachments'
@@ -42,12 +43,13 @@ const FILES_ONLY = 'Read the attached files.'
 const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes('Files')
 
 export function AgentPanel({ open, onToggle, page, request, drawer = false, onReviewTopics }: Props) {
+  const me = useMe()
   const providers = useProviders()
   const agents = useAgents()
   const shared = useSharedStatus()
   const ready = useAgentReady()
   const available = (providers.data ?? []).filter((p) => p.is_active)
-  const [effort, setEffort] = useState<Effort>(readEffort)
+  const [effort, setEffort] = useState<Effort>(() => storedEffort() ?? me?.preferences.default_effort ?? readEffort())
   const [pet, setPet] = useState(readPet)
   // The pet is decoration for tablet and desktop; a phone shows none.
   const screenClass = useScreenClass()

@@ -2,7 +2,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { ApiError, api, queryKeys, type OAuthProvider, type SignInProvider } from '../api'
 import { useUnsavedGuard } from '../lib/unsavedGuard'
-import { SettingsNav } from './SettingsNav'
 
 const SOURCE_TEXT = { app: 'Set in the app', env: 'From the environment' } as const
 
@@ -41,7 +40,6 @@ export function SignInSettings() {
   const settings = useQuery({ queryKey: queryKeys.signInSettings, queryFn: api.signInSettings })
   return (
     <section className="settings-page" aria-label="Sign-in">
-      <SettingsNav current="sign-in" />
       <div className="settings-header">
         <h1>Sign-in</h1>
       </div>

@@ -64,3 +64,12 @@ One entry per cycle, appended by `/ai-sdlc-kit:orchestrate` (or by the main sess
 - Agents: e2e of the four changes -> qc-e2e (sonnet); chat-history dark contrast fixes, ci-cd 3.2, agent-stop 2.1-2.2 and backend tests -> implementer (sonnet); qc-ui x3; settings-tabs state -> scout (haiku); agent-stop spec, migration 0024 and stop path, settings-tabs rewrite -> main session (opus)
 - Verdicts: qc-e2e pass (no product bugs), qc-ui pass (cosmetic items in evidence.md), verifier pass on the final run (pytest 1311, vitest 712, e2e 381). Two earlier verifier runs failed because agent-stop work was edited in the same tree during the run (conftest TRUNCATE list, a test stub)
 - Needs human: review settings-tabs; vercel-deploy 7.3, 8.2-8.4; anthropic-web-search 3.1 (real key); kh-connector 4.1 (KH admin)
+
+## 2026-11-23 settings-tabs done; notifications next
+- State: settings-tabs code, e2e (3.1) and qc-ui (3.2) done, UNCOMMITTED in the working tree; only 3.3 (verifier) open. notifications planned and approved (committed in d935759), not started.
+- Last verifier run: every check passed except full e2e (2 of 400): auth.e2e.ts stale menu expectation, and agent-chat effort not remembered (account default overrode the browser pick). Both fixed, plus avatar file left on member delete (fixed, tested). A re-verification started at ~18:00 stalled (agent watchdog, no report); no stray test processes were left. Run the verifier again.
+- Resume: 1) `docker compose up -d`; `cd backend && .venv/Scripts/alembic upgrade head` (dev DB needs 0025). 2) Run `ai-sdlc-kit:verifier` on settings-tabs (all CLAUDE.md checks + `openspec validate settings-tabs --type change --strict`); paste its report into openspec/changes/settings-tabs/verifier-report.md, tick 3.3. 3) Commit and push to main. 4) Start notifications: 1.1 (migration + notify helper) is main-session work; then 1.2-1.5 backend and 2.1 frontend to implementers; 3.x QC; verifier; commit; push.
+- Push note: plain `git push` gets 403 (Windows credential manager holds the petrus-ha login). Push with `git -c credential.helper= -c 'credential.helper=!gh auth git-credential' push origin main`, or run `gh auth setup-git` once.
+- Lessons from today: never run the verifier while agents edit the same tree; a responsive e2e run clears the screenshot folder, so run all screenshot files in one e2e command before qc-ui.
+
+- Update: settings-tabs verifier pass on resume (pytest 1345, vitest 750, e2e 400); committed and pushed. Next: notifications (1.1 main session).

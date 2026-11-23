@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient, type Query } from '@tanstack/react-query'
+import { useQuery, useQueryClient, type Query, type QueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect } from 'react'
 import { ApiError, api, queryKeys, type AuthStatus, type Me } from '../api'
 import { forgetReturn, isAuthHash, returnRoute } from './authRoute'
@@ -101,13 +101,18 @@ export function useLogout(): () => Promise<void> {
       // An outage: the session may still be valid, so stay; the outage page explains.
       if (!(error instanceof ApiError) || error.status >= 500) return
     }
-    forgetReturn()
-    forgetTimeZoneDismissal()
-    client.setQueryData(queryKeys.me, null)
-    // Nothing of the user's data stays in memory after logging out.
-    client.removeQueries({ predicate: isDataQuery })
-    window.location.hash = '#/auth/login'
+    endSession(client)
   }, [client])
+}
+
+/** Forgets the session in the browser: used after a log out and after the account is deleted. */
+export function endSession(client: QueryClient) {
+  forgetReturn()
+  forgetTimeZoneDismissal()
+  client.setQueryData(queryKeys.me, null)
+  // Nothing of the user's data stays in memory after logging out.
+  client.removeQueries({ predicate: isDataQuery })
+  window.location.hash = '#/auth/login'
 }
 
 /** The text to show for a failed auth request: the server's message, or a reachability note. */

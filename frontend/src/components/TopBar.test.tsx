@@ -20,6 +20,7 @@ const owner: Me = {
   has_password: true,
   linked: [],
   timezone: 'UTC',
+  preferences: { answer_language: 'auto', default_effort: 'medium' },
 }
 
 function Harness({ screenClass, user = null, ...rest }: { screenClass: ScreenClass; user?: Me | null } & Partial<Parameters<typeof TopBar>[0]>) {
