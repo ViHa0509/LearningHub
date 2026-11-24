@@ -62,6 +62,7 @@ from app.db import (
     User,
 )
 from app.learning.topics import clean_topics
+from app.notifications import notify
 from app.practice.schemas import BankRules
 from app.roadmaps import KEBAB
 from app.storage import FileStore, release_blob
@@ -558,6 +559,8 @@ def restore_archive(
             if parsed.banks is not None:
                 session.flush()
                 _restore_banks(session, user_id, parsed.banks)
+            params = {"notes": len(parsed.notes), "lessons": len(parsed.lessons)}
+            notify(session, user_id, "restored", params, "#/")
             session.commit()
         except SQLAlchemyError:
             session.rollback()

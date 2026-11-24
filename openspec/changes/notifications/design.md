@@ -19,13 +19,15 @@
 
 4. **Links** are hash routes made by the server from ids (`#/lesson/<domain>/<node>`, `#/settings/providers/<id>`, ...). The client accepts only links that start with `#/` and opens them with the router, never `window.location` to another origin.
 
-5. **New sign-in device**: a key from the session's user agent, reduced to browser family and system (the same parsing the sessions list already shows). New when no session of the user in the last 90 days has the same key. The address is shown, not used in the key (addresses change often).
+5. **New sign-in device**: a key from the session's user agent, reduced to browser family and system (`device_of` in `app/auth/sessions.py`). New when no session of the user in the last 90 days has the same key. Only the sign-in within 10 minutes of the account's creation is skipped, so a sign-in after "log out everywhere" (no sessions left) still notifies. The address is shown, not used in the key (addresses change often).
 
 6. **Shared limit** checks run right after `take_shared_count` with the count it returns: at `ceil(0.8 * limit)` and at `limit`; the admin never reaches this code path (no limit).
 
-7. **Provider problems** hook into the provider chain where it records `fallback_used` and where it raises a `ProviderError` with category `invalid_key`, `quota` or `rate_limited`; only the category and the provider's name and id go into params.
+7. **Provider problems** hook into the provider chain where it records `fallback_used` and where it raises a `ProviderError` with category `auth_failed` or `rate_limited` (the code has no separate quota category; `auth_failed` never hands over to the fallback). The notice is written with its own short session, because the chat request rolls back on a `ProviderError`. Only the category and the provider's name and id go into params; members on the shared provider get none.
 
 8. **Polling.** `GET /api/notifications/unread-count` is cheap (index); the client polls it with TanStack Query `refetchInterval: 60_000` and `refetchIntervalInBackground: false`, plus refetch on window focus; the list is fetched only when the bell opens.
+
+9. **Room on a phone.** The bell adds one 40 px icon button to a top bar that already fills 360 px. The A2UI Lab link, the least used control, moves into the avatar menu under 640 px (CSS shows one or the other), so the lab stays reachable from the UI as its spec requires. Alternative: hide the link on phones; rejected, the lab spec says it is reached from the top bar.
 
 ## Risks / Trade-offs
 

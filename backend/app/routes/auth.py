@@ -71,6 +71,7 @@ from app.auth.sessions import (
 )
 from app.config import Settings
 from app.db import OAuthAccount, User, UserSession, get_session
+from app.notifications import notify_new_member
 from app.routes.guard import box_of, require_app_header
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -328,6 +329,7 @@ def signup(
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail=EMAIL_TAKEN) from None
+    notify_new_member(db, user)
     verify_token = tokens.issue(db, "verify_email", user, clock_of(request)())
     start_session(db, user, request, response)
     send_mail(request, verify_mail(request, user, verify_token))
@@ -363,6 +365,7 @@ def accept_invitation(body: AcceptIn, request: Request, response: Response, db: 
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="That email already has an account") from None
+    notify_new_member(db, user)
     start_session(db, user, request, response)
     return me_out(db, user)
 
@@ -629,6 +632,7 @@ def user_for(db: Session, identity: Identity, request: Request) -> User:
             except IntegrityError:
                 db.rollback()
                 raise OAuthError("not_invited") from None
+            notify_new_member(db, user)
     if user.disabled_at is not None:
         raise OAuthError("account_disabled")
     if account is None:

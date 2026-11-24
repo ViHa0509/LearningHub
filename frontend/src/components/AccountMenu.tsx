@@ -92,6 +92,9 @@ export function AccountMenu({ user }: { user: Me }) {
               <Icon name="settings" />
               Settings
             </a>
+            <a role="menuitem" className="account-lab" href="#/a2ui-lab" onClick={() => setOpen(false)}>
+              A2UI Lab
+            </a>
             <button type="button" role="menuitem" onClick={() => void logout()}>
               Log out
             </button>

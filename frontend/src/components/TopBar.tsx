@@ -4,6 +4,7 @@ import type { Theme } from '../lib/theme'
 import type { ScreenClass } from '../lib/useScreenClass'
 import { AccountMenu } from './AccountMenu'
 import { Icon, type IconName } from './Icon'
+import { NotificationBell } from './NotificationBell'
 import { AGENT_OPENER_ID, LEARNED_OPENER_ID } from './PanelFrame'
 import { TopSearch } from './TopSearch'
 
@@ -142,6 +143,7 @@ export function TopBar({
           <Icon name="agent" size={20} />
         </button>
       )}
+      {user && <NotificationBell />}
       {user && <AccountMenu user={user} />}
     </header>
     {phone && user && searchRow && (

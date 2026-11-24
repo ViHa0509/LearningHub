@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import Settings
 from app.db import User, UserSession
+from app.notifications import notify
 
 COOKIE = "lh_session"
 LIFETIME = timedelta(days=30)
@@ -56,11 +57,63 @@ class Signed:
     session: UserSession
 
 
+# The first match wins: Edge and Opera also say "Chrome", Chrome also says "Safari".
+BROWSERS = (("Edg/", "Edge"), ("OPR/", "Opera"), ("Firefox/", "Firefox"), ("Chrome/", "Chrome"))
+SYSTEMS = (
+    ("Windows", "Windows"),
+    ("Android", "Android"),
+    ("iPhone", "iOS"),
+    ("iPad", "iOS"),
+    ("Mac OS X", "macOS"),
+    ("CrOS", "ChromeOS"),
+    ("Linux", "Linux"),
+)
+NEW_DEVICE_DAYS = 90
+# The sign-in that comes with creating the account is not a new device.
+NEW_ACCOUNT = timedelta(minutes=10)
+
+
+def device_of(agent: str | None) -> tuple[str, str]:
+    """Browser family and system from a user agent: a rough label for a notice, not a check."""
+    text = agent or ""
+    browser = next((name for mark, name in BROWSERS if mark in text), None)
+    if browser is None:
+        browser = "Safari" if "Safari/" in text else "Unknown browser"
+    system = next((name for mark, name in SYSTEMS if mark in text), "Unknown system")
+    return browser, system
+
+
+def _notify_new_device(
+    db: Session, user: User, agent: str | None, ip: str | None, now: datetime
+) -> None:
+    """A sign-in from a browser and system the user's sessions of the last 90 days did not
+    show. Only the sign-in right after the account was created is skipped: an account with no
+    sessions left (after "log out everywhere") still gets the notice, since that is when a
+    stranger's sign-in matters most."""
+    db.flush()  # a user made in this request gets its created_at
+    db.refresh(user, ["created_at"])
+    if user.created_at is None or now - user.created_at < NEW_ACCOUNT:
+        return
+    cutoff = now - timedelta(days=NEW_DEVICE_DAYS)
+    recent = db.scalars(
+        select(UserSession.user_agent).where(
+            UserSession.user_id == user.id, UserSession.last_seen_at >= cutoff
+        )
+    ).all()
+    device = device_of(agent)
+    if any(device_of(seen) == device for seen in recent):
+        return
+    browser, system = device
+    params = {"browser": browser, "system": system, "address": ip or "unknown address"}
+    notify(db, user.id, "new_sign_in", params, "#/profile/security")
+
+
 def create_session(db: Session, user: User, request: Request) -> str:
     """Store a new session for ``user`` (not committed) and return the raw cookie token."""
     now = clock_of(request)()
     token = new_token()
     agent = request.headers.get("user-agent")
+    _notify_new_device(db, user, agent, client_ip(request), now)
     db.add(
         UserSession(
             user_id=user.id,

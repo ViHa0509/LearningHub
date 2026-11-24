@@ -73,3 +73,11 @@ One entry per cycle, appended by `/ai-sdlc-kit:orchestrate` (or by the main sess
 - Lessons from today: never run the verifier while agents edit the same tree; a responsive e2e run clears the screenshot folder, so run all screenshot files in one e2e command before qc-ui.
 
 - Update: settings-tabs verifier pass on resume (pytest 1345, vitest 750, e2e 400); committed and pushed. Next: notifications (1.1 main session).
+
+## 2026-11-24 notifications
+- Result: done (9/9); settings-tabs pushed earlier the same session (55f1460)
+- Tasks: 1.1-1.5, 2.1, 3.1-3.3
+- Agents: 1.1 (migration 0026, notify helper), new-sign-in gap fix, spec corrections -> main session (opus); 1.2-1.5, 2.1, phone top-bar fix, Lab link in the avatar menu -> implementer (sonnet); 3.1 -> qc-e2e; 3.2 -> qc-ui; 3.3 -> verifier
+- Verdicts: qc-e2e 1 product bug (bell widened the phone top bar) fixed; qc-ui pass (cosmetics in evidence.md); verifier pass (pytest 1379, vitest 762, e2e 412)
+- Spec changes during the work: provider notices follow the real error categories (auth_failed never falls back, no quota category, none for the shared provider); published field opens the home page; new requirement "Bell on a phone" (A2UI Lab moves into the avatar menu under 640 px); new sign-in after "log out everywhere" still notifies
+- Needs human: none

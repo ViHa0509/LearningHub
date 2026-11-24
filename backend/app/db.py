@@ -274,6 +274,25 @@ class ChatMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class Notification(Base):
+    """An in-app notification (change notifications). ``params`` holds plain values the client
+    puts into the text of ``kind``; ``link`` is an in-app hash route; ``dedupe_key`` makes a
+    notification at most once per user and key."""
+
+    __tablename__ = "notifications"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(Text)
+    params: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default="{}")
+    link: Mapped[str] = mapped_column(Text)
+    dedupe_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class AgentRun(Base):
     """A running agent chat request (change agent-stop). The row lives only while the request
     runs; ``stop_requested_at`` is set by the user's Stop and read by the agent loop."""

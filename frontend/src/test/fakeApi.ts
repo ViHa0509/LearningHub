@@ -4,6 +4,7 @@ import type {
   Bank,
   BankRules,
   AgentStep,
+  AppNotification,
   ChatSessionDetail,
   AdminUser,
   AgentOut,
@@ -202,6 +203,19 @@ export function twoProviders(): ProviderOut[] {
 }
 
 let seq = 0
+let notificationSeq = 0
+export function makeNotification(kind: string, params: Record<string, unknown>, extra: Partial<AppNotification> = {}): AppNotification {
+  notificationSeq += 1
+  return {
+    id: `n${notificationSeq}`,
+    kind,
+    params,
+    link: null,
+    created_at: new Date(Date.UTC(2026, 10, 20, 12, 0, 0) + notificationSeq * 1000).toISOString(),
+    read_at: null,
+    ...extra,
+  }
+}
 export function makeNote(title: string, nodeId: string | null = null, extra: Partial<Note> = {}): Note {
   seq += 1
   return {
@@ -343,6 +357,8 @@ export function makeBank(
 }
 
 export interface FakeState {
+  /** The user's notifications (GET /api/notifications pages them 20 at a time, newest first). */
+  notifications: AppNotification[]
   /** Learning fields (the IT field is virtual and always first in GET /api/fields). */
   fields: FakeField[]
   /** Question banks (practice-exams); a bank of an area the user cannot see answers 404. */
@@ -670,6 +686,7 @@ const HEADER_REQUIRED = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome[]): FakeState {
   providerSeq = 0
   const state: FakeState = {
+    notifications: [],
     fields: [],
     banks: [],
     practice: {},
@@ -1236,6 +1253,30 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
       }
       if (HEADER_REQUIRED.has(method) && headers['X-LearningHub'] !== '1') {
         return respond({ detail: 'missing X-LearningHub header' }, 403)
+      }
+
+      if (url.startsWith('/api/notifications')) {
+        const unread = state.notifications.filter((n) => !n.read_at)
+        const now = new Date().toISOString()
+        if (url === '/api/notifications/unread-count') return respond({ count: unread.length })
+        if (url === '/api/notifications/read-all' && method === 'POST') {
+          unread.forEach((n) => (n.read_at = now))
+          return new Response(null, { status: 204 })
+        }
+        const one = url.match(/^\/api\/notifications\/([^/]+)\/read$/)
+        if (one && method === 'POST') {
+          const found = state.notifications.find((n) => n.id === one[1])
+          if (!found) return respond({ detail: 'Notification not found' }, 404)
+          found.read_at ??= now
+          return new Response(null, { status: 204 })
+        }
+        if (method === 'GET') {
+          const before = new URL(url, 'http://x').searchParams.get('before')
+          const page = [...state.notifications]
+            .sort((a, b) => b.created_at.localeCompare(a.created_at))
+            .filter((n) => !before || n.created_at < before)
+          return respond(page.slice(0, 20))
+        }
       }
 
       if (url.startsWith('/api/admin/')) {

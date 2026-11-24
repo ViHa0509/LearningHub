@@ -102,6 +102,12 @@ describe('TopBar on a phone', () => {
     expect(screen.getByRole('button', { name: 'Account menu: Ada' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Settings' })).not.toBeInTheDocument()
   })
+
+  it('puts A2UI Lab in the avatar menu (CSS shows it under 640 px only)', async () => {
+    render(<Harness screenClass="phone" user={owner} />)
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Account menu: Ada' }))
+    expect(screen.getByRole('menuitem', { name: 'A2UI Lab' })).toHaveAttribute('href', '#/a2ui-lab')
+  })
 })
 
 /** Spec: app-search - Search on a phone; Search box in the top bar. */

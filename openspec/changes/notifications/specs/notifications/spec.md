@@ -20,6 +20,13 @@ The top bar SHALL show a bell with the number of unread notifications (hidden at
 - **WHEN** the user clicks Mark all read
 - **THEN** the bell shows no count and every item shows as read
 
+### Requirement: Bell on a phone
+On a phone the top bar SHALL keep every control inside the screen with the bell added. To make room, the "A2UI Lab" link MUST move from the top bar into the avatar menu on screens under 640 px wide; on wider screens it stays in the top bar.
+
+#### Scenario: Phone top bar
+- **WHEN** a signed-in user opens the app at 390 px wide
+- **THEN** the bell and every other top-bar control are inside the screen with no sideways scroll, and the avatar menu has an "A2UI Lab" item that opens the lab
+
 ### Requirement: Notifications are private and safe
 A user SHALL see and change only their own notifications; another user's notification id MUST answer 404. Names, titles and other text from users, imported pages or providers MUST be shown as plain text. A notification's link MUST be an address inside the app. No notification may contain a key, token, password, prompt or answer text.
 
@@ -74,12 +81,17 @@ A member using the shared provider SHALL get one notification when 80% of the da
 - **THEN** the admin gets no limit notification
 
 ### Requirement: Provider problem notification
-When a user's provider fails with an invalid key, a quota or a rate limit, or the fallback answers because the primary failed, the user SHALL get one notification per provider per day naming the provider and the error category (never the provider's own message), opening that provider's page.
+When one of the user's own providers fails with an invalid key or a rate limit (a quota answer counts as a rate limit), or the fallback answers because the primary failed, the user SHALL get one notification per provider per day naming the provider and the error category (never the provider's own message), opening that provider's page. A member on the admin's shared provider MUST NOT get these (they cannot open that provider).
 
 #### Scenario: Fallback answered
-- **GIVEN** the primary provider's key is invalid and a fallback is set
+- **GIVEN** the primary provider is rate limited and a fallback is set
 - **WHEN** the user asks two questions
 - **THEN** both are answered by the fallback, and the user has exactly one notification about the primary
+
+#### Scenario: Invalid key
+- **GIVEN** the primary provider's key is invalid (an invalid key never hands over to the fallback)
+- **WHEN** the user asks a question
+- **THEN** the chat shows the error, and the user has one notification about that provider that survives the failed request
 
 ### Requirement: Knowledge Hub reconnect notification
 When the Knowledge Hub connection needs to be connected again, the user SHALL get one notification until they reconnect, opening Settings > Agents.
@@ -89,14 +101,14 @@ When the Knowledge Hub connection needs to be connected again, the user SHALL ge
 - **THEN** the user has one notification, and a second failure before reconnecting adds none
 
 ### Requirement: Published field notification
-When the admin publishes a field, every member SHALL get "New field published: <title>", opening the home page on that field. Unpublishing and publishing again the same day MUST NOT notify twice.
+When the admin publishes a field, every member SHALL get "New field published: <title>", opening the home page, where the field is in the tabs. Unpublishing and publishing again the same day MUST NOT notify twice.
 
 #### Scenario: Publish
 - **WHEN** the admin publishes the field Finance
-- **THEN** each member has a notification that opens the home page on Finance, and the admin has none
+- **THEN** each member has a notification that opens the home page with Finance in its tabs, and the admin has none
 
 ### Requirement: New sign-in notification
-When the account is signed in from a device and browser not seen in its sessions of the last 90 days, the user SHALL get "New sign-in: <browser> on <system>, <address>", opening the sessions list.
+When the account is signed in from a device and browser not seen in its sessions of the last 90 days, the user SHALL get "New sign-in: <browser> on <system>, <address>", opening the sessions list. Only the sign-in that comes with creating the account is skipped; an account with no sessions left still gets the notice.
 
 #### Scenario: New browser
 - **GIVEN** the user always signed in with Edge on Windows

@@ -1040,6 +1040,34 @@ a.auth-provider:hover { border-color: var(--accent); color: var(--accent); }
 }
 .account-popover [role='menuitem']:hover { background: var(--surface-2); }
 .account-popover .account-verify[role='menuitem'] { color: var(--warn); }
+/* Phone only: the top bar drops its A2UI Lab link under 640 px (display:none keeps it out of the accessibility tree). */
+@media (min-width: 640px) { .account-popover .account-lab[role='menuitem'] { display: none; } }
+.bell { position: relative; }
+.bell-button { position: relative; display: inline-flex; align-items: center; justify-content: center; padding: 4px 8px; border-radius: 999px; }
+.bell-badge {
+  position: absolute; top: -4px; right: -4px; min-width: 18px; padding: 0 5px; border-radius: 999px;
+  background: var(--accent); color: var(--on-accent); font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
+}
+.bell-popover {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; width: min(360px, calc(100vw - 16px)); max-height: 70vh; overflow-y: auto;
+  padding: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-pop);
+}
+.bell-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 6px 8px; }
+.bell-empty { margin: 0; padding: 12px 10px; }
+.bell-list { gap: 2px; }
+.bell-item {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; text-align: left;
+  padding: 8px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--text); font: inherit;
+}
+.bell-item:hover { background: var(--surface-2); }
+.bell-item.unread { border-left: 3px solid var(--accent); font-weight: 600; }
+.bell-text { overflow-wrap: anywhere; }
+.bell-more { display: block; width: 100%; margin-top: 6px; }
+@media (max-width: 639.98px) {
+  /* The popover spans the screen under the top bar instead of hanging off the bell. */
+  .bell { position: static; }
+  .bell-popover { position: fixed; left: 8px; right: 8px; top: 56px; width: auto; }
+}
 .account-note { margin: 4px 0 0; padding: 6px 10px; font-size: 12px; }
 
 /* Settings forms (Sign-in, Data & sync): a disabled button must look disabled. */
@@ -1099,6 +1127,8 @@ a.auth-provider:hover { border-color: var(--accent); color: var(--accent); }
   }
   .top-bar .top-actions { gap: 4px; }
   .top-bar .top-actions a { justify-content: center; min-width: 40px; min-height: 40px; padding: 0; }
+  /* The bell needs the room: the developer-only A2UI Lab link leaves the phone bar (still reachable by address). */
+  .top-bar .top-actions a[href='#/a2ui-lab'] { display: none; }
   .top-bar .top-icon-button {
     display: inline-flex; align-items: center; justify-content: center; flex: none;
     min-width: 40px; min-height: 40px; padding: 0;
@@ -1134,6 +1164,7 @@ a.auth-provider:hover { border-color: var(--accent); color: var(--accent); }
   /* Touch targets of at least 40 px (the phone top bar is sized under "top bar"). */
   .top-bar .brand, .top-bar .top-actions a, .top-bar .account-button { min-height: 40px; }
   .top-bar .theme-switch button { min-height: 40px; min-width: 40px; justify-content: center; }
+  .top-bar .bell-button { min-height: 40px; min-width: 40px; }
   button.icon { min-height: 40px; min-width: 40px; }
   .note-select { min-height: 40px; }
   .note-menu [role='menuitem'], .note-menu [role='menuitemradio'] { min-height: 40px; }

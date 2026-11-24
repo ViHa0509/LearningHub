@@ -9,13 +9,13 @@ const ALL: Record<IconName, true> = {
   archive: true, restore: true, edit: true, move: true, more: true, sun: true, moon: true, system: true,
   search: true, close: true, check: true, trash: true, 'chevron-down': true, external: true,
   paperclip: true, send: true, copy: true, retry: true, sparkle: true, sidebar: true, print: true, news: true, lab: true,
-  'more-vertical': true, plus: true, history: true, stop: true,
+  'more-vertical': true, plus: true, history: true, stop: true, bell: true,
 }
 const ICON_NAMES = Object.keys(ALL) as IconName[]
 
 describe('Icon', () => {
-  it('has the 34 icons of the set', () => {
-    expect(ICON_NAMES).toHaveLength(34)
+  it('has the 35 icons of the set', () => {
+    expect(ICON_NAMES).toHaveLength(35)
   })
 
   it.each(ICON_NAMES)('draws "%s" as a 1.5 px currentColor line icon on a 24 px grid', (name) => {

@@ -270,6 +270,16 @@ export interface AreaAgentSettings {
   tools: string[] | null
 }
 
+/** One in-app notification; the text is built on the client from `kind` and `params`. */
+export interface AppNotification {
+  id: string
+  kind: string
+  params: Record<string, unknown>
+  link: string | null
+  created_at: string
+  read_at: string | null
+}
+
 /** One reference link of a roadmap node, synced from roadmap.sh. */
 export interface ResourceItem {
   url: string
@@ -812,6 +822,11 @@ export const api = {
   search: (q: string) => request<SearchResult>(`/api/search?q=${encodeURIComponent(q)}`),
   roadmap: (domain: string) => request<Roadmap>(`/api/domains/${domain}/roadmap`),
   counts: (domain: string) => request<NodeCounts>(`/api/domains/${domain}/counts`),
+  notifications: (before?: string) =>
+    request<AppNotification[]>(`/api/notifications${before ? `?before=${encodeURIComponent(before)}` : ''}`),
+  unreadCount: () => request<{ count: number }>('/api/notifications/unread-count'),
+  markNotificationRead: (id: string) => request<void>(`/api/notifications/${id}/read`, { method: 'POST' }),
+  markAllNotificationsRead: () => request<void>('/api/notifications/read-all', { method: 'POST' }),
   fields: () => request<LearningField[]>('/api/fields'),
   createField: (title: string) => request<LearningField>('/api/fields', json('POST', { title })),
   updateField: (id: string, change: { title?: string; order?: number; published?: boolean }) =>
@@ -1068,6 +1083,8 @@ export const queryKeys = {
   health: ['health'] as const,
   domains: ['domains'] as const,
   fields: ['fields'] as const,
+  notifications: ['notifications'] as const,
+  unreadCount: ['notifications', 'unread-count'] as const,
   search: (q: string) => ['search', q] as const,
   roadmap: (domain: string) => ['roadmap', domain] as const,
   counts: (domain: string) => ['counts', domain] as const,

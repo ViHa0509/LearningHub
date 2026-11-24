@@ -27,6 +27,7 @@ from app.auth.oauth import pkce_challenge
 from app.config import Settings
 from app.db import KhConnection
 from app.kh.http import HttpFn, HttpReply, HttpRequest, KhNetworkError, urllib_http
+from app.notifications import forget
 
 log = logging.getLogger(__name__)
 
@@ -427,6 +428,8 @@ class KhService:
                 )
             )
             changed = result.rowcount if isinstance(result, CursorResult) else 0
+            if changed:
+                forget(db, user_id, "kh-reconnect")  # the next expiry may notify again
             db.commit()
         if not changed:  # cancelled meanwhile: do not keep the sign-in
             self.revoke(refresh)

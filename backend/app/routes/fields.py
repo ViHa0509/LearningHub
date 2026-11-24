@@ -7,6 +7,7 @@ and never changes, so notes keep their topic.
 """
 
 import uuid
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -19,6 +20,7 @@ from app.auth.current import ADMIN_ONLY, CurrentUser
 from app.db import LearningArea, LearningField, LearningTopic, User, get_session
 from app.learning.catalog import UserCatalog, build_domain, visible_fields
 from app.learning.topics import MAX_TOPICS, clean_topics
+from app.notifications import notify
 from app.practice.images import image_keys_of_areas, image_keys_of_field, release_images
 from app.roadmaps import KEBAB, RoadmapCatalog
 from app.routes.domains import IT_FIELD_TITLE, domain_summary, linked_nodes, roadmap_out
@@ -180,6 +182,21 @@ def create_field(
     return _field_out(field, user, [])
 
 
+def _notify_published(session: Session, field: LearningField) -> None:
+    """Every member hears of a newly published field; one per field and day, so publishing
+    again the same day adds none. There is no per-field page: the link is the home page."""
+    day = datetime.now(UTC).date().isoformat()
+    for member_id in session.scalars(select(User.id).where(User.role != "admin")):
+        notify(
+            session,
+            member_id,
+            "field_published",
+            {"title": field.title},
+            "#/",
+            f"field:{field.id}:{day}",
+        )
+
+
 @router.patch("/api/fields/{field_id}", response_model=FieldOut, dependencies=guarded)
 def update_field(
     field_id: str,
@@ -197,6 +214,8 @@ def update_field(
     if "order" in given and payload.order is not None:
         field.position = payload.order
     if "published" in given and payload.published is not None:
+        if payload.published and not field.published:
+            _notify_published(session, field)
         field.published = payload.published
     session.commit()
     return _field_out(field, user, _areas_of(catalog, session, user, field))

@@ -13,15 +13,17 @@ shared mode takes one count of the user's daily limit before any model is built.
 """
 
 import logging
+import math
 import time
 import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from datetime import time as dtime
-from typing import Literal, TypeVar
+from typing import Any, Literal, TypeVar
 
 from sqlalchemy import select, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.agent.llm.errors import ProviderError
@@ -34,11 +36,17 @@ from app.agent.results import AgentResult
 from app.agent.secrets import SecretBox, SecretUnreadable
 from app.agent.tools import AgentTools
 from app.db import AgentProvider, AgentSetting, AIProvider, SharedUsage, User
+from app.notifications import notify
 
 T = TypeVar("T")
 
 EffectiveReason = Literal["override", "primary", "assistant", "default", "shared", "none"]
 SharedMode = Literal["own", "shared", "none"]
+
+# Categories that always notify the user (the key, the quota or the rate limit); a recoverable
+# error notifies when the fallback takes over. ProviderError has no separate quota category:
+# a quota answer is classified rate_limited.
+PROBLEMS = frozenset({"auth_failed", "rate_limited"})
 
 # Agents without an assignment of their own follow this one (the chat panel's agent).
 DEFAULT_AGENT = "assistant"
@@ -260,10 +268,25 @@ def count_shared(session: Session, user_id: uuid.UUID, limit: int, day: date) ->
     return int(runs) if runs is not None else None
 
 
+def _notify_limit(session: Session, user_id: uuid.UUID, runs: int, limit: int, day: date) -> None:
+    """One notice at 80% of the limit and one when it is reached, each at most once a day."""
+    if runs == limit:
+        key = "limit100"
+    elif runs == math.ceil(0.8 * limit):
+        key = "limit80"
+    else:
+        return
+    params = {"used": runs, "limit": limit, "resets_at": resets_at(day).isoformat()}
+    notify(session, user_id, "shared_limit", params, "#/settings", f"{key}:{day.isoformat()}")
+
+
 def take_shared_count(session: Session, user_id: uuid.UUID, limit: int) -> None:
     """Count one shared request (committed at once, so a later failure still counts), or
     ResolveError 429 over the limit. Only the user id is logged, never request text."""
-    runs = count_shared(session, user_id, limit, utc_today())
+    day = utc_today()
+    runs = count_shared(session, user_id, limit, day)
+    if runs is not None:
+        _notify_limit(session, user_id, runs, limit, day)
     session.commit()
     if runs is None:
         LOG.log(logging.INFO, "shared limit", extra={"user_id": str(user_id)})
@@ -333,6 +356,18 @@ class AgentModel:
         self.counted = False
         # The Internet search switch that applies to this request.
         self.web_search = False
+        # Called with (row, category, fallback_follows) when a provider of the user failed.
+        self.on_problem: Callable[[AIProvider, str, bool], None] | None = None
+
+    def _problem(self, row: AIProvider, exc: ProviderError, fallback: bool) -> None:
+        """Tell the user's provider problem: a key, quota or rate limit error, or a fallback
+        taking over. Not in shared mode: those rows are the admin's, the member cannot act."""
+        if (
+            self.on_problem is not None
+            and not self.shared
+            and (fallback or exc.category in PROBLEMS)
+        ):
+            self.on_problem(row, exc.category, fallback)
 
     def count(self, session: Session, user_id: uuid.UUID, limit: int) -> None:
         """Take the daily count when the request runs on shared rows (ResolveError 429)."""
@@ -397,6 +432,7 @@ class AgentModel:
             try:
                 return self._call(self.primary, action)
             except ProviderError as exc:
+                self._problem(self.primary.row, exc, exc.recoverable and self.fallback is not None)
                 if not exc.recoverable or self.fallback is None:
                     raise ProviderError(
                         f"{describe(self.primary.row)}: {exc.category}: {exc}", exc.category
@@ -418,6 +454,8 @@ class AgentModel:
         try:
             return self._call(self.current, action)
         except ProviderError as exc:
+            if self.current is not self.primary:
+                self._problem(self.current.row, exc, False)
             first = self._primary_error
             primary_part = (
                 f"{describe(self.primary.row)} failed: {first.category} ({first}); "
@@ -479,6 +517,38 @@ class AgentModel:
         return self._build(self.current).list_models()
 
 
+def problem_reporter(
+    session: Session, user_id: uuid.UUID
+) -> Callable[[AIProvider, str, bool], None]:
+    """Stores a provider problem in its own short transaction: the request that met the error
+    often rolls back, and the notice must stay. Never the provider's own message."""
+    bind = session.get_bind()
+
+    def report(row: AIProvider, category: str, fallback: bool) -> None:
+        params: dict[str, Any] = {
+            "provider_id": str(row.id),
+            "name": row.name,
+            "category": category,
+            "fallback": fallback,
+        }
+        day = utc_today().isoformat()
+        try:
+            with Session(bind) as own:
+                notify(
+                    own,
+                    user_id,
+                    "provider_problem",
+                    params,
+                    f"#/settings/providers/{row.id}",
+                    f"provider:{row.id}:{day}",
+                )
+                own.commit()
+        except SQLAlchemyError:
+            LOG.warning("provider notification not stored", extra={"user_id": str(user_id)})
+
+    return report
+
+
 def resolve_chain(
     session: Session,
     user_id: uuid.UUID,
@@ -505,6 +575,7 @@ def resolve_chain(
             raise ResolveError(409, f"{row.name} is switched off in Settings")
         model = AgentModel(agent_id, row, None, box, factory)
         model.web_search = web_search_enabled(session, user_id, agent_id)
+        model.on_problem = problem_reporter(session, user_id)
         return model
     chosen, _reason = effective(session, user_id, agent_id)
     if chosen is None:
@@ -514,6 +585,7 @@ def resolve_chain(
         model = AgentModel(agent_id, setup.primary, setup.fallback, box, factory)
         model.shared = True
         model.web_search = setup.web_search
+        model.on_problem = problem_reporter(session, user_id)
         return model
     fallback = own_or_inherited(session, user_id, agent_id)[0].get("fallback")
     if fallback is not None and (
@@ -522,4 +594,5 @@ def resolve_chain(
         fallback = None
     model = AgentModel(agent_id, chosen, fallback, box, factory)
     model.web_search = web_search_enabled(session, user_id, agent_id)
+    model.on_problem = problem_reporter(session, user_id)
     return model

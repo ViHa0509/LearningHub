@@ -528,6 +528,57 @@ test.describe('phone only', () => {
     expect(send.height, 'Send button height').toBeGreaterThanOrEqual(40)
   })
 
+  test('Notification bell on a phone: the open list fits the 390 px screen, items are touch sized and one opens its page', async ({ page, request, playwright }) => {
+    // A member joining gives the admin an unread notice.
+    await request.post(`${API}/api/notifications/read-all`, { headers: H })
+    const email = `responsive-bell-${RUN}@example.test`
+    const visitor = await playwright.request.newContext({ baseURL: APP, storageState: SIGNED_OUT })
+    try {
+      const signup = await visitor.post('/api/auth/signup', {
+        headers: H,
+        data: { email, password: `${RUN}-bell-pw-1`, display_name: `Responsive bell ${RUN}` },
+      })
+      expect(signup.status(), await signup.text()).toBe(201)
+      await page.goto('/')
+      const bell = page.getByRole('button', { name: 'Notifications' })
+      await expect(bell).toBeVisible()
+      expect((await box(bell)).height, 'bell height').toBeGreaterThanOrEqual(40)
+      await expect(bell).toHaveAccessibleDescription('1')
+      await bell.tap()
+      const list = page.getByRole('dialog', { name: 'Notification list' })
+      await expect(list).toBeVisible()
+      const item = list.getByRole('button', { name: `Unread: New member: Responsive bell ${RUN} (${email}) joined` })
+      await expect(item).toBeVisible()
+      const vp = page.viewportSize()!
+      const b = await box(list)
+      expect(b.x, 'list left edge').toBeGreaterThanOrEqual(0)
+      expect(b.x + b.width, 'list right edge').toBeLessThanOrEqual(vp.width)
+      expect((await box(item)).height, 'item height').toBeGreaterThanOrEqual(40)
+      expect((await overflow(page)).html).toBeLessThanOrEqual(0)
+      await shotBoth(page, 'notifications-list')
+      await item.tap()
+      await expect(page).toHaveURL(/#\/settings\/users$/)
+      await expect(bell).toHaveAccessibleDescription('')
+    } finally {
+      const users = (await (await request.get(`${API}/api/admin/users`)).json()) as { id: string; email: string }[]
+      for (const u of users.filter((x) => x.email === email)) {
+        await request.delete(`${API}/api/admin/users/${u.id}`, { headers: H, data: { confirm_email: email } })
+      }
+      await visitor.dispose()
+    }
+  })
+
+  test('Phone top bar: A2UI Lab moves from the top bar into the avatar menu and opens the lab', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.getByRole('heading', { name: 'What do you want to learn?' })).toBeVisible()
+    await expect(page.getByRole('banner').getByRole('link', { name: 'A2UI Lab' })).toHaveCount(0)
+    expect((await overflow(page)).html).toBeLessThanOrEqual(0)
+    await page.getByRole('button', { name: /^Account menu/ }).tap()
+    await page.getByRole('menu', { name: 'Account' }).getByRole('menuitem', { name: 'A2UI Lab' }).tap()
+    await expect(page).toHaveURL(/#\/a2ui-lab$/)
+    await expect(page.getByRole('heading', { name: 'A2UI Lab' })).toBeVisible({ timeout: 15_000 })
+  })
+
   test('Compact top bar: at 360 px every control is inside the viewport on one row', async ({ page }) => {
     await page.setViewportSize({ width: 360, height: 800 })
     await page.goto('/')

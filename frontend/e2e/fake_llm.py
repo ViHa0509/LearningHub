@@ -424,6 +424,25 @@ def _learn(payload: dict) -> tuple[dict | None, str | None]:
     return call, None
 
 
+LESSON_RE = re.compile(r"\[\[lesson:([a-z0-9/-]+)\]\]")
+
+
+def _write_lesson(payload: dict) -> tuple[dict | None, str | None]:
+    """[[lesson:<domain/node>]] in the last user message (notifications e2e): one write_lesson call
+    (only when the tool is offered), then "LESSON written" or "LESSON refused"."""
+    names = {(t.get("function") or {}).get("name") for t in payload.get("tools") or []}
+    messages = payload.get("messages") or []
+    last_user = max((i for i, m in enumerate(messages) if m.get("role") == "user"), default=-1)
+    found = LESSON_RE.search(_text(messages[last_user].get("content"))) if last_user >= 0 else None
+    if not found or "write_lesson" not in names:
+        return None, None
+    results = [_text(m.get("content")) for m in messages[last_user + 1 :] if m.get("role") == "tool"]
+    if results:
+        return None, "LESSON written" if '"saved": true' in results[-1] else "LESSON refused"
+    arguments = json.dumps({"node_id": found.group(1), "markdown": "## Overview\n\nA lesson written by the fake model.\n"})
+    return {"id": "call_lesson", "type": "function", "function": {"name": "write_lesson", "arguments": arguments}}, None
+
+
 KH_RE = re.compile(r"\[\[kh:([^\]|]+)(?:\|([^\]]+))?\]\]")
 
 
@@ -607,6 +626,7 @@ async def chat_completions(payload: dict) -> JSONResponse:
     learn_call, learn_text = _learn(payload)
     cut_call, cut_text, cut = _cut(payload)
     kh_call, kh_text = _kh(payload)
+    lesson_call, lesson_text = _write_lesson(payload)
     ui_call, ui_text = _a2ui(payload)
     slow_call, slow_text = await _slow(payload)
     if slow_call is not None:
@@ -620,6 +640,12 @@ async def chat_completions(payload: dict) -> JSONResponse:
         finish = "tool_calls"
     elif ui_text is not None:
         message = {"role": "assistant", "content": ui_text}
+        finish = "stop"
+    elif lesson_call is not None:
+        message = {"role": "assistant", "content": None, "tool_calls": [lesson_call]}
+        finish = "tool_calls"
+    elif lesson_text is not None:
+        message = {"role": "assistant", "content": lesson_text}
         finish = "stop"
     elif kh_call is not None:
         message = {"role": "assistant", "content": None, "tool_calls": [kh_call]}

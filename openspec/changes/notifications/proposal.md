@@ -13,9 +13,9 @@ Things happen in the app that the user does not see unless they look in the righ
   | 1 | admin | an account is created by open sign-up or an accepted invitation | "New member: Lan (lan@example.com) joined" | Settings > Users |
   | 2 | user | the agent wrote or replaced a lesson (lesson writer or the assistant's write tool) | "Lesson ready: backend/graphql" | the lesson |
   | 3 | member | 80% of the shared daily limit used, and again when the limit is reached (once each per day; never for the admin) | "You used 16 of 20 shared requests today; resets 07:00" | Settings > AI providers |
-  | 4 | user | the primary provider failed and the fallback answered, or a provider failed with an invalid key or quota (once per provider per day) | "Provider 'Work Claude' failed (invalid key); the fallback answered" | the provider page |
+  | 4 | user | one of the user's own providers failed with an invalid key or a rate limit, or the fallback answered because the primary failed (once per provider per day; not for the shared provider) | "Provider 'Work Claude' failed (invalid key); the fallback answered" | the provider page |
   | 5 | user | the Knowledge Hub connection needs to be connected again | "Knowledge Hub needs reconnecting" | Settings > Agents |
-  | 6 | member | the admin published a field | "New field published: Finance" | the home page on that field |
+  | 6 | member | the admin published a field | "New field published: Finance" | the home page (the field shows in its tabs) |
   | 7 | user | a sign-in to the account from a device and browser not seen before | "New sign-in: Edge on Windows, 1.2.3.4" | Profile > Security (Settings > Account until the Profile page ships) |
   | 8 | user | a backup was restored into the account (restore or a sync upload) | "Data restored from a backup: 120 notes, 14 lessons" | the home page |
 

@@ -24,6 +24,7 @@ from app.db import Lesson, NodeResource, Note
 from app.kh.service import KhReconnect, KhSearchError, KhSearchFn, KhUnreachable
 from app.learning.topics import clean_topics
 from app.notes_page import build_note_page
+from app.notifications import notify
 from app.resources.fetch import Fetched, FetchError, fetch_text
 from app.resources.store import node_resources
 from app.roadmaps import RoadmapCatalog
@@ -535,6 +536,14 @@ class AgentTools:
         else:
             lesson.body = markdown
             lesson.source = "agent"
+        node = self._catalog.node(node_id)
+        notify(
+            self._session,
+            self._owner_id(),
+            "lesson_ready",
+            {"node": node_id, "title": node.title if node else node_id},
+            f"#/lesson/{node_id}",
+        )
         self._session.commit()
         return _ok({"node_id": node_id, "saved": True}, f"Wrote lesson {node_id}", changed=node_id)
 
@@ -603,6 +612,15 @@ class AgentTools:
         try:
             answer = search(query, project)
         except KhReconnect:
+            notify(
+                self._session,
+                self._owner_id(),
+                "kh_reconnect",
+                {},
+                "#/settings/agents",
+                "kh-reconnect",
+            )
+            self._session.commit()
             return _error(
                 "the user's Knowledge Hub sign-in ended; the user must connect to Knowledge Hub "
                 "again in Settings -> Agents"
