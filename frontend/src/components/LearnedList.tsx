@@ -50,6 +50,8 @@ export function LearnedList({
   const [drag, setDrag] = useState<Drag | null>(null)
   const [archivedOpen, setArchivedOpen] = useState(false)
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
+  const [renamingCat, setRenamingCat] = useState<{ from: string; draft: string } | null>(null)
+  const [grouping, setGrouping] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const triggers = useRef(new Map<string, HTMLButtonElement>())
   const undoTimer = useRef<number | undefined>(undefined)
@@ -173,6 +175,19 @@ export function LearnedList({
     focusTrigger(note.id)
   }
 
+  const groupWithAi = async () => {
+    setGrouping(true)
+    await run(() => api.categorize(), 'Grouping failed')
+    setGrouping(false)
+  }
+
+  const saveCategory = async () => {
+    if (!renamingCat) return
+    const { from, draft } = renamingCat
+    setRenamingCat(null)
+    await run(() => api.renameCategory(from, draft.trim()), 'Rename failed')
+  }
+
   const saveMove = async () => {
     if (!moving) return
     const { note, target } = moving
@@ -288,6 +303,10 @@ export function LearnedList({
   }
 
   const grouped = groupNotes(notes, roadmaps, filter, { allTopics: drag !== null })
+
+  const hasCategories = grouped.unsorted.some((g) => g.category !== null)
+  const draftName = renamingCat?.draft.trim() ?? ''
+  const canSaveCategory = draftName !== '' && draftName.length <= 40 && draftName !== renamingCat?.from
 
   const item = (note: Note) => {
     const highlighted = note.id === selectedNoteId || (!!selectedNodeId && note.node_id === selectedNodeId)
@@ -423,8 +442,72 @@ export function LearnedList({
           className={drag?.over === UNSORTED ? 'domain-group drop-target' : 'domain-group'}
           {...dropProps(UNSORTED, 'Unsorted')}
         >
-          <h3>Unsorted</h3>
-          {grouped.unsorted.length > 0 ? <ul>{grouped.unsorted.map(item)}</ul> : <p className="muted drop-hint">Drop here</p>}
+          <div className="group-head">
+            <h3>Unsorted</h3>
+            <button
+              type="button"
+              disabled={grouping}
+              title="Sends the titles and the start of each unsorted note to the Note sorter agent. Running it again regroups every unsorted note, including groups you renamed."
+              onClick={() => void groupWithAi()}
+            >
+              {grouping ? 'Grouping…' : 'Group with AI'}
+            </button>
+          </div>
+          {grouped.unsorted.length === 0 && <p className="muted drop-hint">Drop here</p>}
+          {grouped.unsorted.length > 0 && !hasCategories && <ul>{grouped.unsorted[0].notes.map(item)}</ul>}
+          {hasCategories &&
+            grouped.unsorted.map(({ category, notes: groupNotes }) => {
+              const name = category ?? 'Other'
+              return (
+                <div key={name} className="node-group" role="group" aria-label={`Unsorted > ${name}`}>
+                  {category !== null && renamingCat?.from === category ? (
+                    <form
+                      className="rename-form"
+                      aria-label={`Rename group ${category}`}
+                      onSubmit={(e) => {
+                        e.preventDefault()
+                        if (canSaveCategory) void saveCategory()
+                      }}
+                    >
+                      <input
+                        className="rename-input"
+                        aria-label="New name"
+                        autoFocus
+                        value={renamingCat.draft}
+                        onChange={(e) => setRenamingCat({ from: category, draft: e.target.value })}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Escape') {
+                            // Cancels the rename only, not the phone drawer around the list.
+                            e.stopPropagation()
+                            setRenamingCat(null)
+                          }
+                        }}
+                      />
+                      <button type="submit" className="primary" disabled={!canSaveCategory}>
+                        Save
+                      </button>
+                      <button type="button" onClick={() => setRenamingCat(null)}>
+                        Cancel
+                      </button>
+                    </form>
+                  ) : (
+                    <div className="group-head">
+                      <h4>{name}</h4>
+                      {category !== null && (
+                        <button
+                          type="button"
+                          aria-label={`Rename group ${category}`}
+                          onClick={() => setRenamingCat({ from: category, draft: category })}
+                        >
+                          Rename
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  <ul>{groupNotes.map(item)}</ul>
+                </div>
+              )
+            })}
         </section>
       )}
       {grouped.domains.length === 0 && grouped.unsorted.length === 0 && !drag && (

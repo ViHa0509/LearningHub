@@ -78,6 +78,7 @@ class NoteRow(Row):
     storage_key: str = Field(pattern=BLOB_KEY.pattern)
     node_id: str | None = None
     source: str = "import"
+    category: str | None = Field(default=None, max_length=40)
     archived_at: datetime | None = None
     created_at: datetime
     updated_at: datetime

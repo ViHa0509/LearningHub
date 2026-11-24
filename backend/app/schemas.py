@@ -46,6 +46,7 @@ class NoteOut(BaseModel):
     node_id: str | None
     node_missing: bool
     source: str
+    category: str | None = None
     archived_at: datetime | None
     created_at: datetime
     updated_at: datetime

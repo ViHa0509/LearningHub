@@ -11,9 +11,16 @@ export interface DomainGroup {
   nodes: NodeGroup[]
 }
 
+/** Unsorted notes of one category (null = "Other"), newest first. */
+export interface UnsortedGroup {
+  category: string | null
+  notes: Note[]
+}
+
 export interface GroupedNotes {
   domains: DomainGroup[]
-  unsorted: Note[]
+  /** Named categories by their newest note, then Other (null) last; empty when nothing is unsorted. */
+  unsorted: UnsortedGroup[]
 }
 
 /** Nodes in roadmap order: depth-first, siblings by their order. */
@@ -52,7 +59,7 @@ const latest = (notes: Note[]) => notes.reduce((max, note) => Math.max(max, upda
 /**
  * Group notes by domain, then node; notes without a valid link are unsorted. Notes in a group are
  * newest first by `updated_at`; nodes and domains follow their most recently updated note (ties
- * keep roadmap order); Unsorted comes last, also newest first.
+ * keep roadmap order); Unsorted comes last, split by category (see `GroupedNotes`).
  */
 export function groupNotes(
   notes: Note[],
@@ -95,7 +102,15 @@ export function groupNotes(
   domains.sort(
     (a, b) => latest(b.nodes.flatMap((n) => n.notes)) - latest(a.nodes.flatMap((n) => n.notes)),
   )
-  return { domains, unsorted: newestFirst(unsorted) }
+  const byCategory = new Map<string | null, Note[]>()
+  for (const note of unsorted) {
+    const list = byCategory.get(note.category) ?? []
+    list.push(note)
+    byCategory.set(note.category, list)
+  }
+  const groups = [...byCategory].map(([category, list]) => ({ category, notes: newestFirst(list) }))
+  groups.sort((a, b) => (a.category === null ? 1 : 0) - (b.category === null ? 1 : 0) || latest(b.notes) - latest(a.notes))
+  return { domains, unsorted: groups }
 }
 
 export function domainOf(nodeId: string): string {

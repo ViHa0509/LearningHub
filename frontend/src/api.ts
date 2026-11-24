@@ -64,6 +64,8 @@ export interface Note {
   size_bytes: number
   node_id: string | null
   node_missing: boolean
+  /** The group an unsorted note sits in (set by the note sorter or by the assistant). */
+  category: string | null
   /** 'agent' for a note the assistant saved, 'import' for an uploaded page. */
   source: 'import' | 'agent'
   archived_at: string | null
@@ -889,6 +891,10 @@ export const api = {
     request<Note>(`/api/notes/${id}`, json('PATCH', { node_id: nodeId })),
   setArchived: (id: string, archived: boolean) =>
     request<Note>(`/api/notes/${id}`, json('PATCH', { archived })),
+  /** Groups the unsorted notes with the Note sorter agent. */
+  categorize: () => request<{ grouped: number; groups: number }>('/api/notes/categorize', json('POST', {})),
+  renameCategory: (from: string, to: string) =>
+    request<{ renamed: number }>('/api/notes/categories/rename', json('POST', { from, to })),
   remove: (id: string) => request<void>(`/api/notes/${id}`, { method: 'DELETE' }),
   originalUrl: (id: string) => `/api/notes/${id}/original`,
   /** The note's page in its own isolated tab, which opens the print dialog (Save as PDF). */

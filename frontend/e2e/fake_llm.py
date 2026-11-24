@@ -6,7 +6,10 @@ with an OpenAI-style error body, fake-slow answers after 5 seconds.
 fake-ok answers "OK from fake", except when the last user message contains a trigger:
 [[markdown]] answers with a Markdown table, a code block and an HTML tag; [[history]] answers
 with the number of user messages received and the first one; [[learn:<title>]] makes the assistant call save_learned_note and then report
-"LEARN saved <title>" or "LEARN refused <title>"; [[echo-system]] <marker> answers
+"LEARN saved <title>" or "LEARN refused <title>" ([[learn:<title>|<category>]] also passes a category);
+the note sorter (system prompt starts "You sort notes into groups") answers JSON groups by a keyword in each
+note title, case-insensitive: "kube" -> Kubernetes, "career" -> Career, "sql" -> Databases, any other
+title is left out; [[echo-system]] <marker> answers
 "SYSTEM has=yes|no" by whether the system prompt holds the marker, [[echo-tools]] answers "TOOLS a,b,c"
 with the tool names offered to the model; [[echo]] answers
 with one line per fact about what the model received (system prompt and last user message),
@@ -336,11 +339,29 @@ def _text(content: object) -> str:
     return ""
 
 
+SORT_KEYWORDS = (("kube", "Kubernetes"), ("career", "Career"), ("sql", "Databases"))
+
+
+def _sort_answer(prompt: str) -> str:
+    """The note sorter: JSON groups from the numbered notes ("N." then the wrapper, then
+    "Title: <title>") of the prompt."""
+    groups: dict[str, list[int]] = {}
+    note = r"^(\d+)\.\n<untrusted_note_content>\nTitle: (.*)$"
+    for number, title in re.findall(note, prompt, re.MULTILINE):
+        for keyword, name in SORT_KEYWORDS:
+            if keyword in title.lower():
+                groups.setdefault(name, []).append(int(number))
+                break
+    return json.dumps({"groups": [{"name": n, "notes": v} for n, v in groups.items()]})
+
+
 def _answer(payload: dict) -> str:
     messages = payload.get("messages") or []
     system = "\n".join(_text(m.get("content")) for m in messages if m.get("role") == "system")
     users = [_text(m.get("content")) for m in messages if m.get("role") == "user"]
     last = users[-1] if users else ""
+    if system.startswith("You sort notes into groups"):
+        return _sort_answer(last)
     if "[[markdown]]" in last:
         return MARKDOWN_ANSWER
     if "[[history]]" in last:
@@ -409,7 +430,7 @@ def _learn(payload: dict) -> tuple[dict | None, str | None]:
     found = LEARN_RE.search(_text(messages[last_user].get("content"))) if last_user >= 0 else None
     if not found or "save_learned_note" not in names:
         return None, None
-    title = found.group(1).strip()
+    title, _, category = (part.strip() for part in found.group(1).partition("|"))
     results = [_text(m.get("content")) for m in messages[last_user + 1 :] if m.get("role") == "tool"]
     if results:
         saved = '"saved": true' in results[-1]
@@ -419,7 +440,10 @@ def _learn(payload: dict) -> tuple[dict | None, str | None]:
         "## Takeaways\n\n- First point\n- Second point\n\n"
         "Raw tag: <script>alert(1)</script>\n"
     )
-    arguments = json.dumps({"title": title, "markdown": markdown})
+    args = {"title": title, "markdown": markdown}
+    if category:
+        args["category"] = category
+    arguments = json.dumps(args)
     call = {"id": "call_learn", "type": "function", "function": {"name": "save_learned_note", "arguments": arguments}}
     return call, None
 

@@ -199,6 +199,9 @@ button.icon-only { display: inline-flex; align-items: center; justify-content: c
 .node-group.drop-target, .domain-group.drop-target {
   background: var(--accent-soft); outline: 2px dashed var(--accent); outline-offset: -2px; border-radius: 6px;
 }
+.group-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
+.group-head button { padding: 2px 10px; font-size: 12px; }
+.node-group > .rename-form { margin: 2px 6px 4px; }
 .drop-hint { margin: 2px 6px 6px; font-size: 12px; }
 .undo-line { margin: 6px 0; padding: 6px 8px; border-radius: 6px; background: var(--accent-soft); }
 button.link { border: none; background: transparent; color: var(--accent); text-decoration: underline; padding: 0 2px; }
@@ -1167,6 +1170,7 @@ a.auth-provider:hover { border-color: var(--accent); color: var(--accent); }
   .top-bar .bell-button { min-height: 40px; min-width: 40px; }
   button.icon { min-height: 40px; min-width: 40px; }
   .note-select { min-height: 40px; }
+  .group-head button { min-height: 40px; }
   .note-menu [role='menuitem'], .note-menu [role='menuitemradio'] { min-height: 40px; }
   .agent-pane .plus-button { width: 40px; height: 40px; }
   .agent-pane .ghost, .agent-pane .agent-menu-button { min-height: 40px; }

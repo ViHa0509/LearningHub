@@ -1,13 +1,18 @@
+import json
 from pathlib import PurePath
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
-from sqlalchemy import delete, func, select
+from pydantic import BaseModel, Field
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
+from app.agent.agents import AGENTS
+from app.agent.messages import Message, ProviderError
+from app.agent.ratelimit import RateLimiter
+from app.agent.resolve import ResolveError, resolve_chain
 from app.auth.current import CurrentUser
 from app.config import Settings
 from app.db import Note, User, get_session
@@ -15,7 +20,7 @@ from app.extract import HTML_SUFFIXES, UndecodableError, decode_html, extract
 from app.learning.catalog import UserCatalog
 from app.lesson_pdf import PdfImportError, extract_pdf, pdf_note_html
 from app.roadmaps import RoadmapCatalog
-from app.routes.guard import require_app_header
+from app.routes.guard import box_of, factory_of, require_app_header
 from app.schemas import (
     ImportOutcome,
     ImportResult,
@@ -81,6 +86,7 @@ def note_out(note: Note, catalog: RoadmapCatalog) -> NoteOut:
         node_id=note.node_id,
         node_missing=note.node_id is not None and not catalog.has_node(note.node_id),
         source=note.source,
+        category=note.category,
         archived_at=note.archived_at,
         created_at=note.created_at,
         updated_at=note.updated_at,
@@ -183,6 +189,157 @@ def import_notes(
         )
 
     return ImportResult(results=results)
+
+
+SORT_MAX_NOTES = 200
+SORT_TEXT_CHARS = 300
+SORT_MAX_GROUPS = 12
+CATEGORY_MAX = 40
+
+
+class CategorizeOut(BaseModel):
+    grouped: int
+    groups: int
+
+
+class RenameIn(BaseModel):
+    from_: str = Field(alias="from")
+    to: str
+
+
+class RenameOut(BaseModel):
+    renamed: int
+
+
+def parse_groups(answer: str, count: int) -> dict[int, str] | None:
+    """The note sorter's JSON as {note number: category}; None when it is not the expected
+    shape. A name is kept to one spelling ignoring case; bad names and numbers are dropped."""
+    start = answer.find("{")
+    if start < 0:
+        return None
+    try:
+        data, _ = json.JSONDecoder().raw_decode(answer[start:])
+    except ValueError:
+        return None
+    groups = data.get("groups") if isinstance(data, dict) else None
+    if not isinstance(groups, list):
+        return None
+    spelling: dict[str, str] = {}
+    result: dict[int, str] = {}
+    for group in groups:
+        if not isinstance(group, dict) or not isinstance(group.get("name"), str):
+            continue
+        name = " ".join(group["name"].split())
+        numbers = group.get("notes")
+        if not name or len(name) > CATEGORY_MAX or not isinstance(numbers, list):
+            continue
+        if name.lower() not in spelling and len(spelling) >= SORT_MAX_GROUPS:
+            continue
+        name = spelling.setdefault(name.lower(), name)
+        for number in numbers:
+            if (
+                isinstance(number, int)
+                and not isinstance(number, bool)
+                and 1 <= number <= count
+                and number not in result
+            ):
+                result[number] = name
+    return result
+
+
+@router.post(
+    "/categorize", response_model=CategorizeOut, dependencies=[Depends(require_app_header)]
+)
+def categorize(
+    request: Request, catalog: UserCatalog, session: SessionDep, user: CurrentUser
+) -> CategorizeOut:
+    """Group with AI: one model call gives each unsorted note a category (or none)."""
+    agent = AGENTS["note-sorter"]
+    rows = session.scalars(
+        select(Note)
+        .where(Note.user_id == user.id, Note.archived_at.is_(None))
+        .order_by(Note.created_at.desc(), Note.id)
+    )
+    notes = [n for n in rows if n.node_id is None or not catalog.has_node(n.node_id)]
+    notes = notes[:SORT_MAX_NOTES]
+    if not notes:  # nothing to sort: no model call and nothing counted
+        return CategorizeOut(grouped=0, groups=0)
+    try:
+        chat_model = resolve_chain(
+            session, user.id, box_of(request), factory_of(request), agent.id, None
+        )
+    except ResolveError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    limiter: RateLimiter = request.app.state.rate_limiter
+    wait = limiter.acquire(str(user.id))
+    if wait is not None:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many agent requests: at most {limiter.per_minute} per minute. "
+            f"Try again in {wait} s.",
+            headers={"Retry-After": str(wait)},
+        )
+    try:
+        chat_model.count(session, user.id, request.app.state.settings.shared_daily_limit)
+    except ResolveError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    existing = sorted(
+        {c for c in session.scalars(select(Note.category).where(Note.user_id == user.id)) if c}
+    )
+    lines = [
+        "Existing categories: " + (", ".join(existing) if existing else "(none)"),
+        "",
+        "Notes:",
+    ]
+    for number, note in enumerate(notes, 1):
+        text = " ".join(note.body_text[: SORT_TEXT_CHARS * 2].split())[:SORT_TEXT_CHARS]
+        # The title comes from the imported page too, so it is inside the wrapper as well.
+        title = " ".join(note.title.split())
+        body = f"Title: {title}\n{text}".replace("</untrusted_note_content>", "")
+        lines.append(f"{number}.\n<untrusted_note_content>\n{body}\n</untrusted_note_content>")
+    try:
+        turn = chat_model.complete(
+            agent.instructions, [Message(role="user", text="\n".join(lines))], []
+        )
+    except ProviderError as exc:
+        session.rollback()
+        if chat_model.shared:
+            row = chat_model.provider
+            detail = f"{row.name} ({row.model_name}): {exc.category}"
+            raise HTTPException(status_code=502, detail=detail) from exc
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    assigned = parse_groups(turn.text, len(notes))
+    if assigned is None:
+        raise HTTPException(
+            status_code=502, detail="The note sorter answered in an unexpected format"
+        )
+    # A name matching an existing category (ignoring case) takes its stored spelling.
+    known = {c.lower(): c for c in existing}
+    for number, note in enumerate(notes, 1):
+        name = assigned.get(number)
+        note.category = known.get(name.lower(), name) if name else None
+    session.commit()
+    return CategorizeOut(grouped=len(assigned), groups=len(set(assigned.values())))
+
+
+@router.post(
+    "/categories/rename", response_model=RenameOut, dependencies=[Depends(require_app_header)]
+)
+def rename_category(payload: RenameIn, session: SessionDep, user: CurrentUser) -> RenameOut:
+    new = " ".join(payload.to.split())
+    if not new or len(new) > CATEGORY_MAX:
+        raise HTTPException(
+            status_code=422, detail=f"the name must be 1 to {CATEGORY_MAX} characters"
+        )
+    result = session.execute(
+        update(Note)
+        .where(Note.user_id == user.id, Note.category == payload.from_)
+        .values(category=new)
+    )
+    if result.rowcount == 0:  # type: ignore[attr-defined]
+        raise HTTPException(status_code=404, detail="category not found")
+    session.commit()
+    return RenameOut(renamed=result.rowcount)  # type: ignore[attr-defined]
 
 
 @router.get("", response_model=list[NoteOut])

@@ -225,6 +225,7 @@ export function makeNote(title: string, nodeId: string | null = null, extra: Par
     size_bytes: 100,
     node_id: nodeId,
     node_missing: false,
+    category: null,
     source: 'import',
     archived_at: null,
     created_at: '2026-11-06T00:00:00Z',

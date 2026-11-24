@@ -574,3 +574,23 @@ def test_invalid_chat_entry_is_refused_and_changes_nothing(client: TestClient) -
         assert response.status_code == 422, response.text
         assert "chat_sessions.json" in response.json()["detail"]
         assert (snapshot(client), chat_snapshot(client)) == before
+
+
+# Change unsorted-categories: the category travels with the note.
+def test_category_round_trips_and_old_backups_restore_without_it(client: TestClient) -> None:
+    note = import_note(client, "Pod limits")
+    with client.app.state.session_factory() as db:  # type: ignore[attr-defined]
+        db.get(Note, note["id"]).category = "Kubernetes"
+        db.commit()
+    backup = download(client)
+    assert restore(client, backup).status_code == 200
+    assert client.get("/api/notes").json()[0]["category"] == "Kubernetes"
+
+    def drop_category(entries: dict[str, bytes]) -> None:
+        rows = json.loads(entries["data/notes.json"])
+        for row in rows:
+            row.pop("category", None)
+        entries["data/notes.json"] = json.dumps(rows).encode("utf-8")
+
+    assert restore(client, rewrite(backup, drop_category)).status_code == 200
+    assert client.get("/api/notes").json()[0]["category"] is None

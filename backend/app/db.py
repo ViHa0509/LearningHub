@@ -51,6 +51,8 @@ class Note(Base):
     node_id: Mapped[str | None] = mapped_column(Text, index=True)
     # "import" for an uploaded page, "agent" for a note the assistant saved.
     source: Mapped[str] = mapped_column(Text, server_default="import", default="import")
+    # Groups the note inside Unsorted; kept but not shown while the note is linked to a node.
+    category: Mapped[str | None] = mapped_column(Text, nullable=True)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

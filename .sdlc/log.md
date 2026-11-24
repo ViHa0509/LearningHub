@@ -81,3 +81,9 @@ One entry per cycle, appended by `/ai-sdlc-kit:orchestrate` (or by the main sess
 - Verdicts: qc-e2e 1 product bug (bell widened the phone top bar) fixed; qc-ui pass (cosmetics in evidence.md); verifier pass (pytest 1379, vitest 762, e2e 412)
 - Spec changes during the work: provider notices follow the real error categories (auth_failed never falls back, no quota category, none for the shared provider); published field opens the home page; new requirement "Bell on a phone" (A2UI Lab moves into the avatar menu under 640 px); new sign-in after "log out everywhere" still notifies
 - Needs human: none
+
+## 2026-11-24 unsorted-categories
+- Result: done (8/8)
+- Tasks: 1.1-1.4, 2.1, 3.1-3.3
+- Agents: 1.1 migration and review fixes (title in untrusted wrapper, no count with nothing to sort) -> main session; 1.2-1.4 -> implementer; 2.1 -> implementer; qc-e2e, qc-ui, verifier
+- Verdicts: qc-e2e 9/9 (full run: 1 known clock flake in notifications, passed alone); qc-ui pass after touch-size fix; verifier pass

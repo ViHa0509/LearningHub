@@ -34,6 +34,7 @@ from app.text_search import like_pattern, snippet
 NOTE_TEXT_LIMIT = 6000
 LESSON_LIMIT = 20_000
 NOTE_TITLE_LIMIT = 120
+CATEGORY_LIMIT = 40
 SEARCH_LIMIT = 8
 FETCHABLE_TYPES = ("official", "article")
 REFERENCE_CLOSING = "</untrusted_reference_content"
@@ -203,6 +204,12 @@ ASSISTANT_SPECS: tuple[ToolSpec, ...] = (
                     "type": "string",
                     "description": "Closest existing roadmap node, e.g. backend/apis; "
                     "left out when none fits.",
+                },
+                "category": {
+                    "type": "string",
+                    "description": "Only when no node_id is given: a short general name "
+                    "(1 to 3 words, at most 40 characters, e.g. Kubernetes, Career); reuse "
+                    "an existing name when one fits.",
                 },
             },
             "required": ["title", "markdown"],
@@ -736,8 +743,12 @@ class AgentTools:
         markdown = _text(args, "markdown")
         raw_node = args.get("node_id")
         node_id = raw_node.strip() if isinstance(raw_node, str) and raw_node.strip() else None
+        raw_category = args.get("category")
+        category = " ".join(raw_category.split()) if isinstance(raw_category, str) else ""
         if len(title) > NOTE_TITLE_LIMIT:
             return _error(f"the title is longer than {NOTE_TITLE_LIMIT} characters")
+        if len(category) > CATEGORY_LIMIT:
+            return _error(f"the category is longer than {CATEGORY_LIMIT} characters")
         if len(markdown) > LESSON_LIMIT:
             return _error(f"the write-up is longer than {LESSON_LIMIT} characters")
         if node_id is not None and not self._catalog.has_node(node_id):
@@ -766,6 +777,20 @@ class AgentTools:
                     f"{node_id} already has notes or a lesson; do not save another note, "
                     "answer from them (search_notes, read_lesson)"
                 )
+        if node_id is not None or not category:
+            category = ""
+        else:
+            # An existing category with the same name (ignoring case) keeps its spelling.
+            category = (
+                self._session.scalar(
+                    select(Note.category)
+                    .where(
+                        Note.user_id == self._user_id, func.lower(Note.category) == category.lower()
+                    )
+                    .limit(1)
+                )
+                or category
+            )
         page = build_note_page(title, markdown).encode("utf-8")
         sha = sha256_hex(page)
         if self._session.scalar(
@@ -783,13 +808,21 @@ class AgentTools:
             content_sha256=sha,
             storage_key=key,
             node_id=node_id,
+            category=category or None,
             source="agent",
         )
         self._session.add(note)
         self._session.commit()
+        where = f", category {note.category}" if note.category else ""
         return _ok(
-            {"saved": True, "id": str(note.id), "title": title, "node_id": node_id},
-            f"Saved note '{title}'" + (f" on {node_id}" if node_id else " (unsorted)"),
+            {
+                "saved": True,
+                "id": str(note.id),
+                "title": title,
+                "node_id": node_id,
+                "category": note.category,
+            },
+            f"Saved note '{title}'" + (f" on {node_id}" if node_id else " (unsorted" + where + ")"),
             changed_note=str(note.id),
         )
 
