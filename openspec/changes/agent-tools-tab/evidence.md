@@ -1,5 +1,6 @@
 # Evidence: agent-tools-tab
 
+- Push gate run 1: 3 failures in older files that listed the Settings nav items (`settings-profile.e2e.ts` x2, `members.e2e.ts`); their lists now include Tools and Connections (the spec adds them); both files 28/28 pass.
 - qc-e2e: `frontend/e2e/agent-tools-tab.e2e.ts` (7 tests) with `responsive.e2e.ts` and `kh-connector.e2e.ts`: 82 passed, 23 skipped; again after the touch-size fix: 82 passed. `kh-connector.e2e.ts` now opens the card on `#/settings/agents/connections`. Full suite: run by the push gate.
 - Full backend pytest: pass (run twice: main session and verifier).
 - qc-ui: one major fixed (Remove buttons, tool dropdown and Add were ~32 px on phone; now 40 px in the coarse-pointer block, also the settings nav items). Open minors: the Connections title-to-intro gap is larger than on Tools; disabled Save/Add are pale (disabled state); no phone screenshot below the fold (Add/Save/Cancel) or of a connected KH card.

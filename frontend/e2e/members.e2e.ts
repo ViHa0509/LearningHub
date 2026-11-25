@@ -145,7 +145,7 @@ test('the admin invites a member from Settings -> Users; the link shows with Cop
   const previous = latestOutboxToken('invite')
   await page.goto('/#/settings')
   const nav = page.getByRole('navigation', { name: 'Settings sections' })
-  await expect(nav.getByRole('link')).toHaveText(['AI providers', 'Agents', 'Users', 'Sign-in', 'Data & sync'])
+  await expect(nav.getByRole('link')).toHaveText(['AI providers', 'Agents', 'Tools', 'Connections', 'Users', 'Sign-in', 'Data & sync'])
   await nav.getByRole('link', { name: 'Users' }).click()
   await expect(page).toHaveURL(/#\/settings\/users$/)
   const usersPage = page.getByRole('region', { name: 'Users' })
@@ -286,7 +286,7 @@ test('a member sees no Users and no Sign-in in Settings, gets "Admin only" on a 
   const page = memberPage()
   await page.goto('/#/settings')
   const nav = page.getByRole('navigation', { name: 'Settings sections' })
-  await expect(nav.getByRole('link')).toHaveText(['AI providers', 'Agents', 'Data & sync'])
+  await expect(nav.getByRole('link')).toHaveText(['AI providers', 'Agents', 'Tools', 'Connections', 'Data & sync'])
   // The member's own provider list is empty (the admin's providers are not theirs).
   await expect(page.getByText('No providers yet. Add one to use the agent.')).toBeVisible()
   expect(await (await page.request.get('/api/ai-providers')).json()).toEqual([])
