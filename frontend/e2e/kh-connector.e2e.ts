@@ -148,7 +148,7 @@ function card(page: Page) {
 }
 
 async function openCard(page: Page) {
-  await page.goto('/#/settings/agents')
+  await page.goto('/#/settings/agents/connections')
   await expect(card(page)).toBeVisible()
 }
 

@@ -67,7 +67,13 @@ def test_downgrade_base_then_upgrade_head() -> None:
         }
         assert news_indexes["ix_news_items_published_at"] == ["published_at"]
         settings = {c["name"]: c for c in inspect(engine).get_columns("agent_settings")}
-        assert set(settings) == {"user_id", "agent_id", "web_search", "updated_at"}
+        assert set(settings) == {
+            "user_id",
+            "agent_id",
+            "web_search",
+            "disabled_tools",
+            "updated_at",
+        }
         assert settings["web_search"]["nullable"] is False
         assert inspect(engine).get_pk_constraint("agent_settings")["constrained_columns"] == [
             "user_id",

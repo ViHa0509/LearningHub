@@ -139,6 +139,8 @@ class AgentSetting(Base):
     user_id: Mapped[uuid.UUID] = user_fk(primary_key=True)
     agent_id: Mapped[str] = mapped_column(Text, primary_key=True)
     web_search: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # Tools the user removed from the agent; null or empty = all attached.
+    disabled_tools: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

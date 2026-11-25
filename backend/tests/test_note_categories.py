@@ -2,15 +2,18 @@
 (Note sorter agent, a saved note without a topic gets a category). No real provider is called."""
 
 import json
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi.testclient import TestClient
+from sqlalchemy import update
 
 from app.agent.agents import AGENTS
 from app.agent.llm.errors import ProviderError
 from app.agent.messages import Turn
 from app.agent.resolve import utc_today
 from app.agent.tools import ASSISTANT_SPECS
+from app.db import Note
 from tests.agent_fakes import FakeFactory
 from tests.conftest import MEMBER_EMAIL
 from tests.test_agent_chat import chat, import_note, use
@@ -31,6 +34,17 @@ def categories(client: TestClient) -> dict[str, str | None]:
 def five(client: TestClient) -> None:
     for title in ("n1", "n2", "n3", "n4", "n5"):  # n5 is the newest: number 1
         import_note(client, title, f"text of {title}")
+    # Explicit times: rows made within the same instant (or across a VM clock step) would
+    # otherwise tie or swap, and the numbers in the prompt follow created_at.
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    with client.app.state.session_factory() as db:  # type: ignore[attr-defined]
+        for i, title in enumerate(("n1", "n2", "n3", "n4", "n5")):
+            db.execute(
+                update(Note)
+                .where(Note.title == title)
+                .values(created_at=base + timedelta(minutes=i))
+            )
+        db.commit()
 
 
 # Scenario: Group with AI

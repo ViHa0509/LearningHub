@@ -16,6 +16,10 @@ export type Route =
   | { page: 'data-settings' }
   /** Settings > Agents (providers per agent, instructions and tools per area). */
   | { page: 'agents-settings' }
+  /** Settings > Agents > Tools (attach or remove each agent's tools). */
+  | { page: 'agent-tools-settings' }
+  /** Settings > Agents > Connections (Knowledge Hub). */
+  | { page: 'connections-settings' }
   /** The user's own Profile (`#/profile`, `#/profile/security`, `#/profile/preferences`). */
   | { page: 'profile'; section: ProfileSection }
   | { page: 'news' }
@@ -42,6 +46,12 @@ export function parseRoute(hash: string): Route {
   if (parts[0] === 'settings' && parts[1] === 'users' && parts.length === 2) return { page: 'users-settings' }
   if (parts[0] === 'settings' && parts[1] === 'data' && parts.length === 2) return { page: 'data-settings' }
   if (parts[0] === 'settings' && parts[1] === 'agents' && parts.length === 2) return { page: 'agents-settings' }
+  if (parts[0] === 'settings' && parts[1] === 'agents' && parts[2] === 'tools' && parts.length === 3) {
+    return { page: 'agent-tools-settings' }
+  }
+  if (parts[0] === 'settings' && parts[1] === 'agents' && parts[2] === 'connections' && parts.length === 3) {
+    return { page: 'connections-settings' }
+  }
   // Account moved to Profile.
   if (parts[0] === 'settings' && parts[1] === 'account' && parts.length === 2) return { page: 'profile', section: 'general' }
   if (parts[0] === 'profile' && parts.length === 1) return { page: 'profile', section: 'general' }
@@ -78,6 +88,10 @@ export function routeHash(route: Route): string {
       return '#/settings/data'
     case 'agents-settings':
       return '#/settings/agents'
+    case 'agent-tools-settings':
+      return '#/settings/agents/tools'
+    case 'connections-settings':
+      return '#/settings/agents/connections'
     case 'profile':
       return route.section === 'general' ? '#/profile' : `#/profile/${route.section}`
     case 'news':
@@ -102,7 +116,9 @@ export const isSettings = (route: Route) =>
   route.page === 'sign-in-settings' ||
   route.page === 'users-settings' ||
   route.page === 'data-settings' ||
-  route.page === 'agents-settings'
+  route.page === 'agents-settings' ||
+  route.page === 'agent-tools-settings' ||
+  route.page === 'connections-settings'
 
 function remember(route: Route): Route {
   if (!isSettings(route) && route.page !== 'profile') outsideSettings = route

@@ -1,11 +1,13 @@
 import { useIsAdmin } from '../lib/auth'
 import { backFromSettings, routeHash, type Route } from '../lib/route'
 
-type SettingsTab = 'providers' | 'agents' | 'users' | 'sign-in' | 'data'
+type SettingsTab = 'providers' | 'agents' | 'tools' | 'connections' | 'users' | 'sign-in' | 'data'
 
-const TABS: { id: SettingsTab; label: string; href: string; adminOnly?: boolean }[] = [
+const TABS: { id: SettingsTab; label: string; href: string; adminOnly?: boolean; child?: boolean }[] = [
   { id: 'providers', label: 'AI providers', href: '#/settings' },
   { id: 'agents', label: 'Agents', href: '#/settings/agents' },
+  { id: 'tools', label: 'Tools', href: '#/settings/agents/tools', child: true },
+  { id: 'connections', label: 'Connections', href: '#/settings/agents/connections', child: true },
   { id: 'users', label: 'Users', href: '#/settings/users', adminOnly: true },
   { id: 'sign-in', label: 'Sign-in', href: '#/settings/sign-in', adminOnly: true },
   { id: 'data', label: 'Data & sync', href: '#/settings/data' },
@@ -15,6 +17,8 @@ const CURRENT: Partial<Record<Route['page'], SettingsTab>> = {
   settings: 'providers',
   provider: 'providers',
   'agents-settings': 'agents',
+  'agent-tools-settings': 'tools',
+  'connections-settings': 'connections',
   'users-settings': 'users',
   'sign-in-settings': 'sign-in',
   'data-settings': 'data',
@@ -32,7 +36,7 @@ export function SettingsNav({ route, onPick }: { route: Route; onPick?: () => vo
       <nav className="side-nav" aria-label="Settings sections">
         <ul>
           {TABS.filter((tab) => admin || !tab.adminOnly).map((tab) => (
-            <li key={tab.id}>
+            <li key={tab.id} className={tab.child ? 'side-nav-child' : undefined}>
               <a href={tab.href} onClick={onPick} aria-current={tab.id === current ? 'page' : undefined}>
                 {tab.label}
               </a>

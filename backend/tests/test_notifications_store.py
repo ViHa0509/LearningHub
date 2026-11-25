@@ -84,7 +84,14 @@ def test_a_dedupe_key_makes_it_once(client: TestClient) -> None:
     admin = user_id_of(client.app)
     with _db(client) as db:
         for _ in range(3):
-            notify(db, admin, "kh_reconnect", {}, "#/settings/agents", dedupe_key="kh-reconnect")
+            notify(
+                db,
+                admin,
+                "kh_reconnect",
+                {},
+                "#/settings/agents/connections",
+                dedupe_key="kh-reconnect",
+            )
             db.commit()
         assert _count(db, admin) == 1
         notify(db, admin, "lesson_ready", {"topic": "a/b"}, "#/lesson/a/b")
@@ -92,7 +99,14 @@ def test_a_dedupe_key_makes_it_once(client: TestClient) -> None:
         assert _count(db, admin) == 2
         forget(db, admin, "kh-reconnect")
         db.commit()
-        notify(db, admin, "kh_reconnect", {}, "#/settings/agents", dedupe_key="kh-reconnect")
+        notify(
+            db,
+            admin,
+            "kh_reconnect",
+            {},
+            "#/settings/agents/connections",
+            dedupe_key="kh-reconnect",
+        )
         db.commit()
         assert _count(db, admin) == 2
 

@@ -1,4 +1,4 @@
-/** Spec: kh-connector - the Knowledge Hub card on Settings -> Agents (not configured, connect, waiting, cancel, refused, expired, disconnect). */
+/** Spec: kh-connector - the Knowledge Hub card on Settings -> Agents -> Connections (not configured, connect, waiting, cancel, refused, expired, disconnect). */
 import { act, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { installFakeApi } from '../test/fakeApi'
@@ -25,7 +25,7 @@ describe('Knowledge Hub card', () => {
   it('says the connector is not set up and shows no Connect button', async () => {
     const state = installFakeApi()
     state.kh.available = false
-    await renderAppReady('#/settings/agents')
+    await renderAppReady('#/settings/agents/connections')
     const card = await khCard()
     expect(await card.findByText(/not set up on this server/)).toBeInTheDocument()
     expect(card.queryByRole('button', { name: 'Connect' })).toBeNull()
@@ -34,7 +34,7 @@ describe('Knowledge Hub card', () => {
   // Scenario: Waiting
   it('shows the code, a new-tab link and that it is waiting after Connect', async () => {
     const state = installFakeApi()
-    const { user } = await renderAppReady('#/settings/agents')
+    const { user } = await renderAppReady('#/settings/agents/connections')
     const card = await khCard()
     await user.click(await card.findByRole('button', { name: 'Connect' }))
     expect(await card.findByLabelText('Sign-in code')).toHaveTextContent('ABCD-EFGH')
@@ -56,7 +56,7 @@ describe('Knowledge Hub card', () => {
       interval: 5,
       expires_at: '2030-01-01T00:10:00Z',
     }
-    await renderAppReady('#/settings/agents')
+    await renderAppReady('#/settings/agents/connections')
     const card = await khCard()
     expect(await card.findByLabelText('Sign-in code')).toHaveTextContent('WXYZ-1234')
     expect(card.getByRole('link', { name: 'Open sign-in page' })).toHaveAttribute(
@@ -70,7 +70,7 @@ describe('Knowledge Hub card', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const state = installFakeApi()
     state.kh.interval = 3
-    const { user } = await renderAppReady('#/settings/agents')
+    const { user } = await renderAppReady('#/settings/agents/connections')
     const card = await khCard()
     await user.click(await card.findByRole('button', { name: 'Connect' }))
     await card.findByLabelText('Sign-in code')
@@ -90,7 +90,7 @@ describe('Knowledge Hub card', () => {
   // Scenario: Cancel while waiting
   it('Cancel deletes the pending connection and offers Connect again', async () => {
     const state = installFakeApi()
-    const { user } = await renderAppReady('#/settings/agents')
+    const { user } = await renderAppReady('#/settings/agents/connections')
     const card = await khCard()
     await user.click(await card.findByRole('button', { name: 'Connect' }))
     await user.click(await card.findByRole('button', { name: 'Cancel' }))
@@ -106,7 +106,7 @@ describe('Knowledge Hub card', () => {
     state.kh.interval = 1
     state.kh.outcome = 'denied'
     state.kh.reason = 'You are not registered in Knowledge Hub.'
-    const { user } = await renderAppReady('#/settings/agents')
+    const { user } = await renderAppReady('#/settings/agents/connections')
     const card = await khCard()
     await user.click(await card.findByRole('button', { name: 'Connect' }))
     await card.findByLabelText('Sign-in code')
@@ -123,7 +123,7 @@ describe('Knowledge Hub card', () => {
     const state = installFakeApi()
     state.kh.interval = 1
     state.kh.outcome = 'expired'
-    const { user } = await renderAppReady('#/settings/agents')
+    const { user } = await renderAppReady('#/settings/agents/connections')
     const card = await khCard()
     await user.click(await card.findByRole('button', { name: 'Connect' }))
     await card.findByLabelText('Sign-in code')
@@ -136,7 +136,7 @@ describe('Knowledge Hub card', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const state = installFakeApi()
     state.kh.interval = 1
-    const { user, unmount } = await renderAppReady('#/settings/agents')
+    const { user, unmount } = await renderAppReady('#/settings/agents/connections')
     const card = await khCard()
     await user.click(await card.findByRole('button', { name: 'Connect' }))
     await card.findByLabelText('Sign-in code')
@@ -160,7 +160,7 @@ describe('Knowledge Hub card', () => {
     it('Disconnect, once confirmed, ends the connection and offers Connect again', async () => {
       const state = connected()
       const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
-      const { user } = await renderAppReady('#/settings/agents')
+      const { user } = await renderAppReady('#/settings/agents/connections')
       const card = await khCard()
       expect(await card.findByText('Connected as ada@kh.example.test')).toBeInTheDocument()
       await user.click(card.getByRole('button', { name: 'Disconnect' }))
@@ -173,7 +173,7 @@ describe('Knowledge Hub card', () => {
     it('keeps the connection when the user declines', async () => {
       const state = connected()
       vi.spyOn(window, 'confirm').mockReturnValue(false)
-      const { user } = await renderAppReady('#/settings/agents')
+      const { user } = await renderAppReady('#/settings/agents/connections')
       const card = await khCard()
       await user.click(await card.findByRole('button', { name: 'Disconnect' }))
       expect(card.getByText('Connected as ada@kh.example.test')).toBeInTheDocument()

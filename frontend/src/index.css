@@ -1171,6 +1171,8 @@ a.auth-provider:hover { border-color: var(--accent); color: var(--accent); }
   button.icon { min-height: 40px; min-width: 40px; }
   .note-select { min-height: 40px; }
   .group-head button { min-height: 40px; }
+  .agent-tool-list button, .agent-tool-add select, .agent-tool-add button { min-height: 40px; }
+  .side-nav a { min-height: 40px; display: flex; align-items: center; }
   .note-menu [role='menuitem'], .note-menu [role='menuitemradio'] { min-height: 40px; }
   .agent-pane .plus-button { width: 40px; height: 40px; }
   .agent-pane .ghost, .agent-pane .agent-menu-button { min-height: 40px; }
@@ -1337,3 +1339,14 @@ a.auth-provider:hover { border-color: var(--accent); color: var(--accent); }
 .session-row:first-child { border-top: 0; }
 .session-row > button { flex: none; white-space: nowrap; }
 .provider-card textarea { width: 100%; box-sizing: border-box; font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 6px; padding: 5px 10px; resize: vertical; }
+
+/* ===== Settings > Agents > Tools ===== */
+.side-nav li.side-nav-child a { margin-left: 16px; }
+.agent-tool-list { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.agent-tool-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.agent-tool-add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
+.agent-tool-add .field { margin: 0; }
+.agent-tool-add select { min-width: 0; max-width: 100%; }
+@media (pointer: coarse) and (max-width: 1099.98px) {
+  .agent-tool-list button, .agent-tool-add button, .agent-tool-add select { min-height: 40px; }
+}

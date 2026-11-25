@@ -149,7 +149,7 @@ def test_kh_reconnect_notifies_once_until_the_user_connects_again(
     kit.fake.refresh_reply = HttpReply(400, {"error": "invalid_grant"})
     run_search(kit, query="x")
     (note,) = notes(kit.client, "kh_reconnect")
-    assert note.link == "#/settings/agents" and note.params == {}
+    assert note.link == "#/settings/agents/connections" and note.params == {}
     # A second failure before reconnecting adds none.
     with kit.app.state.session_factory() as db:
         tools = AgentTools(

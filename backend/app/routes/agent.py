@@ -37,6 +37,7 @@ from app.auth.current import CurrentUser
 from app.db import A2uiSurface, AreaAgentSetting, Note, User, get_session
 from app.learning.catalog import UserCatalog
 from app.roadmaps import RoadmapCatalog
+from app.routes.agents import effective_tools
 from app.routes.guard import box_of, factory_of, require_app_header
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
@@ -259,7 +260,8 @@ def _answer(
     area = area_of_page(catalog, session, user, page)
     area_row = session.get(AreaAgentSetting, (user.id, area)) if area is not None else None
     area_instructions = area_row.instructions if area_row else ""
-    allowed = set(area_row.tools) if area_row and area_row.tools is not None else None
+    area_tools = list(area_row.tools) if area_row and area_row.tools is not None else None
+    allowed = effective_tools(session, user.id, agent.id, area_tools)
     interactive: ChatInteractiveRunner | None = None
     if agent.id == "assistant":
         # The Interactive tutor runs inside the assistant's tool call, on its own provider chain
@@ -272,6 +274,7 @@ def _answer(
                 agent_id="a2ui",
                 store=request.app.state.store,
                 content_sink=sink,
+                allowed=effective_tools(session, user.id, "a2ui", area_tools),
                 should_stop=should_stop,
             )
 

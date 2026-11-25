@@ -87,3 +87,10 @@ One entry per cycle, appended by `/ai-sdlc-kit:orchestrate` (or by the main sess
 - Tasks: 1.1-1.4, 2.1, 3.1-3.3
 - Agents: 1.1 migration and review fixes (title in untrusted wrapper, no count with nothing to sort) -> main session; 1.2-1.4 -> implementer; 2.1 -> implementer; qc-e2e, qc-ui, verifier
 - Verdicts: qc-e2e 9/9 (full run: 1 known clock flake in notifications, passed alone); qc-ui pass after touch-size fix; verifier pass
+
+## 2026-11-25 agent-tools-tab
+- Result: done (9/9)
+- Tasks: 1.1-1.4, 2.1-2.2, 3.1-3.3
+- Agents: 1.1 migration 0028, Connections placement, KH error text -> main session; 1.2-1.4 -> implementer; 2.1-2.2 -> implementer; 3.1 -> qc-e2e; 3.2 -> qc-ui; 3.3 -> verifier
+- Verdicts: qc-e2e 82 passed (no product bug); qc-ui 1 major (touch size) fixed by main session; verifier pass
+- Needs human: none

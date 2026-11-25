@@ -148,12 +148,13 @@ export const TYPES: ProviderTypeInfo[] = [
 ]
 
 const ALL_AGENTS = ['assistant', 'lesson-writer', 'outline']
+const READ_AGENTS = [...ALL_AGENTS, 'a2ui']
 /** The app tools of GET /api/agents/tools, in the backend's order. */
 export const AGENT_TOOLS = [
-  { name: 'search_notes', description: 'Search the notes by text.', agents: ALL_AGENTS },
-  { name: 'read_note', description: 'Read one note.', agents: ALL_AGENTS },
-  { name: 'list_roadmap', description: 'List the topics of a roadmap.', agents: ALL_AGENTS },
-  { name: 'read_lesson', description: 'Read the lesson of a topic.', agents: ALL_AGENTS },
+  { name: 'search_notes', description: 'Search the notes by text.', agents: READ_AGENTS },
+  { name: 'read_note', description: 'Read one note.', agents: READ_AGENTS },
+  { name: 'list_roadmap', description: 'List the topics of a roadmap.', agents: READ_AGENTS },
+  { name: 'read_lesson', description: 'Read the lesson of a topic.', agents: READ_AGENTS },
   { name: 'write_lesson', description: 'Write or update the lesson of a topic.', agents: ALL_AGENTS },
   { name: 'list_node_resources', description: 'List the reference links of a topic.', agents: ALL_AGENTS },
   { name: 'fetch_reference', description: 'Fetch the text of a reference link.', agents: ALL_AGENTS },
@@ -400,6 +401,8 @@ export interface FakeState {
   areaAgents: Record<string, { instructions: string; tools: string[] | null }>
   /** Agent id -> Internet search switch. */
   webSearch: Record<string, boolean>
+  /** Agent id -> tools removed from it (GET/PUT /api/agents/{id}/tools); the rest of its own tools are attached. */
+  removedTools: Record<string, string[]>
   /**
    * The admin's shared setup as a member without a configuration of their own sees it
    * (spec: shared-providers). `state.providers` stays the asking user's own list.
@@ -720,6 +723,7 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
     providers: [],
     assignments: {},
     webSearch: {},
+    removedTools: {},
     shared: { rows: [], primary: {}, webSearch: {}, used: 0, limit: 10, resetsAt: '2026-11-20T00:00:00Z', recentlyUsed: false },
     areaAgents: {},
     test: () => ({ status: 'ok', ok: true, message: 'The model answered: OK', latency_ms: 420 }),
@@ -1730,6 +1734,24 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
         return respond(withUse(target))
       }
       if (url === '/api/agents/tools') return respond(AGENT_TOOLS)
+      const toolSetMatch = url.match(/^\/api\/agents\/([^/]+)\/tools$/)
+      if (toolSetMatch) {
+        const id = toolSetMatch[1]
+        const own = AGENT_TOOLS.filter((t) => t.agents.includes(id)).map((t) => t.name)
+        if (own.length === 0) return respond({ detail: 'unknown agent' }, 404)
+        if (method === 'PUT') {
+          const attached: string[] = body.attached ?? []
+          const foreign = attached.find((t) => !own.includes(t))
+          if (foreign) return respond({ detail: `not a tool of this agent: ${foreign}` }, 422)
+          state.removedTools[id] = own.filter((t) => !attached.includes(t))
+        }
+        const removed = state.removedTools[id] ?? []
+        return respond({
+          agent_id: id,
+          attached: own.filter((t) => !removed.includes(t)),
+          available: own.filter((t) => removed.includes(t)),
+        })
+      }
       if (url === '/api/kh' || url.startsWith('/api/kh/')) {
         const kh = state.kh
         if (url === '/api/kh' && method === 'GET') {

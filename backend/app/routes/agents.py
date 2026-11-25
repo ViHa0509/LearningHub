@@ -23,7 +23,7 @@ from app.agent.resolve import (
     utc_today,
     web_search_enabled,
 )
-from app.agent.tools import ASSISTANT_SPECS, KH_TOOL, OUTLINE_SPECS, SPECS
+from app.agent.tools import A2UI_READ_TOOLS, ASSISTANT_SPECS, KH_TOOL, OUTLINE_SPECS, SPECS
 from app.auth.current import CurrentUser
 from app.db import AgentProvider, AgentSetting, AIProvider, AreaAgentSetting, get_session
 from app.learning.catalog import UserCatalog
@@ -179,12 +179,98 @@ def tool_catalog(kh_available: bool = False) -> list[AgentToolOut]:
         AgentToolOut(
             name=spec.name,
             description=spec.description.split(". ")[0],
-            agents=list(agents),
+            agents=[*agents, "a2ui"] if spec.name in A2UI_READ_TOOLS else list(agents),
         )
         for specs, agents in groups
         for spec in specs
         if kh_available or spec.name != KH_TOOL
     ]
+
+
+def own_tools(agent_id: str, kh_available: bool = True) -> list[str]:
+    """The tools an agent has, in catalog order."""
+    return [t.name for t in tool_catalog(kh_available) if agent_id in t.agents]
+
+
+def effective_tools(
+    session: Session, user_id: uuid.UUID, agent_id: str, area_tools: list[str] | None
+) -> set[str] | None:
+    """What the agent may use: its own tools (or the area's ticks) minus the user's removed ones.
+    None means no limit."""
+    row = session.get(AgentSetting, (user_id, agent_id))
+    disabled = set(row.disabled_tools or []) if row else set()
+    if area_tools is None and not disabled:
+        return None
+    base = set(own_tools(agent_id)) if area_tools is None else set(area_tools)
+    return base - disabled
+
+
+class AgentToolsIn(BaseModel):
+    attached: list[str]
+
+
+class AgentToolsOut(BaseModel):
+    agent_id: str
+    attached: list[str]
+    available: list[str]
+
+
+def tools_out(session: Session, user_id: uuid.UUID, agent_id: str, kh: bool) -> AgentToolsOut:
+    row = session.get(AgentSetting, (user_id, agent_id))
+    disabled = set(row.disabled_tools or []) if row else set()
+    own = own_tools(agent_id, kh)
+    return AgentToolsOut(
+        agent_id=agent_id,
+        attached=[n for n in own if n not in disabled],
+        available=[n for n in own if n in disabled],
+    )
+
+
+def tool_agent(agent_id: str) -> AgentDef:
+    """The agent, or 404 for an unknown one and for one without tools (Note sorter)."""
+    agent = get_agent(agent_id)
+    if not own_tools(agent.id):
+        raise HTTPException(status_code=404, detail=f"agent '{agent_id}' has no tools")
+    return agent
+
+
+@router.get("/{agent_id}/tools", response_model=AgentToolsOut)
+def read_agent_tools(
+    agent_id: str,
+    request: Request,
+    session: Annotated[Session, Depends(get_session)],
+    user: CurrentUser,
+) -> AgentToolsOut:
+    return tools_out(session, user.id, tool_agent(agent_id).id, request.app.state.kh.available)
+
+
+@router.put(
+    "/{agent_id}/tools",
+    response_model=AgentToolsOut,
+    dependencies=[Depends(require_app_header)],
+)
+def save_agent_tools(
+    agent_id: str,
+    payload: AgentToolsIn,
+    request: Request,
+    session: Annotated[Session, Depends(get_session)],
+    user: CurrentUser,
+) -> AgentToolsOut:
+    """Keep the listed tools attached; the rest are stored as removed."""
+    agent = tool_agent(agent_id)
+    kh = request.app.state.kh.available
+    own = own_tools(agent.id, kh)
+    for name in payload.attached:
+        if name not in own:
+            raise HTTPException(status_code=422, detail=f"not a tool of this agent: {name}")
+    removed = [n for n in own if n not in payload.attached]
+    row = session.get(AgentSetting, (user.id, agent.id))
+    if row is None:
+        row = AgentSetting(user_id=user.id, agent_id=agent.id)
+        session.add(row)
+    row.disabled_tools = removed or None
+    session.commit()
+    return tools_out(session, user.id, agent.id, kh)
 
 
 @router.get("/tools", response_model=list[AgentToolOut])

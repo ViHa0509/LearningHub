@@ -257,7 +257,7 @@ def test_a_sign_in_that_ended_elsewhere_tells_the_user_to_connect_again(kit: Kit
     model, response = run_search(kit, query="x")
     assert response.status_code == 200
     message = tool_result(model)["error"]
-    assert "connect" in message and "Settings -> Agents" in message
+    assert "connect" in message and "Settings -> Agents -> Connections" in message
     assert kit.row() is None
     assert kit.client.get("/api/kh").json()["status"] == "disconnected"
     assert search_calls(kit) == []

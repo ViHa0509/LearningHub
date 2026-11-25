@@ -24,6 +24,8 @@ import { ProfilePage } from './ProfilePage'
 import { ProfileNav } from './ProfileNav'
 import { SettingsNav } from './SettingsNav'
 import { AgentsSettings } from './AgentsSettings'
+import { AgentToolsSettings } from './AgentToolsSettings'
+import { ConnectionsSettings } from './ConnectionsSettings'
 import { DataSettings } from './DataSettings'
 import { SignInSettings } from './SignInSettings'
 import { AdminOnly } from './AdminOnly'
@@ -276,6 +278,10 @@ function MainApp({ theme, onThemeChange, health, user }: MainProps) {
     center = <ProfilePage section={route.section} />
   } else if (route.page === 'agents-settings') {
     center = <AgentsSettings />
+  } else if (route.page === 'agent-tools-settings') {
+    center = <AgentToolsSettings />
+  } else if (route.page === 'connections-settings') {
+    center = <ConnectionsSettings />
   } else if (route.page === 'provider') {
     center = <ProviderPage key={route.id} id={route.id} />
   } else if (route.page === 'lesson') {

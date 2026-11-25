@@ -116,6 +116,7 @@ class AgentProviderRow(Row):
 class AgentSettingRow(Row):
     agent_id: str
     web_search: bool
+    disabled_tools: list[str] | None = None
     updated_at: datetime
 
 

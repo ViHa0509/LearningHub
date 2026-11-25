@@ -317,6 +317,7 @@ def content_spec(kind: str) -> ToolSpec:
     )
 
 
+_CONTENT_TOOLS = {QUIZ_TOOL, LESSON_TOOL}
 _AGENT_ONLY = {"propose_topics", "save_learned_note", INTERACTIVE_TOOL, QUIZ_TOOL, LESSON_TOOL}
 
 
@@ -395,7 +396,8 @@ class AgentTools:
             specs = tuple(s for s in specs if s.name != KH_TOOL)
         if self._allowed is None:
             return specs
-        return tuple(s for s in specs if s.name in self._allowed)
+        # The tutor's content tool is its output, never removable.
+        return tuple(s for s in specs if s.name in self._allowed or s.name in _CONTENT_TOOLS)
 
     def run(self, name: str, args: dict[str, Any]) -> ToolOutcome:
         handler = self._handlers.get(name)
@@ -407,7 +409,7 @@ class AgentTools:
             or (self._agent_id == A2UI_AGENT and name not in offered)
         ):
             return _error(f"unknown tool '{name}'")
-        if self._allowed is not None and name not in self._allowed:
+        if self._allowed is not None and name not in self._allowed and name not in _CONTENT_TOOLS:
             return _error(f"tool '{name}' is not available for this agent")
         try:
             return handler(args)
@@ -624,13 +626,13 @@ class AgentTools:
                 self._owner_id(),
                 "kh_reconnect",
                 {},
-                "#/settings/agents",
+                "#/settings/agents/connections",
                 "kh-reconnect",
             )
             self._session.commit()
             return _error(
                 "the user's Knowledge Hub sign-in ended; the user must connect to Knowledge Hub "
-                "again in Settings -> Agents"
+                "again in Settings -> Agents -> Connections"
             )
         except KhSearchError as exc:
             return _error(exc.message)

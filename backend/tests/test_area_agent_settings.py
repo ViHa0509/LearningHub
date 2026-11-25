@@ -41,7 +41,10 @@ def test_tools_list_names_the_ten_tools_and_who_has_them(client: TestClient) -> 
     assert [t["name"] for t in tools] == NAMES
     agents = {t["name"]: t["agents"] for t in tools}
     for name in NAMES[:7]:
-        assert agents[name] == ["assistant", "lesson-writer", "outline"]
+        tutor = (
+            ["a2ui"] if name in ("search_notes", "read_note", "list_roadmap", "read_lesson") else []
+        )
+        assert agents[name] == ["assistant", "lesson-writer", "outline", *tutor]
     assert agents["save_learned_note"] == ["assistant"]
     assert agents["show_interactive"] == ["assistant"]
     assert agents["propose_topics"] == ["outline"]

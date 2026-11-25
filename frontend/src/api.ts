@@ -262,6 +262,13 @@ export interface AgentTool {
   agents: string[]
 }
 
+/** GET/PUT /api/agents/{id}/tools: the tools attached to an agent and its own tools that are not. */
+export interface AgentToolSet {
+  agent_id: string
+  attached: string[]
+  available: string[]
+}
+
 /** The user's extra instructions and tool choice for one area; `tools` null means every tool. */
 export interface AreaAgentSettings {
   domain_id: string
@@ -934,6 +941,9 @@ export const api = {
   khPoll: () => request<KhPoll>('/api/kh/connect/poll', { method: 'POST' }),
   khDisconnect: () => request<void>('/api/kh', { method: 'DELETE' }),
   agentTools: () => request<AgentTool[]>('/api/agents/tools'),
+  agentToolSet: (id: string) => request<AgentToolSet>(`/api/agents/${id}/tools`),
+  saveAgentToolSet: (id: string, attached: string[]) =>
+    request<AgentToolSet>(`/api/agents/${id}/tools`, json('PUT', { attached })),
   areaAgents: () => request<AreaAgentSettings[]>('/api/agents/areas'),
   saveAreaAgents: (domain: string, body: { instructions: string; tools: string[] | null }) =>
     request<AreaAgentSettings>(`/api/agents/areas/${domain}`, json('PUT', body)),

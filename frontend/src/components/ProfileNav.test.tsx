@@ -34,7 +34,7 @@ describe('left column', () => {
     installFakeApi([makeNote('Redis eviction', 'backend/caching')])
     await renderAppReady('#/settings/agents')
     const nav = await screen.findByRole('navigation', { name: 'Settings sections' })
-    expect(names(nav)).toEqual(['AI providers', 'Agents', 'Users', 'Sign-in', 'Data & sync'])
+    expect(names(nav)).toEqual(['AI providers', 'Agents', 'Tools', 'Connections', 'Users', 'Sign-in', 'Data & sync'])
     expect(within(nav).getByRole('link', { name: 'Agents' })).toHaveAttribute('aria-current', 'page')
     expect(screen.queryByRole('complementary', { name: 'Learned items' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Redis eviction' })).not.toBeInTheDocument()
@@ -47,7 +47,7 @@ describe('left column', () => {
     requireLogin(state, { signedIn: true, owner: { ...OWNER, role: 'member' } })
     await renderAppReady('#/settings')
     const nav = await screen.findByRole('navigation', { name: 'Settings sections' })
-    expect(names(nav)).toEqual(['AI providers', 'Agents', 'Data & sync'])
+    expect(names(nav)).toEqual(['AI providers', 'Agents', 'Tools', 'Connections', 'Data & sync'])
   })
 
   // Scenario: Open Profile

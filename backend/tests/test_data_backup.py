@@ -13,6 +13,7 @@ from sqlalchemy import select
 
 from app.data_sync.backup import migration_head
 from app.db import AgentProvider, AgentSetting, AIProvider, Lesson, Note, User, UserSession
+from tests.conftest import user_id_of
 
 KEY = "sk-ant-api03-SECRETKEYVALUE-9876"
 HTML = "text/html"
@@ -594,3 +595,32 @@ def test_category_round_trips_and_old_backups_restore_without_it(client: TestCli
 
     assert restore(client, rewrite(backup, drop_category)).status_code == 200
     assert client.get("/api/notes").json()[0]["category"] is None
+
+
+# Change agent-tools-tab: the tools removed from an agent travel with the backup.
+def test_disabled_tools_round_trip_and_old_backups_restore_without_them(
+    client: TestClient,
+) -> None:
+    import_note(client, "Keep")
+    user_id = user_id_of(client.app)  # type: ignore[arg-type]
+    with client.app.state.session_factory() as db:  # type: ignore[attr-defined]
+        db.add(AgentSetting(user_id=user_id, agent_id="assistant", disabled_tools=["write_lesson"]))
+        db.commit()
+    backup = download(client)
+    assert restore(client, backup).status_code == 200
+
+    def stored() -> list[str] | None:
+        with client.app.state.session_factory() as db:  # type: ignore[attr-defined]
+            row = db.get(AgentSetting, (user_id, "assistant"))
+            return row.disabled_tools if row else None
+
+    assert stored() == ["write_lesson"]
+
+    def drop_it(entries: dict[str, bytes]) -> None:
+        rows = json.loads(entries["data/agent_settings.json"])
+        for row in rows:
+            row.pop("disabled_tools", None)
+        entries["data/agent_settings.json"] = json.dumps(rows).encode("utf-8")
+
+    assert restore(client, rewrite(backup, drop_it)).status_code == 200
+    assert stored() is None
