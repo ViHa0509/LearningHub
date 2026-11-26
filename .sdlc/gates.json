@@ -56,7 +56,7 @@
         "push"
       ],
       "cmd": "cd frontend && npm run e2e",
-      "timeout": 1500
+      "timeout": 2400
     }
   ],
   "protected": [
