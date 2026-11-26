@@ -334,7 +334,9 @@ test.describe('Three-pane layout: resizable panes', () => {
     await open(page)
     await leftHandle(page).focus()
     for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowRight')
-    const left = await width(listOf(page))
+    // The grid animates its columns: wait for the final width before measuring.
+    const left = Number(await leftHandle(page).getAttribute('aria-valuenow'))
+    await expect.poll(() => width(listOf(page))).toBe(left)
     const center = await width(centerOf(page))
     await listOf(page).getByRole('button', { name: 'Collapse learned list' }).click()
     await expect.poll(() => width(centerOf(page))).toBeGreaterThan(center)
