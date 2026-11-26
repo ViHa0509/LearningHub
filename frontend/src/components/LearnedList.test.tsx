@@ -72,7 +72,8 @@ describe('groupNotes', () => {
   it('orders nodes in roadmap order (depth-first, sibling order)', () => {
     const notes = [makeNote('auth', 'backend/auth'), makeNote('redis', 'backend/redis'), makeNote('caching', 'backend/caching')]
     const grouped = groupNotes(notes, [backend])
-    expect(grouped.domains[0].nodes.map((g) => g.node.id)).toEqual(['caching', 'redis', 'auth'])
+    const first = grouped.groups[0]
+    expect(first.kind === 'domain' && first.nodes.map((g) => g.node.id)).toEqual(['caching', 'redis', 'auth'])
   })
 
   // Scenario: Newest first
@@ -87,13 +88,13 @@ describe('groupNotes', () => {
       makeNote('loose new', null, at(7)),
     ]
     const grouped = groupNotes(notes, [backend, devops])
-    expect(grouped.domains.map((d) => d.domainId)).toEqual(['devops', 'backend'])
-    const nodes = grouped.domains[1].nodes
+    expect(grouped.groups.map((g) => (g.kind === 'domain' ? g.domainId : g.kind))).toEqual(['devops', 'backend', 'unsorted'])
+    const second = grouped.groups[1]
+    const nodes = second.kind === 'domain' ? second.nodes : []
     expect(nodes.map((g) => g.node.id)).toEqual(['apis', 'caching'])
     expect(nodes[1].notes.map((n) => n.title)).toEqual(['caching new', 'caching old'])
-    expect(grouped.unsorted).toHaveLength(1)
-    expect(grouped.unsorted[0].category).toBeNull()
-    expect(grouped.unsorted[0].notes.map((n) => n.title)).toEqual(['loose new', 'loose old'])
+    const last = grouped.groups[2]
+    expect(last.kind === 'unsorted' && last.notes.map((n) => n.title)).toEqual(['loose new', 'loose old'])
   })
 
   it('shows Backend > APIs before Backend > Caching when APIs was updated more recently', () => {
@@ -562,49 +563,58 @@ describe('Unsorted categories', () => {
     makeNote('Pod limits', null, { category: 'Kubernetes', ...at(2) }),
     makeNote('Helm charts', null, { category: 'Kubernetes', ...at(3) }),
     makeNote('Salary talk', null, { category: 'Career', ...at(5) }),
-    makeNote('Loose idea', null, at(6)),
+    makeNote('Loose idea', null, at(1)),
   ]
+  const regionNames = () =>
+    Array.from(document.querySelectorAll('section[aria-label]')).map((e) => e.getAttribute('aria-label'))
+  const listMenu = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(screen.getByRole('button', { name: 'List actions' }))
+    return screen.getByRole('menu', { name: 'List actions' })
+  }
 
-  it('groupNotes orders named groups by newest note, Other last, notes newest first', () => {
-    const { unsorted } = groupNotes(notes(), [backend])
-    expect(unsorted.map((g) => g.category)).toEqual(['Career', 'Kubernetes', null])
-    expect(unsorted[1].notes.map((n) => n.title)).toEqual(['Helm charts', 'Pod limits'])
+  it('groupNotes orders categories by newest note, notes newest first, Unsorted last', () => {
+    const { groups } = groupNotes(notes(), [backend])
+    expect(groups.map((g) => (g.kind === 'category' ? g.category : g.kind))).toEqual(['Career', 'Kubernetes', 'unsorted'])
+    const k = groups[1]
+    expect(k.kind === 'category' && k.notes.map((n) => n.title)).toEqual(['Helm charts', 'Pod limits'])
   })
 
   it('groupNotes: a linked note leaves its category group', () => {
     const linked = notes().map((n) => (n.title === 'Pod limits' ? { ...n, node_id: 'backend/caching' } : n))
-    const { unsorted, domains } = groupNotes(linked, [backend])
-    expect(unsorted.find((g) => g.category === 'Kubernetes')?.notes.map((n) => n.title)).toEqual(['Helm charts'])
-    expect(domains[0].nodes[0].notes.map((n) => n.title)).toEqual(['Pod limits'])
+    const { groups } = groupNotes(linked, [backend])
+    const k = groups.find((g) => g.kind === 'category' && g.category === 'Kubernetes')
+    expect(k?.kind === 'category' && k.notes.map((n) => n.title)).toEqual(['Helm charts'])
+    const d = groups.find((g) => g.kind === 'domain')
+    expect(d?.kind === 'domain' && d.nodes[0].notes.map((n) => n.title)).toEqual(['Pod limits'])
   })
 
   it('groupNotes: the filter applies inside the groups and drops empty ones', () => {
-    const { unsorted } = groupNotes(notes(), [backend], 'helm')
-    expect(unsorted.map((g) => g.category)).toEqual(['Kubernetes'])
+    const { groups } = groupNotes(notes(), [backend], 'helm')
+    expect(groups.map((g) => (g.kind === 'category' ? g.category : g.kind))).toEqual(['Kubernetes'])
   })
 
-  it('shows sub-groups with plain-text headings, Other last', () => {
-    renderList(notes())
-    const names = screen.getAllByRole('group').map((g) => g.getAttribute('aria-label'))
-    expect(names).toEqual(['Unsorted > Career', 'Unsorted > Kubernetes', 'Unsorted > Other'])
-    const k = screen.getByRole('group', { name: 'Unsorted > Kubernetes' })
+  it('lists categories as top-level groups beside the domains, with no Unsorted section around them', () => {
+    const linked = makeNote('Caching', 'backend/caching', { updated_at: '2026-11-04T00:00:00Z' })
+    renderList([...notes(), linked])
+    expect(regionNames()).toEqual(['Career', 'Backend', 'Kubernetes', 'Unsorted'])
+    const k = screen.getByRole('region', { name: 'Kubernetes' })
     expect(within(k).getByRole('button', { name: 'Pod limits' })).toBeInTheDocument()
-    expect(within(k).getByRole('heading', { level: 4, name: 'Kubernetes' })).toBeInTheDocument()
+    expect(within(k).getByRole('heading', { level: 3, name: 'Kubernetes' })).toBeInTheDocument()
     expect(within(screen.getByRole('region', { name: 'Unsorted' })).getByRole('button', { name: 'Loose idea' })).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: /^Unsorted >/ })).not.toBeInTheDocument()
   })
 
   it('shows a category with markup as text', () => {
     renderList([makeNote('x', null, { category: '<b>Bold</b>' })])
-    expect(screen.getByRole('heading', { level: 4, name: '<b>Bold</b>' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 3, name: '<b>Bold</b>' })).toBeInTheDocument()
   })
 
-  it('renders no sub-group and no Other heading without categories', () => {
-    renderList()
-    expect(screen.queryByRole('heading', { level: 4, name: 'Other' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('group', { name: /^Unsorted >/ })).not.toBeInTheDocument()
+  it('has no Unsorted group when every unlinked note has a category', () => {
+    renderList([makeNote('x', null, { category: 'Career' })])
+    expect(screen.queryByRole('region', { name: 'Unsorted' })).not.toBeInTheDocument()
   })
 
-  it('Group with AI is busy while it runs, then refreshes', async () => {
+  it('Group with AI is an item of List actions, busy while it runs, then refreshes', async () => {
     const user = userEvent.setup()
     let finish: (v: { grouped: number; groups: number }) => void = () => {}
     vi.spyOn(api, 'categorize').mockReturnValue(new Promise((r) => (finish = r)))
@@ -613,20 +623,37 @@ describe('Unsorted categories', () => {
       <LearnedList notes={notes()} roadmaps={[backend]} selectedNoteId={null} selectedNodeId={null}
         onOpenNote={noop} onImport={noop} onChanged={onChanged} />,
     )
-    await user.click(screen.getByRole('button', { name: 'Group with AI' }))
-    expect(screen.getByRole('button', { name: 'Grouping…' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Group with AI' })).not.toBeInTheDocument()
+    await listMenu(user)
+    await user.click(screen.getByRole('menuitem', { name: 'Group with AI' }))
+    await listMenu(user)
+    expect(screen.getByRole('menuitem', { name: 'Grouping…' })).toBeDisabled()
     finish({ grouped: 3, groups: 2 })
-    expect(await screen.findByRole('button', { name: 'Group with AI' })).toBeEnabled()
-    expect(onChanged).toHaveBeenCalled()
+    await waitFor(() => expect(onChanged).toHaveBeenCalled())
+    await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Group with AI' })).toBeEnabled())
   })
 
   it('Group with AI shows the error detail and keeps the notes', async () => {
     const user = userEvent.setup()
     vi.spyOn(api, 'categorize').mockRejectedValue(new Error('Set up a provider first'))
     renderList(notes())
-    await user.click(screen.getByRole('button', { name: 'Group with AI' }))
+    await listMenu(user)
+    await user.click(screen.getByRole('menuitem', { name: 'Group with AI' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Set up a provider first')
-    expect(screen.getByRole('button', { name: 'Group with AI' })).toBeEnabled()
+    expect(screen.getByRole('region', { name: 'Kubernetes' })).toBeInTheDocument()
+  })
+
+  it('shows no List actions menu when every note has a topic', () => {
+    renderList([makeNote('Caching', 'backend/caching')])
+    expect(screen.queryByRole('button', { name: 'List actions' })).not.toBeInTheDocument()
+  })
+
+  it('has a group menu on category headings only, and no Rename button before it is opened', () => {
+    renderList([...notes(), makeNote('Caching', 'backend/caching')])
+    expect(screen.queryByRole('button', { name: /^Rename/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'More actions for group Unsorted' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'More actions for group Backend' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'More actions for group Kubernetes' })).toHaveClass('group-more')
   })
 
   describe('rename', () => {
@@ -634,7 +661,8 @@ describe('Unsorted categories', () => {
       const user = userEvent.setup()
       const spy = vi.spyOn(api, 'renameCategory').mockResolvedValue({ renamed: 2 })
       renderList(notes())
-      await user.click(screen.getByRole('button', { name: 'Rename group Kubernetes' }))
+      await user.click(screen.getByRole('button', { name: 'More actions for group Kubernetes' }))
+      await user.click(screen.getByRole('menuitem', { name: 'Rename' }))
       const form = screen.getByRole('form', { name: 'Rename group Kubernetes' })
       return { user, spy, form, input: within(form).getByRole('textbox', { name: 'New name' }), save: within(form).getByRole('button', { name: 'Save' }) }
     }
@@ -665,8 +693,9 @@ describe('Unsorted categories', () => {
       const { user, spy, form, input } = await open()
       await user.type(input, 'x')
       await user.click(within(form).getByRole('button', { name: 'Cancel' }))
-      expect(screen.getByRole('heading', { level: 4, name: 'Kubernetes' })).toBeInTheDocument()
-      await user.click(screen.getByRole('button', { name: 'Rename group Kubernetes' }))
+      expect(screen.getByRole('heading', { level: 3, name: 'Kubernetes' })).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'More actions for group Kubernetes' }))
+      await user.click(screen.getByRole('menuitem', { name: 'Rename' }))
       const parent = vi.fn()
       const onKey = (e: KeyboardEvent) => e.key === 'Escape' && parent()
       document.addEventListener('keydown', onKey)

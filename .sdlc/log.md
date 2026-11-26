@@ -94,3 +94,10 @@ One entry per cycle, appended by `/ai-sdlc-kit:orchestrate` (or by the main sess
 - Agents: 1.1 migration 0028, Connections placement, KH error text -> main session; 1.2-1.4 -> implementer; 2.1-2.2 -> implementer; 3.1 -> qc-e2e; 3.2 -> qc-ui; 3.3 -> verifier
 - Verdicts: qc-e2e 82 passed (no product bug); qc-ui 1 major (touch size) fixed by main session; verifier pass
 - Needs human: none
+
+## 2026-11-26 learned-list-layout
+- Result: done (5/5)
+- Tasks: 1.1-1.2, 2.1-2.3
+- Agents: spec, design, archive of unsorted-categories, test_search clock-flake fix -> main session; 1.1, 1.2 -> implementer; 2.1 -> qc-e2e; 2.2 -> qc-ui; 2.3 -> verifier
+- Verdicts: qc-e2e 92 passed (no product bug); qc-ui pass (minors in evidence.md); verifier pass after the unrelated flaky test was pinned
+- Needs human: none

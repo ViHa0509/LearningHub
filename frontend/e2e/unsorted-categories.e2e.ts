@@ -93,7 +93,18 @@ async function unsortedNote(request: APIRequestContext, title: string): Promise<
 
 const listOf = (page: Page) => page.getByRole('complementary', { name: 'Learned items' })
 const unsortedOf = (page: Page) => listOf(page).getByRole('region', { name: 'Unsorted' })
-const groupOf = (page: Page, name: string) => unsortedOf(page).getByRole('group', { name: `Unsorted > ${name}`, exact: true })
+/** A category is a top-level group of its own (no Unsorted section around it). */
+const groupOf = (page: Page, name: string) => listOf(page).getByRole('region', { name, exact: true })
+/** Opens the toolbar's List actions menu and chooses Group with AI. */
+async function chooseGroupWithAi(scope: ReturnType<typeof listOf> | ReturnType<Page['getByRole']>) {
+  await scope.getByRole('button', { name: 'List actions' }).click()
+  await scope.page().getByRole('menu', { name: 'List actions' }).getByRole('menuitem', { name: 'Group with AI' }).click()
+}
+/** Opens a category's More actions menu and chooses Rename. */
+async function openRename(scope: ReturnType<typeof listOf>, name: string) {
+  await scope.getByRole('button', { name: `More actions for group ${name}` }).click()
+  await scope.page().getByRole('menu', { name: 'Group actions' }).getByRole('menuitem', { name: 'Rename' }).click()
+}
 const noteBtn = (scope: ReturnType<typeof groupOf>, title: string) => scope.getByRole('button', { name: title, exact: true })
 
 /** Five unsorted notes: two Kubernetes, two Career, one the fake sorter leaves out. */
@@ -113,24 +124,26 @@ async function fiveNotes(request: APIRequestContext) {
 async function groupWithAi(page: Page) {
   await page.goto('/')
   await expect(listOf(page)).toBeVisible()
-  await unsortedOf(page).getByRole('button', { name: 'Group with AI' }).click()
+  await chooseGroupWithAi(listOf(page))
 }
 
-test('Group unsorted notes with AI: Group with AI makes Kubernetes and Career, the rest is Other, last', async ({ page, request }) => {
+test('Group unsorted notes with AI: Group with AI makes Kubernetes and Career, the rest stays in Unsorted, last', async ({ page, request }) => {
   await assignProvider(request, ['note-sorter'])
   const t = await fiveNotes(request)
   await groupWithAi(page)
 
   const kube = groupOf(page, 'Kubernetes')
   const career = groupOf(page, 'Career')
-  const other = groupOf(page, 'Other')
+  const other = unsortedOf(page)
   await expect(noteBtn(kube, t.k1)).toBeVisible({ timeout: ANSWER_TIMEOUT })
   await expect(noteBtn(kube, t.k2)).toBeVisible()
   await expect(noteBtn(career, t.c1)).toBeVisible()
   await expect(noteBtn(career, t.c2)).toBeVisible()
   await expect(noteBtn(other, t.other)).toBeVisible()
-  await expect(kube.getByRole('heading', { level: 4, name: 'Kubernetes' })).toBeVisible()
-  await expect(unsortedOf(page).getByRole('group').last()).toHaveAccessibleName('Unsorted > Other')
+  await expect(kube.getByRole('heading', { level: 3, name: 'Kubernetes' })).toBeVisible()
+  await expect(kube.getByRole('heading', { name: 'Unsorted' })).toHaveCount(0)
+  const names = await listOf(page).getByRole('region').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))
+  expect(names.filter((n) => n !== 'Archived').at(-1)).toBe('Unsorted')
 
   const notes = await mine(request)
   expect(notes.find((n) => n.title === t.k1)?.category).toBe('Kubernetes')
@@ -154,10 +167,10 @@ test('Group unsorted notes with AI: phone screenshot of the grouped Unsorted lis
   await page.getByRole('button', { name: 'Learned', exact: true }).click()
   const drawer = page.getByRole('dialog', { name: 'Learned' })
   await expect(drawer).toBeVisible()
-  await drawer.getByRole('region', { name: 'Unsorted' }).getByRole('button', { name: 'Group with AI' }).click()
-  const kube = drawer.getByRole('group', { name: 'Unsorted > Kubernetes', exact: true })
+  await chooseGroupWithAi(drawer)
+  const kube = drawer.getByRole('region', { name: 'Kubernetes', exact: true })
   await expect(noteBtn(kube, t.k1)).toBeVisible({ timeout: ANSWER_TIMEOUT })
-  await expect(drawer.getByRole('group', { name: 'Unsorted > Other', exact: true })).toBeVisible()
+  await expect(noteBtn(drawer.getByRole('region', { name: 'Unsorted', exact: true }), t.other)).toBeVisible()
   for (const scheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme: scheme })
     await shot(page, `unsorted-categories-phone-${scheme}`)
@@ -169,7 +182,9 @@ test('Group unsorted notes with AI: no provider shows an error and changes nothi
   await unsortedNote(request, `${PREFIX} Pod limits kube ${uid()}`)
   await groupWithAi(page)
   await expect(listOf(page).getByRole('alert')).toContainText(/provider/i, { timeout: ANSWER_TIMEOUT })
-  await expect(unsortedOf(page).getByRole('button', { name: 'Group with AI' })).toBeEnabled()
+  await listOf(page).getByRole('button', { name: 'List actions' }).click()
+  await expect(page.getByRole('menu', { name: 'List actions' }).getByRole('menuitem', { name: 'Group with AI' })).toBeEnabled()
+  await page.keyboard.press('Escape')
   expect((await mine(request))[0].category).toBeNull()
   await shot(page, 'unsorted-categories-no-provider')
 })
@@ -202,10 +217,10 @@ test('Rename a category group: Save rules, Cancel and Escape leave it, Save rena
   await expect(noteBtn(groupOf(page, 'Kubernetes'), t.k1)).toBeVisible({ timeout: ANSWER_TIMEOUT })
 
   const newName = `K8s ${uid()}`
-  const form = () => unsortedOf(page).getByRole('form', { name: 'Rename group Kubernetes' })
+  const form = () => listOf(page).getByRole('form', { name: 'Rename group Kubernetes' })
   const input = () => form().getByRole('textbox', { name: 'New name' })
   const save = () => form().getByRole('button', { name: 'Save' })
-  const open = () => unsortedOf(page).getByRole('button', { name: 'Rename group Kubernetes' }).click()
+  const open = () => openRename(listOf(page), 'Kubernetes')
 
   await open()
   await expect(input()).toHaveValue('Kubernetes')
@@ -258,13 +273,13 @@ test('Unsorted is grouped by category: a category name with markup is shown as t
   await expect(noteBtn(groupOf(page, 'Databases'), title)).toBeVisible({ timeout: ANSWER_TIMEOUT })
 
   const markup = '<img src=x onerror=alert(1)>'
-  await unsortedOf(page).getByRole('button', { name: 'Rename group Databases' }).click()
-  const form = unsortedOf(page).getByRole('form', { name: 'Rename group Databases' })
+  await openRename(listOf(page), 'Databases')
+  const form = listOf(page).getByRole('form', { name: 'Rename group Databases' })
   await form.getByRole('textbox', { name: 'New name' }).fill(markup)
   await form.getByRole('button', { name: 'Save' }).click()
   const group = groupOf(page, markup)
   await expect(noteBtn(group, title)).toBeVisible()
-  await expect(group.getByRole('heading', { level: 4 })).toHaveText(markup)
+  await expect(group.getByRole('heading', { level: 3 })).toHaveText(markup)
   await expect(listOf(page).locator('img')).toHaveCount(0)
   await shot(page, 'unsorted-categories-markup')
   expect(dialogs).toEqual([])

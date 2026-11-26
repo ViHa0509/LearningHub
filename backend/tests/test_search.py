@@ -1,10 +1,13 @@
 """Spec: app-search - the search route (route, matching, topics, lessons and notes groups)."""
 
+from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import UUID
 
 from fastapi.testclient import TestClient
+from sqlalchemy import update
 
-from app.db import Lesson
+from app.db import Lesson, Note
 from tests.test_linking import HTML
 
 
@@ -205,6 +208,16 @@ def test_note_title_match_comes_before_text_match_then_newest(client: TestClient
     older_title = add_note(client, "Kafka basics", "brokers")
     text_only = add_note(client, "Streaming", "all about kafka here")
     newer_title = add_note(client, "More Kafka", "partitions")
+    # Explicit times: rows made in the same instant (or across a VM clock step) could tie or swap.
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    with client.app.state.session_factory() as db:  # type: ignore[attr-defined]
+        for i, note_id in enumerate((older_title, text_only, newer_title)):
+            db.execute(
+                update(Note)
+                .where(Note.id == UUID(note_id))
+                .values(created_at=base + timedelta(minutes=i))
+            )
+        db.commit()
     found = search(client, "kafka")["notes"]
     assert [n["id"] for n in found] == [newer_title, older_title, text_only]
     assert "kafka" in found[2]["snippet"].lower()

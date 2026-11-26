@@ -160,6 +160,14 @@ button.icon-only { display: inline-flex; align-items: center; justify-content: c
 
 .app-frame { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
 .app-shell { display: grid; flex: 1; min-height: 0; transition: grid-template-columns 0.15s ease; }
+.app-shell[data-resizing='true'] { transition: none; user-select: none; }
+/* Placed in the grid area of its panel, so left/right 0 is the panel's inner edge. */
+.pane-handle { position: absolute; grid-row: 1; z-index: 5; width: 6px; cursor: col-resize; touch-action: none; background: transparent; }
+.pane-handle.left { grid-column: 1; right: 0; top: 0; bottom: 0; }
+.pane-handle.right { grid-column: 3; left: 0; top: 0; bottom: 0; }
+.pane-handle::after { content: ''; position: absolute; top: 0; bottom: 0; left: 2px; width: 2px; background: transparent; }
+.pane-handle:hover::after, .pane-handle:focus-visible::after, .app-shell[data-resizing='true'] .pane-handle::after { background: var(--accent, var(--border)); }
+.pane-handle:focus-visible { outline: none; }
 .pane { min-width: 0; overflow: hidden; display: flex; flex-direction: column; }
 .pane.left, .pane.right { background: var(--surface); }
 .pane.left { border-right: 1px solid var(--border); }
@@ -200,7 +208,10 @@ button.icon-only { display: inline-flex; align-items: center; justify-content: c
   background: var(--accent-soft); outline: 2px dashed var(--accent); outline-offset: -2px; border-radius: 6px;
 }
 .group-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
-.group-head button { padding: 2px 10px; font-size: 12px; }
+.group-head { position: relative; }
+.group-head .group-more { opacity: 0; font-size: 14px; line-height: 1; }
+.group-head:hover .group-more, .group-head:focus-within .group-more,
+.group-head .group-more[aria-expanded='true'] { opacity: 1; }
 .node-group > .rename-form { margin: 2px 6px 4px; }
 .drop-hint { margin: 2px 6px 6px; font-size: 12px; }
 .undo-line { margin: 6px 0; padding: 6px 8px; border-radius: 6px; background: var(--accent-soft); }
@@ -1161,7 +1172,7 @@ a.auth-provider:hover { border-color: var(--accent); color: var(--accent); }
 /* touch */
 @media (hover: none) {
   /* No hover: the note "More actions" button is always visible. */
-  .note-item .note-more { opacity: 1; }
+  .note-item .note-more, .group-head .group-more { opacity: 1; }
 }
 @media (pointer: coarse) and (max-width: 1099.98px) {
   /* Touch targets of at least 40 px (the phone top bar is sized under "top bar"). */
@@ -1170,7 +1181,6 @@ a.auth-provider:hover { border-color: var(--accent); color: var(--accent); }
   .top-bar .bell-button { min-height: 40px; min-width: 40px; }
   button.icon { min-height: 40px; min-width: 40px; }
   .note-select { min-height: 40px; }
-  .group-head button { min-height: 40px; }
   .agent-tool-list button, .agent-tool-add select, .agent-tool-add button { min-height: 40px; }
   .side-nav a { min-height: 40px; display: flex; align-items: center; }
   .note-menu [role='menuitem'], .note-menu [role='menuitemradio'] { min-height: 40px; }

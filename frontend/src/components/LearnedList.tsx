@@ -20,6 +20,7 @@ interface Props {
 
 const UNDO_MS = 8000
 const UNSORTED = 'unsorted'
+const LIST_MENU = 'list-actions'
 
 /** One line after Archive or after a drop; `previous` is the link a drop replaced. */
 type Undo =
@@ -304,7 +305,7 @@ export function LearnedList({
 
   const grouped = groupNotes(notes, roadmaps, filter, { allTopics: drag !== null })
 
-  const hasCategories = grouped.unsorted.some((g) => g.category !== null)
+  const hasUntopiced = notes.some((n) => placeOf(n) === UNSORTED)
   const draftName = renamingCat?.draft.trim() ?? ''
   const canSaveCategory = draftName !== '' && draftName.length <= 40 && draftName !== renamingCat?.from
 
@@ -416,103 +417,148 @@ export function LearnedList({
           <Icon name="import" />
           Import
         </button>
-      </div>
-      {error && <p className="error" role="alert">{error}</p>}
-      {undoLine}
-      {grouped.domains.map((domain) => (
-        <section key={domain.domainId} aria-label={domain.title} className="domain-group">
-          <h3>{domain.title}</h3>
-          {domain.nodes.map(({ node, notes: nodeNotes }) => (
-            <div
-              key={node.full_id}
-              className={drag?.over === node.full_id ? 'node-group drop-target' : 'node-group'}
-              aria-label={`${domain.title} > ${node.title}`}
-              role="group"
-              {...dropProps(node.full_id, node.title)}
-            >
-              <h4>{node.title}</h4>
-              {nodeNotes.length > 0 ? <ul>{nodeNotes.map(item)}</ul> : <p className="muted drop-hint">Drop here</p>}
-            </div>
-          ))}
-        </section>
-      ))}
-      {(grouped.unsorted.length > 0 || drag) && (
-        <section
-          aria-label="Unsorted"
-          className={drag?.over === UNSORTED ? 'domain-group drop-target' : 'domain-group'}
-          {...dropProps(UNSORTED, 'Unsorted')}
-        >
-          <div className="group-head">
-            <h3>Unsorted</h3>
+        {hasUntopiced && (
+          <button
+            type="button"
+            className="icon list-more"
+            aria-label="List actions"
+            aria-haspopup="menu"
+            aria-expanded={menuFor === LIST_MENU}
+            ref={(el) => {
+              if (el) triggers.current.set(LIST_MENU, el)
+              else triggers.current.delete(LIST_MENU)
+            }}
+            onClick={() => setMenuFor(menuFor === LIST_MENU ? null : LIST_MENU)}
+          >
+            <Icon name="more" />
+          </button>
+        )}
+        {menuFor === LIST_MENU && (
+          <ActionMenu label="List actions" onClose={closeMenu} triggerSelector=".list-more">
             <button
               type="button"
+              role="menuitem"
               disabled={grouping}
-              title="Sends the titles and the start of each unsorted note to the Note sorter agent. Running it again regroups every unsorted note, including groups you renamed."
-              onClick={() => void groupWithAi()}
+              title="Sends the titles and the start of each note without a topic to the Note sorter agent. Running it again regroups every note without a topic, including groups you renamed."
+              onClick={() => {
+                setMenuFor(null)
+                void groupWithAi()
+              }}
             >
               {grouping ? 'Grouping…' : 'Group with AI'}
             </button>
-          </div>
-          {grouped.unsorted.length === 0 && <p className="muted drop-hint">Drop here</p>}
-          {grouped.unsorted.length > 0 && !hasCategories && <ul>{grouped.unsorted[0].notes.map(item)}</ul>}
-          {hasCategories &&
-            grouped.unsorted.map(({ category, notes: groupNotes }) => {
-              const name = category ?? 'Other'
-              return (
-                <div key={name} className="node-group" role="group" aria-label={`Unsorted > ${name}`}>
-                  {category !== null && renamingCat?.from === category ? (
-                    <form
-                      className="rename-form"
-                      aria-label={`Rename group ${category}`}
-                      onSubmit={(e) => {
-                        e.preventDefault()
-                        if (canSaveCategory) void saveCategory()
+          </ActionMenu>
+        )}
+      </div>
+      {error && <p className="error" role="alert">{error}</p>}
+      {undoLine}
+      {grouped.groups.map((group) => {
+        if (group.kind === 'domain') {
+          return (
+            <section key={`d:${group.domainId}`} aria-label={group.title} className="domain-group">
+              <h3>{group.title}</h3>
+              {group.nodes.map(({ node, notes: nodeNotes }) => (
+                <div
+                  key={node.full_id}
+                  className={drag?.over === node.full_id ? 'node-group drop-target' : 'node-group'}
+                  aria-label={`${group.title} > ${node.title}`}
+                  role="group"
+                  {...dropProps(node.full_id, node.title)}
+                >
+                  <h4>{node.title}</h4>
+                  {nodeNotes.length > 0 ? <ul>{nodeNotes.map(item)}</ul> : <p className="muted drop-hint">Drop here</p>}
+                </div>
+              ))}
+            </section>
+          )
+        }
+        if (group.kind === 'unsorted') {
+          return (
+            <section
+              key="unsorted"
+              aria-label="Unsorted"
+              className={drag?.over === UNSORTED ? 'domain-group drop-target' : 'domain-group'}
+              {...dropProps(UNSORTED, 'Unsorted')}
+            >
+              <h3>Unsorted</h3>
+              {group.notes.length > 0 ? <ul>{group.notes.map(item)}</ul> : <p className="muted drop-hint">Drop here</p>}
+            </section>
+          )
+        }
+        const { category } = group
+        const menuKey = `cat:${category}`
+        const menuOpen = menuFor === menuKey
+        return (
+          <section key={menuKey} aria-label={category} className="domain-group">
+            {renamingCat?.from === category ? (
+              <form
+                className="rename-form"
+                aria-label={`Rename group ${category}`}
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  if (canSaveCategory) void saveCategory()
+                }}
+              >
+                <input
+                  className="rename-input"
+                  aria-label="New name"
+                  autoFocus
+                  value={renamingCat.draft}
+                  onChange={(e) => setRenamingCat({ from: category, draft: e.target.value })}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      // Cancels the rename only, not the phone drawer around the list.
+                      e.stopPropagation()
+                      setRenamingCat(null)
+                    }
+                  }}
+                />
+                <button type="submit" className="primary" disabled={!canSaveCategory}>
+                  Save
+                </button>
+                <button type="button" onClick={() => setRenamingCat(null)}>
+                  Cancel
+                </button>
+              </form>
+            ) : (
+              <div className="group-head">
+                <h3>{category}</h3>
+                <button
+                  type="button"
+                  className="icon group-more"
+                  aria-label={`More actions for group ${category}`}
+                  aria-haspopup="menu"
+                  aria-expanded={menuOpen}
+                  ref={(el) => {
+                    if (el) triggers.current.set(menuKey, el)
+                    else triggers.current.delete(menuKey)
+                  }}
+                  onClick={() => setMenuFor(menuOpen ? null : menuKey)}
+                >
+                  <Icon name="more" />
+                </button>
+                {menuOpen && (
+                  <ActionMenu label="Group actions" onClose={closeMenu} triggerSelector=".group-more">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setMenuFor(null)
+                        setRenamingCat({ from: category, draft: category })
                       }}
                     >
-                      <input
-                        className="rename-input"
-                        aria-label="New name"
-                        autoFocus
-                        value={renamingCat.draft}
-                        onChange={(e) => setRenamingCat({ from: category, draft: e.target.value })}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Escape') {
-                            // Cancels the rename only, not the phone drawer around the list.
-                            e.stopPropagation()
-                            setRenamingCat(null)
-                          }
-                        }}
-                      />
-                      <button type="submit" className="primary" disabled={!canSaveCategory}>
-                        Save
-                      </button>
-                      <button type="button" onClick={() => setRenamingCat(null)}>
-                        Cancel
-                      </button>
-                    </form>
-                  ) : (
-                    <div className="group-head">
-                      <h4>{name}</h4>
-                      {category !== null && (
-                        <button
-                          type="button"
-                          aria-label={`Rename group ${category}`}
-                          onClick={() => setRenamingCat({ from: category, draft: category })}
-                        >
-                          Rename
-                        </button>
-                      )}
-                    </div>
-                  )}
-                  <ul>{groupNotes.map(item)}</ul>
-                </div>
-              )
-            })}
-        </section>
-      )}
-      {grouped.domains.length === 0 && grouped.unsorted.length === 0 && !drag && (
-        <p className="muted">No note title matches “{filter}”.</p>
-      )}
+                      <Icon name="edit" />
+                      Rename
+                    </button>
+                  </ActionMenu>
+                )}
+              </div>
+            )}
+            <ul>{group.notes.map(item)}</ul>
+          </section>
+        )
+      })}
+      {grouped.groups.length === 0 && !drag && <p className="muted">No note title matches “{filter}”.</p>}
       {archivedSection}
       {moving && (
         <div className="dialog-backdrop">

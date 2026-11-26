@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import type { ChatPage, Me, Note, ProposedTopics } from '../api'
 import {
   useAllRoadmaps,
@@ -13,6 +13,8 @@ import {
 import { useAuth } from '../lib/auth'
 import { forgetReturn, parseAuthRoute, rememberReturn, returnRoute, useHash } from '../lib/authRoute'
 import { domainOf } from '../lib/grouping'
+import { usePaneWidths } from '../lib/paneWidths'
+import { PaneHandle } from './PaneHandle'
 import { isSettings, navigate, useRoute } from '../lib/route'
 import { useScreenClass, type ScreenClass } from '../lib/useScreenClass'
 import { useTheme, type Theme } from '../lib/theme'
@@ -217,7 +219,20 @@ function MainApp({ theme, onThemeChange, health, user }: MainProps) {
   const leftTitle = { settings: 'Settings', profile: 'Profile', learned: 'Learned' }[leftKind]
   const leftNoun = { settings: 'settings sections', profile: 'profile sections', learned: 'learned list' }[leftKind]
 
-  const columns = phone ? ['1fr'] : [leftOpen ? 'minmax(240px, 22%)' : '44px', '1fr', rightOpen ? 'minmax(300px, 30%)' : '44px']
+  const shellRef = useRef<HTMLDivElement>(null)
+  const [resizing, setResizing] = useState(false)
+  const panes = usePaneWidths(shellRef, leftOpen, rightOpen)
+  const columns = phone ? ['1fr'] : panes.columns
+  const handle = (side: 'left' | 'right') => (
+    <PaneHandle
+      side={side}
+      value={panes.value(side)}
+      max={panes.max(side)}
+      onChange={(width) => panes.set(side, width)}
+      onReset={() => panes.set(side, null)}
+      onDragging={setResizing}
+    />
+  )
 
   let center: React.ReactNode = null
   if (route.page === 'home') {
@@ -339,7 +354,9 @@ function MainApp({ theme, onThemeChange, health, user }: MainProps) {
       {health.state === 'down' && <ServiceUnavailable health={health} />}
       {/* Hidden, not unmounted, during an outage: open drafts and the chat survive until it is back. */}
       <div
+        ref={shellRef}
         className="app-shell"
+        data-resizing={resizing}
         style={{ gridTemplateColumns: columns.join(' ') }}
         data-drawer-open={phone && (leftOpen || rightOpen)}
         hidden={health.state === 'down'}
@@ -419,6 +436,8 @@ function MainApp({ theme, onThemeChange, health, user }: MainProps) {
           drawer={phone}
           onReviewTopics={reviewTopics}
         />
+        {!phone && leftOpen && handle('left')}
+        {!phone && rightOpen && handle('right')}
       </div>
 
       {user && <TimeZoneDialog user={user} />}

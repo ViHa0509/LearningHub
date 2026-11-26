@@ -1,0 +1,5 @@
+# Evidence: learned-list-layout
+
+- qc-e2e: new `frontend/e2e/learned-list-layout.e2e.ts`; `unsorted-categories.e2e.ts` updated to the new spec (top-level category regions, List actions menu, group menu, Unsorted last). Run with `curation`, `agent-learned-notes` and `responsive`: 92 passed, 23 skipped, no product bug. Full suite: run by the push gate.
+- qc-ui: pass. Open minors: no screenshot of a hovered or focused resize handle; the phone screenshots of the group menu were taken without touch emulation (the group button has the `icon` class, so it is 40 px under `pointer: coarse` like the note button); the tablet list at 240 px cuts the filter placeholder (existing).
+- Verifier: every check passed except one backend test, `test_search.py::test_note_title_match_comes_before_text_match_then_newest`. It is outside this change and is the same clock-ordering flake seen before (ordering by DB `created_at`). The main session pinned `created_at` in that test, as in `test_note_categories.py`; `tests/test_search.py` passes (15), and the commit gate re-ran the full backend suite.
