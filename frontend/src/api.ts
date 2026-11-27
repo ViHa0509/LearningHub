@@ -755,12 +755,15 @@ async function health(): Promise<Health> {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+/** `fetched`: an answer already received (chatStream reads errors and plain answers here). */
+async function request<T>(path: string, init?: RequestInit, fetched?: Response): Promise<T> {
   // The backend refuses changes without this header, so other origins (imported pages) cannot make them.
-  const response = await watchedFetch(path, {
-    ...init,
-    headers: { ...(init?.headers as Record<string, string> | undefined), 'X-LearningHub': '1' },
-  })
+  const response =
+    fetched ??
+    (await watchedFetch(path, {
+      ...init,
+      headers: { ...(init?.headers as Record<string, string> | undefined), 'X-LearningHub': '1' },
+    }))
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`
     let fields: FieldError[] = []
@@ -785,6 +788,53 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (response.status === 204) return undefined as T
   return (await response.json()) as T
+}
+
+/** One event of a streamed agent answer (change agent-streaming). */
+export type ChatStreamEvent = { type: 'text'; text: string } | { type: 'step'; step: AgentStep }
+
+type StreamLine =
+  | ChatStreamEvent
+  | { type: 'done'; answer: ChatReply }
+  | { type: 'error'; status: number; detail: string }
+
+/**
+ * POST /api/agent/chat as a stream: text and steps go to `onEvent` while the agent works; resolves
+ * with the final answer. A plain JSON answer (a proxy or mock that does not stream) is the answer.
+ */
+async function chatStream(body: ChatRequest, onEvent: (event: ChatStreamEvent) => void): Promise<ChatReply> {
+  const init = json('POST', body)
+  const response = await watchedFetch('/api/agent/chat', {
+    ...init,
+    headers: { ...(init.headers as Record<string, string>), 'X-LearningHub': '1', Accept: 'application/x-ndjson' },
+  })
+  if (!response.ok || !(response.headers.get('Content-Type') ?? '').includes('ndjson')) {
+    // Errors and plain answers are read exactly as request() reads them.
+    return request<ChatReply>('/api/agent/chat', undefined, response)
+  }
+  let answer: ChatReply | null = null
+  const handle = (line: string) => {
+    if (!line.trim()) return
+    const event = JSON.parse(line) as StreamLine
+    if (event.type === 'done') answer = event.answer
+    else if (event.type === 'error') throw new ApiError(event.status, event.detail)
+    else onEvent(event)
+  }
+  const decoder = new TextDecoder()
+  let rest = ''
+  if (response.body) {
+    const reader = response.body.getReader()
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      const lines = (rest + decoder.decode(value, { stream: true })).split('\n')
+      rest = lines.pop() ?? ''
+      lines.forEach(handle)
+    }
+  }
+  handle(rest + decoder.decode())
+  if (!answer) throw new ApiError(502, 'The agent answer ended early')
+  return answer
 }
 
 /** The biggest part of a restore upload; one request must stay under the host's body limit. */
@@ -957,6 +1007,7 @@ export const api = {
   saveAreaAgents: (domain: string, body: { instructions: string; tools: string[] | null }) =>
     request<AreaAgentSettings>(`/api/agents/areas/${domain}`, json('PUT', body)),
   chat: (body: ChatRequest) => request<ChatReply>('/api/agent/chat', json('POST', body)),
+  chatStream,
   /** Asks the running chat turn to stop; answers 204 whatever the run is. */
   stopAgentRun: (runId: string) => request<void>(`/api/agent/runs/${runId}/stop`, { method: 'POST' }),
   a2uiAction: (surfaceId: string, action: Record<string, unknown>) =>

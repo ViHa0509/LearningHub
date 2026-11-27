@@ -43,17 +43,23 @@ export function MessageList({ entries, busy, onRetry, onStarter, onReview, petSh
           <AssistantMessage key={entry.id} entry={entry} busy={busy} onRetry={onRetry} onReview={onReview} />
         ),
       )}
-      {busy && (
+      {busy && !entries.some((e) => e.streaming) && (
         <div className="agent-row">
           <Avatar />
-          <div className="agent-bubble assistant agent-working-bubble">
-            <p className="agent-working" role="status">
-              <AnimatedShinyText>Thinking…</AnimatedShinyText>
-            </p>
-          </div>
+          <Working />
         </div>
       )}
       <div ref={end} />
+    </div>
+  )
+}
+
+function Working() {
+  return (
+    <div className="agent-bubble assistant agent-working-bubble">
+      <p className="agent-working" role="status">
+        <AnimatedShinyText>Thinking…</AnimatedShinyText>
+      </p>
     </div>
   )
 }
@@ -147,11 +153,15 @@ function AssistantMessage({
     <div className="agent-row">
       <Avatar />
       <div className="agent-answer">
-        <div className="agent-bubble assistant markdown">
-          <Markdown remarkPlugins={REMARK} components={MARKDOWN}>
-            {entry.content}
-          </Markdown>
-        </div>
+        {entry.streaming && !entry.content ? (
+          <Working />
+        ) : (
+          <div className="agent-bubble assistant markdown" aria-busy={entry.streaming || undefined}>
+            <Markdown remarkPlugins={REMARK} components={MARKDOWN}>
+              {entry.content}
+            </Markdown>
+          </div>
+        )}
         {entry.surfaces?.map((surface) => (
           <Suspense key={surface.id} fallback={<p className="muted chat-surface-loading">Loading interactive part…</p>}>
             <ChatSurface surface={surface} />
@@ -179,29 +189,31 @@ function AssistantMessage({
             </ul>
           </details>
         )}
-        <div className="agent-actions">
-          <CopyButton text={entry.content} label="Copy answer" iconOnly />
-          <button
-            type="button"
-            className="ghost icon-btn small"
-            aria-label="Retry"
-            title="Retry"
-            onClick={() => onRetry(entry.id)}
-            disabled={busy}
-          >
-            <Icon name="retry" size={14} />
-          </button>
-          {entry.stopped && <span className="agent-stopped">Stopped</span>}
-          {by && (
-            <p className="agent-caption">
-              <span>
-                {by.name} · {by.model}
-                {by.fallback ? ' (fallback)' : ''}
-              </span>{' '}
-              · <span>{effortLabel(by.effort)}</span>
-            </p>
-          )}
-        </div>
+        {!entry.streaming && (
+          <div className="agent-actions">
+            <CopyButton text={entry.content} label="Copy answer" iconOnly />
+            <button
+              type="button"
+              className="ghost icon-btn small"
+              aria-label="Retry"
+              title="Retry"
+              onClick={() => onRetry(entry.id)}
+              disabled={busy}
+            >
+              <Icon name="retry" size={14} />
+            </button>
+            {entry.stopped && <span className="agent-stopped">Stopped</span>}
+            {by && (
+              <p className="agent-caption">
+                <span>
+                  {by.name} · {by.model}
+                  {by.fallback ? ' (fallback)' : ''}
+                </span>{' '}
+                · <span>{effortLabel(by.effort)}</span>
+              </p>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

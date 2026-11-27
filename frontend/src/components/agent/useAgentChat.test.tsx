@@ -35,7 +35,7 @@ afterEach(() => vi.restoreAllMocks())
 describe('useAgentChat stop', () => {
   it('sends a run id, stops once, keeps waiting and marks the stopped answer', async () => {
     let finish!: (r: ChatReply) => void
-    const chat = vi.spyOn(api, 'chat').mockReturnValue(new Promise((resolve) => (finish = resolve)))
+    const chat = vi.spyOn(api, 'chatStream').mockReturnValue(new Promise((resolve) => (finish = resolve)))
     const stop = vi.spyOn(api, 'stopAgentRun').mockResolvedValue(undefined)
     const { result } = setup()
 
@@ -60,7 +60,7 @@ describe('useAgentChat stop', () => {
   it('uses a new run id per send and resets stopping on an error', async () => {
     let fail!: (e: Error) => void
     const chat = vi
-      .spyOn(api, 'chat')
+      .spyOn(api, 'chatStream')
       .mockReturnValueOnce(new Promise((_, reject) => (fail = reject)))
       .mockResolvedValueOnce(reply())
     vi.spyOn(api, 'stopAgentRun').mockResolvedValue(undefined)
@@ -82,5 +82,96 @@ describe('useAgentChat stop', () => {
     const { result } = setup()
     act(() => result.current.stop())
     expect(stop).not.toHaveBeenCalled()
+  })
+})
+
+/** Spec: agent-streaming - The answer is streamed while it is written (client side). */
+describe('useAgentChat streaming', () => {
+  type OnEvent = Parameters<typeof api.chatStream>[1]
+
+  it('grows the answer, drops text before a step, then shows the final answer', async () => {
+    let emit!: OnEvent
+    let finish!: (r: ChatReply) => void
+    vi.spyOn(api, 'chatStream').mockImplementation((_, onEvent) => {
+      emit = onEvent
+      return new Promise((resolve) => (finish = resolve))
+    })
+    const { result } = setup()
+    act(() => void result.current.send(turn))
+    await waitFor(() => expect(result.current.busy).toBe(true))
+
+    act(() => emit({ type: 'text', text: 'Let me ' }))
+    act(() => emit({ type: 'text', text: 'look.' }))
+    expect(result.current.entries.at(-1)).toMatchObject({ role: 'assistant', content: 'Let me look.', streaming: true })
+
+    const step = { tool: 'search_notes', input: { query: 'redis' }, summary: 'Searched notes' }
+    act(() => emit({ type: 'step', step }))
+    expect(result.current.entries.at(-1)).toMatchObject({ content: '', steps: [step], streaming: true })
+
+    act(() => emit({ type: 'text', text: 'Redis is' }))
+    expect(result.current.entries.at(-1)?.content).toBe('Redis is')
+
+    await act(async () => finish(reply({ reply: 'Redis is a cache.', steps: [step] })))
+    expect(result.current.busy).toBe(false)
+    expect(result.current.entries).toHaveLength(2)
+    expect(result.current.entries.at(-1)).toMatchObject({ content: 'Redis is a cache.', steps: [step], messageId: 'a1' })
+    expect(result.current.entries.at(-1)?.streaming).toBeUndefined()
+  })
+
+  it('removes the partial answer when the run fails', async () => {
+    let emit!: OnEvent
+    let fail!: (e: Error) => void
+    vi.spyOn(api, 'chatStream').mockImplementation((_, onEvent) => {
+      emit = onEvent
+      return new Promise((_, reject) => (fail = reject))
+    })
+    const { result } = setup()
+    act(() => void result.current.send(turn))
+    await waitFor(() => expect(result.current.busy).toBe(true))
+    act(() => emit({ type: 'text', text: 'Half an ans' }))
+    await act(async () => fail(new Error('provider down')))
+    expect(result.current.entries).toHaveLength(1)
+    expect(result.current.entries[0]).toMatchObject({ role: 'user', error: 'provider down' })
+  })
+})
+
+describe('api.chatStream', () => {
+  const ndjson = (...lines: unknown[]) =>
+    new Response(lines.map((l) => JSON.stringify(l) + '\n').join(''), {
+      status: 200,
+      headers: { 'Content-Type': 'application/x-ndjson' },
+    })
+  const body = { agent_id: 'assistant', messages: [{ role: 'user' as const, content: 'hi' }], page: { kind: 'home' } as never }
+
+  it('asks for a stream, passes events on and returns the done answer', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      ndjson({ type: 'text', text: 'He' }, { type: 'text', text: 'llo' }, { type: 'done', answer: reply({ reply: 'Hello' }) }),
+    )
+    const events: unknown[] = []
+    const answer = await api.chatStream(body, (e) => events.push(e))
+    expect(answer.reply).toBe('Hello')
+    expect(events).toEqual([
+      { type: 'text', text: 'He' },
+      { type: 'text', text: 'llo' },
+    ])
+    const headers = fetchMock.mock.calls[0][1]?.headers as Record<string, string>
+    expect(headers.Accept).toBe('application/x-ndjson')
+    expect(headers['X-LearningHub']).toBe('1')
+  })
+
+  it('throws the error line as an ApiError', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(ndjson({ type: 'text', text: 'x' }, { type: 'error', status: 502, detail: 'P (m): unavailable' }))
+    await expect(api.chatStream(body, () => {})).rejects.toMatchObject({ status: 502, message: 'P (m): unavailable' })
+  })
+
+  it('reads an HTTP error and a plain JSON answer like any request', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: 'Too many agent requests' }), { status: 429, headers: { 'Content-Type': 'application/json' } }),
+    )
+    await expect(api.chatStream(body, () => {})).rejects.toMatchObject({ status: 429, message: 'Too many agent requests' })
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify(reply({ reply: 'plain' })), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+    )
+    expect((await api.chatStream(body, () => {})).reply).toBe('plain')
   })
 })

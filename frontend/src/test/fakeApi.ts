@@ -1959,7 +1959,7 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
         session.last_message_at = now
         session.message_count = session.messages.length
         state.chatSessions = [session, ...state.chatSessions.filter((s) => s !== session)]
-        return respond({
+        const reply = {
           session: { id: session.id, title: session.title },
           user_message_id: session.messages.at(-2)!.id,
           assistant_message_id: session.messages.at(-1)!.id,
@@ -1970,7 +1970,21 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
           fallback_used: false,
           effort: chatBody.effort ?? 'medium',
           ...answer,
-        })
+        }
+        if (!headers.Accept?.includes('ndjson')) return respond(reply)
+        // A streamed answer (change agent-streaming): the steps, the text in two parts, then done.
+        const lines = [
+          ...(reply.steps ?? []).map((step) => ({ type: 'step', step })),
+          { type: 'text', text: reply.reply.slice(0, Math.ceil(reply.reply.length / 2)) },
+          { type: 'text', text: reply.reply.slice(Math.ceil(reply.reply.length / 2)) },
+          { type: 'done', answer: reply },
+        ]
+        return Promise.resolve(
+          new Response(lines.map((l) => JSON.stringify(l) + '\n').join(''), {
+            status: 200,
+            headers: { 'Content-Type': 'application/x-ndjson' },
+          }),
+        )
       }
       if (url === '/api/agent/sessions' && method === 'GET') {
         const sessions = state.chatSessions.map(({ messages: _messages, ...summary }) => summary)

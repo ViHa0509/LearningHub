@@ -7,6 +7,7 @@ back into a ``Turn``. Clients are injected so tests never touch the network.
 import json
 from collections.abc import Callable, Sequence
 from functools import partial
+from types import SimpleNamespace
 from typing import Any
 
 import anthropic
@@ -30,6 +31,9 @@ _WEB_SEARCH_NEW = (
     "claude-sonnet-4-6",
 )
 MAX_PAUSED_TURNS = 3
+
+# Called with each piece of answer text while the model writes it.
+TextSink = Callable[[str], None]
 
 
 def web_search_tool(model: str) -> dict[str, Any]:
@@ -291,11 +295,21 @@ class AnthropicChat(_Adapter):
         messages: Sequence[Message],
         tools: Sequence[ToolSpec],
         web_search: bool = False,
+        on_text: TextSink | None = None,
     ) -> Turn:
         kwargs = self.request(system, messages, tools)
         if web_search:
             kwargs["tools"] = [*kwargs.get("tools", []), web_search_tool(self.model)]
-        response = self._call(lambda: self._client.messages.create(**kwargs))
+
+        def create(**kw: Any) -> Any:
+            if on_text is None:
+                return self._client.messages.create(**kw)
+            with self._client.messages.stream(**kw) as stream:
+                for text in stream.text_stream:
+                    on_text(text)
+                return stream.get_final_message()
+
+        response = self._call(lambda: create(**kwargs))
         turn = from_anthropic(response)
         # A long search turn can pause; it goes on from the paused content, a few times at most.
         searches, sources = list(turn.searches), list(turn.sources)
@@ -307,7 +321,7 @@ class AnthropicChat(_Adapter):
                 **kwargs,
                 "messages": [*kwargs["messages"], {"role": "assistant", "content": paused}],
             }
-            response = self._call(partial(self._client.messages.create, **kwargs))
+            response = self._call(partial(create, **kwargs))
             turn = from_anthropic(response)
             searches += [q for q in turn.searches if q not in searches]
             sources += [s for s in turn.sources if s not in sources]
@@ -339,12 +353,53 @@ class OpenAICompatibleChat(_Adapter):
             kwargs["tools"] = to_openai_tools(tools)
         return kwargs
 
-    def complete(self, system: str, messages: Sequence[Message], tools: Sequence[ToolSpec]) -> Turn:
+    def complete(
+        self,
+        system: str,
+        messages: Sequence[Message],
+        tools: Sequence[ToolSpec],
+        on_text: TextSink | None = None,
+    ) -> Turn:
         kwargs = self.request(system, messages, tools)
-        response = self._call(lambda: self._client.chat.completions.create(**kwargs))
+        if on_text is None:
+            response = self._call(lambda: self._client.chat.completions.create(**kwargs))
+        else:
+            response = self._call(lambda: self._streamed(kwargs, on_text))
         try:
             return from_openai(response)
         except (AttributeError, IndexError, TypeError) as exc:
             raise ProviderError(
                 "the provider sent an answer in an unexpected format", "unavailable"
             ) from exc
+
+    def _streamed(self, kwargs: dict[str, Any], on_text: TextSink) -> Any:
+        """A streamed completion, joined into the shape of a plain one for ``from_openai``."""
+        texts: list[str] = []
+        calls: dict[int, dict[str, str]] = {}
+        finish: str | None = None
+        for chunk in self._client.chat.completions.create(**kwargs, stream=True):
+            if not chunk.choices:
+                continue
+            choice = chunk.choices[0]
+            delta = choice.delta
+            if delta is not None and delta.content:
+                texts.append(delta.content)
+                on_text(delta.content)
+            for part in (delta.tool_calls if delta is not None else None) or []:
+                slot = calls.setdefault(part.index, {"id": "", "name": "", "arguments": ""})
+                if part.id:
+                    slot["id"] = part.id
+                if part.function is not None:
+                    slot["name"] += part.function.name or ""
+                    slot["arguments"] += part.function.arguments or ""
+            if choice.finish_reason:
+                finish = choice.finish_reason
+        tool_calls = [
+            SimpleNamespace(
+                id=c["id"],
+                function=SimpleNamespace(name=c["name"], arguments=c["arguments"]),
+            )
+            for _, c in sorted(calls.items())
+        ]
+        message = SimpleNamespace(content="".join(texts), tool_calls=tool_calls)
+        return SimpleNamespace(choices=[SimpleNamespace(message=message, finish_reason=finish)])

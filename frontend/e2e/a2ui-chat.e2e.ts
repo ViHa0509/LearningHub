@@ -204,7 +204,11 @@ test('Inspect the chat answer: the surface messages hold the questions and no co
   const { box, log } = await openChat(page, request)
   const response = page.waitForResponse((r) => isChat(r.request()))
   await askQuiz(box, log, 'inspect')
-  const chat = (await (await response).json()) as { reply: string; surfaces: { kind: string; messages: unknown[] }[] }
+  // The panel asks for a streamed answer (change agent-streaming): the last line holds the answer.
+  const lines = (await (await response).text()).trim().split('\n')
+  const done = JSON.parse(lines.at(-1)!) as { type: string; answer: { reply: string; surfaces: { kind: string; messages: unknown[] }[] } }
+  expect(done.type).toBe('done')
+  const chat = done.answer
   expect(chat.reply).toContain('Here is your quiz.')
   expect(chat.surfaces).toHaveLength(1)
   expect(chat.surfaces[0].kind).toBe('quiz')

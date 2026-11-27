@@ -6,6 +6,7 @@ import {
   queryKeys,
   type AgentStep,
   type ChatPage,
+  type ChatStreamEvent,
   type ChatSessionDetail,
   type Effort,
   type ProposedTopics,
@@ -42,6 +43,8 @@ export interface Entry {
   surfaces?: SurfaceOut[]
   /** The run was stopped (by the user or by its step cap). */
   stopped?: boolean
+  /** The answer is still being written: `content` and `steps` hold what arrived so far. */
+  streaming?: boolean
 }
 
 let seq = 0
@@ -139,9 +142,22 @@ export function useAgentChat({ effort, page }: Options) {
     const run = crypto.randomUUID()
     runId.current = run
     stopSent.current = false
+    // The answer while it is written; a tool step drops the text before it (not the answer).
+    const live: Entry = { id: ++seq, role: 'assistant', content: '', steps: [], streaming: true }
+    const onEvent = (event: ChatStreamEvent) => {
+      const next: Entry =
+        event.type === 'text'
+          ? { ...live, content: live.content + event.text }
+          : { ...live, content: '', steps: [...(live.steps ?? []), event.step] }
+      Object.assign(live, next)
+      setEntries((list) =>
+        list.some((e) => e.id === live.id) ? list.map((e) => (e.id === live.id ? next : e)) : [...list, next],
+      )
+    }
+    const withoutLive = (list: Entry[]) => list.filter((e) => e.id !== live.id)
     try {
       // The server holds the conversation of a stored chat: only the new message is sent.
-      const answer = await api.chat({
+      const answer = await api.chatStream({
         agent_id: turn.agentId,
         messages: [{ role: 'user', content: turn.content, display: turn.display }],
         page,
@@ -152,10 +168,10 @@ export function useAgentChat({ effort, page }: Options) {
         ...(turn.attachments.length > 0
           ? { attachments: turn.attachments.map(({ name, text }) => ({ name, text })) }
           : {}),
-      })
+      }, onEvent)
       setSession(answer.session.id)
       setEntries((list) => [
-        ...list.map((entry) => (entry.id === question.id ? { ...entry, messageId: answer.user_message_id } : entry)),
+        ...withoutLive(list).map((entry) => (entry.id === question.id ? { ...entry, messageId: answer.user_message_id } : entry)),
         {
           id: ++seq,
           role: 'assistant',
@@ -205,7 +221,9 @@ export function useAgentChat({ effort, page }: Options) {
       }
       // The chat was deleted elsewhere: what is on screen goes on as a new chat when sent again.
       if (current && message === 'chat session not found') setSession(null)
-      setEntries((list) => list.map((entry) => (entry.id === question.id ? { ...entry, error: message } : entry)))
+      setEntries((list) =>
+        withoutLive(list).map((entry) => (entry.id === question.id ? { ...entry, error: message } : entry)),
+      )
     } finally {
       runId.current = null
       setStopping(false)

@@ -30,7 +30,7 @@ from app.agent.llm.errors import ProviderError
 from app.agent.llm.factory import ChatModel, ChatModelFactory, ProviderSettings, runs_own_loop
 from app.agent.llm.logs import LOG, event
 from app.agent.llm.params import CLAUDE_CODE_TYPE
-from app.agent.loop import tool_loop
+from app.agent.loop import Progress, tool_loop
 from app.agent.messages import Message, ToolSpec, Turn
 from app.agent.results import AgentResult
 from app.agent.secrets import SecretBox, SecretUnreadable
@@ -474,12 +474,16 @@ class AgentModel:
         messages: Sequence[Message],
         tools: Sequence[ToolSpec],
         web_search: bool = False,
+        on_text: Callable[[str], None] | None = None,
     ) -> Turn:
+        # Only a streaming request passes on_text, so models without it keep working.
+        extra: dict[str, Any] = {"on_text": on_text} if on_text is not None else {}
+
         def call(model: ChatModel) -> Turn:
             if web_search and getattr(model, "supports_web_search", False):
-                turn: Turn = model.complete(system, messages, tools, web_search=True)  # type: ignore[call-arg]
+                turn: Turn = model.complete(system, messages, tools, web_search=True, **extra)  # type: ignore[call-arg]
                 return turn
-            return model.complete(system, messages, tools)
+            return model.complete(system, messages, tools, **extra)
 
         return self._with_fallback(call, own_loop=False)
 
@@ -491,9 +495,11 @@ class AgentModel:
         max_steps: int,
         *,
         web_search: bool = False,
+        progress: Progress | None = None,
     ) -> AgentResult:
         """``web_search`` reaches only a model that runs its own loop (Claude Code); the API
-        tool loop ignores it."""
+        tool loop ignores it. ``progress`` reaches only the app's tool loop: Claude Code sends
+        its answer at the end."""
         if tools is None:
             raise ValueError("the agent tools are required")
         done = AgentResult(reply="")
@@ -508,7 +514,9 @@ class AgentModel:
             try:
                 if self._current_runs_own_loop():
                     return merged(done, self._with_fallback(own_run, own_loop=True))
-                return tool_loop(self, system, conversation, tools, max_steps, done)
+                return tool_loop(
+                    self, system, conversation, tools, max_steps, done, progress=progress
+                )
             except HandOver:
                 continue
         raise AssertionError("unreachable: the fallback is chosen only once")

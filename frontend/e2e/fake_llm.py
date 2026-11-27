@@ -47,7 +47,7 @@ import yaml
 from urllib.parse import parse_qs, urlencode
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse, StreamingResponse
 
 app = FastAPI()
 
@@ -722,6 +722,39 @@ def list_models() -> dict:
     }
 
 
+# A user message holding this marker gets its streamed answer slowly, word by word.
+SLOW_STREAM = "[[slowstream]]"
+SLOW_STREAM_DELAY_S = 0.4
+
+
+async def _stream(payload: dict, model: str, message: dict, finish: str):
+    """The same answer as server-sent chunks, the way OpenAI streams: text word by word, each
+    tool call in one chunk, then the finish reason."""
+    users = [m for m in payload.get("messages") or [] if m.get("role") == "user"]
+    slow = bool(users) and SLOW_STREAM in str(users[-1].get("content"))
+
+    def chunk(delta: dict, reason: str | None = None) -> str:
+        body = {
+            "id": "chatcmpl-fake",
+            "object": "chat.completion.chunk",
+            "created": int(time.time()),
+            "model": model,
+            "choices": [{"index": 0, "delta": delta, "finish_reason": reason}],
+        }
+        return f"data: {json.dumps(body)}\n\n"
+
+    yield chunk({"role": "assistant"})
+    words = re.findall(r"\S+\s*", message.get("content") or "")
+    for word in words:
+        if slow:
+            await asyncio.sleep(SLOW_STREAM_DELAY_S)
+        yield chunk({"content": word})
+    for i, call in enumerate(message.get("tool_calls") or []):
+        yield chunk({"tool_calls": [{"index": i, **call}]})
+    yield chunk({}, finish)
+    yield "data: [DONE]\n\n"
+
+
 @app.post("/v1/chat/completions")
 async def chat_completions(payload: dict) -> JSONResponse:
     model = str(payload.get("model", ""))
@@ -788,6 +821,8 @@ async def chat_completions(payload: dict) -> JSONResponse:
         text = "Proposed topics for review." if "propose_topics" in json.dumps(payload.get("tools") or []) else _answer(payload)
         message = {"role": "assistant", "content": text}
         finish = "stop"
+    if payload.get("stream"):
+        return StreamingResponse(_stream(payload, model, message, finish), media_type="text/event-stream")
     return JSONResponse(
         {
             "id": "chatcmpl-fake",

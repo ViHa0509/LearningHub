@@ -1,9 +1,17 @@
 """The agent chat: one request runs the agent loop on the agent's resolved provider."""
 
+import asyncio
+import dataclasses
+import json
+import logging
 import uuid
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from typing import Annotated, Any, Literal
 
+import anyio
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -19,7 +27,7 @@ from app.agent.history import (
     load_history,
     store_turn,
 )
-from app.agent.loop import Attachment, Effort, Page, run_agent
+from app.agent.loop import Attachment, Effort, Page, Progress, run_agent
 from app.agent.messages import Message, ProviderError
 from app.agent.ratelimit import RateLimiter
 from app.agent.resolve import AgentModel, ResolveError, resolve_chain
@@ -41,6 +49,7 @@ from app.routes.agents import effective_tools
 from app.routes.guard import box_of, factory_of, require_app_header
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
+LOG = logging.getLogger(__name__)
 
 ID = r"^[A-Za-z0-9_-]{1,100}$"
 
@@ -145,14 +154,19 @@ def area_of_page(catalog: RoadmapCatalog, session: Session, user: User, page: Pa
     return None
 
 
-@router.post("/chat", response_model=ChatOut, dependencies=[Depends(require_app_header)])
-def chat(
-    payload: ChatIn,
-    request: Request,
-    catalog: UserCatalog,
-    session: Annotated[Session, Depends(get_session)],
-    user: CurrentUser,
-) -> ChatOut:
+@dataclass
+class Prepared:
+    """A chat request that passed every check before the model runs."""
+
+    agent: AgentDef
+    chat_model: AgentModel
+    stored: list[Message]
+    replace_from: int | None
+    should_stop: StopCheck
+
+
+def _prepare(payload: ChatIn, request: Request, session: Session, user: User) -> Prepared:
+    """Every check made before the model runs; each refusal is an HTTPException."""
     agent = AGENTS.get(payload.agent_id)
     if agent is None:
         raise HTTPException(status_code=404, detail=f"unknown agent '{payload.agent_id}'")
@@ -211,22 +225,89 @@ def chat(
         except RunInUse as exc:
             raise HTTPException(status_code=409, detail="this run id is already in use") from exc
         should_stop = stop_check(factory, payload.run_id)
+    return Prepared(agent, chat_model, stored, replace_from, should_stop)
+
+
+STREAM_FAILED = "the agent request failed"
+NDJSON = "application/x-ndjson"
+
+
+@router.post(
+    "/chat",
+    response_model=ChatOut,
+    responses={200: {"content": {NDJSON: {}}}},
+    dependencies=[Depends(require_app_header)],
+)
+def chat(
+    payload: ChatIn,
+    request: Request,
+    catalog: UserCatalog,
+    session: Annotated[Session, Depends(get_session)],
+    user: CurrentUser,
+) -> ChatOut | StreamingResponse:
+    """With ``Accept: application/x-ndjson`` the answer is a stream of events (change
+    agent-streaming, design 1); otherwise one ``ChatOut`` at the end."""
+    ready = _prepare(payload, request, session, user)
+    if NDJSON in request.headers.get("accept", ""):
+        return _stream(payload, request, catalog, session, user, ready)
     try:
-        return _answer(
-            payload,
-            request,
-            catalog,
-            session,
-            user,
-            agent,
-            chat_model,
-            stored,
-            replace_from,
-            should_stop,
-        )
+        return _answer(payload, request, catalog, session, user, ready)
     finally:
         if payload.run_id is not None:
-            end_run(factory, payload.run_id)
+            end_run(request.app.state.session_factory, payload.run_id)
+
+
+def _stream(
+    payload: ChatIn,
+    request: Request,
+    catalog: RoadmapCatalog,
+    session: Session,
+    user: User,
+    ready: "Prepared",
+) -> StreamingResponse:
+
+    async def events() -> AsyncIterator[str]:
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+
+        def emit(event: dict[str, Any] | None) -> None:
+            loop.call_soon_threadsafe(queue.put_nowait, event)
+
+        progress = Progress(
+            on_text=lambda text: emit({"type": "text", "text": text}),
+            on_step=lambda s: emit(
+                {"type": "step", "step": StepOut(**dataclasses.asdict(s)).model_dump()}
+            ),
+        )
+
+        def work() -> None:
+            try:
+                answer = _answer(payload, request, catalog, session, user, ready, progress)
+                emit({"type": "done", "answer": answer.model_dump(mode="json")})
+            except HTTPException as exc:
+                emit({"type": "error", "status": exc.status_code, "detail": str(exc.detail)})
+            except Exception:
+                LOG.exception("agent stream failed")
+                emit({"type": "error", "status": 500, "detail": STREAM_FAILED})
+            finally:
+                if payload.run_id is not None:
+                    end_run(request.app.state.session_factory, payload.run_id)
+                emit(None)
+
+        task = asyncio.ensure_future(asyncio.to_thread(work))
+        try:
+            while (event := await queue.get()) is not None:
+                yield json.dumps(event) + "\n"
+        finally:
+            # The worker uses this request's DB session: wait for it even when the client left.
+            with anyio.CancelScope(shield=True):
+                await task
+
+    return StreamingResponse(
+        events(),
+        media_type=NDJSON,
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post(
@@ -249,12 +330,11 @@ def _answer(
     catalog: RoadmapCatalog,
     session: Session,
     user: User,
-    agent: AgentDef,
-    chat_model: AgentModel,
-    stored: list[Message],
-    replace_from: int | None,
-    should_stop: StopCheck,
+    ready: Prepared,
+    progress: Progress | None = None,
 ) -> ChatOut:
+    agent, chat_model, should_stop = ready.agent, ready.chat_model, ready.should_stop
+    stored, replace_from = ready.stored, ready.replace_from
     conversation = stored + [Message(role=m.role, text=m.content) for m in payload.messages]
     page = Page(**payload.page.model_dump())
     area = area_of_page(catalog, session, user, page)
@@ -313,6 +393,7 @@ def _answer(
             web_search=chat_model.web_search,
             area_instructions=area_instructions,
             language=str((user.preferences or {}).get("answer_language", "auto")),
+            progress=progress,
         )
     except ProviderError as exc:
         # A surface the tutor already stored is dropped with the failed request.

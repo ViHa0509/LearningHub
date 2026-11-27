@@ -1,7 +1,7 @@
 """Scripted models, factories, SDK stubs and resolvers for agent tests: no network."""
 
 import socket
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from types import SimpleNamespace
 from typing import Any
 
@@ -20,13 +20,23 @@ class FakeModel:
         self.calls: list[dict[str, Any]] = []
         self.models: list[str] | Exception = ["m-1", "m-2"]
 
-    def complete(self, system: str, messages: Sequence[Message], tools: Sequence[ToolSpec]) -> Turn:
+    def complete(
+        self,
+        system: str,
+        messages: Sequence[Message],
+        tools: Sequence[ToolSpec],
+        on_text: Callable[[str], None] | None = None,
+    ) -> Turn:
         self.calls.append({"system": system, "messages": list(messages), "tools": list(tools)})
         if not self._turns:
             return Turn(text="(script ended)")
         turn = self._turns.pop(0)
         if isinstance(turn, Exception):
             raise turn
+        if on_text is not None:
+            # A streaming request: the text arrives word by word.
+            for word in turn.text.split(" "):
+                on_text(word + " ")
         return turn
 
     def list_models(self) -> list[str]:

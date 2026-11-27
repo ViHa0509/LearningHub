@@ -1,7 +1,7 @@
 """The agent loop: call the model, run the tools it asks for, repeat until it answers."""
 
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -68,6 +68,14 @@ Current page: {page}
 
 
 @dataclass(frozen=True)
+class Progress:
+    """Callbacks of a streamed answer: answer text as it is written, each tool step as it ends."""
+
+    on_text: Callable[[str], None]
+    on_step: Callable[[Step], None]
+
+
+@dataclass(frozen=True)
 class Attachment:
     """A text file the user attached to their message."""
 
@@ -103,6 +111,7 @@ __all__ = [
     "Attachment",
     "Effort",
     "Page",
+    "Progress",
     "Step",
     "run_agent",
     "step_budget",
@@ -190,6 +199,7 @@ def run_agent(
     web_search: bool = False,
     area_instructions: str = "",
     language: str = "auto",
+    progress: Progress | None = None,
 ) -> AgentResult:
     """Raises ProviderError when the provider fails; tool problems go back to the model.
 
@@ -200,8 +210,14 @@ def run_agent(
     conversation = with_attachments(conversation, attachments)
     max_steps = step_budget(effort, max_steps)
     if runs_own_loop(chat_model):
-        return chat_model.run(system, conversation, tools, max_steps, web_search=web_search)
-    return tool_loop(chat_model, system, conversation, tools, max_steps, web_search=web_search)
+        # Only a streaming request passes progress, so own-loop models without it keep working.
+        extra = {"progress": progress} if progress is not None else {}
+        return chat_model.run(
+            system, conversation, tools, max_steps, web_search=web_search, **extra
+        )
+    return tool_loop(
+        chat_model, system, conversation, tools, max_steps, web_search=web_search, progress=progress
+    )
 
 
 MAX_SOURCES = 8
@@ -241,6 +257,12 @@ def _stopped_by_user(result: AgentResult) -> AgentResult:
     return result
 
 
+def step(result: AgentResult, done: Step, progress: Progress | None) -> None:
+    result.steps.append(done)
+    if progress is not None:
+        progress.on_step(done)
+
+
 def tool_loop(
     chat_model: ChatModel,
     system: str,
@@ -249,6 +271,7 @@ def tool_loop(
     max_steps: int,
     result: AgentResult | None = None,
     web_search: bool = False,
+    progress: Progress | None = None,
 ) -> AgentResult:
     """Call the model and run the tools it asks for; steps are added to ``result`` as they
     happen, so a caller that catches a ProviderError keeps the steps already done."""
@@ -259,18 +282,21 @@ def tool_loop(
     for _ in range(max_steps):
         if tools.should_stop():
             return _stopped_by_user(result)
-        # Only a model that can search the web is asked to (Anthropic's server tool).
-        if web_search:
-            turn = chat_model.complete(system, messages, tools.specs(), web_search=True)  # type: ignore[call-arg]
-        else:
-            turn = chat_model.complete(system, messages, tools.specs())
+        # Only a model that can search the web is asked to (Anthropic's server tool); only a
+        # streaming request passes on_text, so models without it keep working.
+        extra: dict[str, object] = {"web_search": True} if web_search else {}
+        if progress is not None:
+            extra["on_text"] = progress.on_text
+        turn = chat_model.complete(system, messages, tools.specs(), **extra)
         for query in turn.searches:
-            result.steps.append(
+            step(
+                result,
                 Step(
                     tool="web_search",
                     input={"query": query},
                     summary=f"Searched the web for '{query}'",
-                )
+                ),
+                progress,
             )
         sources += [s for s in turn.sources if s not in sources]
         if not turn.tool_calls:
@@ -283,7 +309,7 @@ def tool_loop(
         for call in turn.tool_calls:
             if turn.truncated:
                 # The call may be incomplete: never run it.
-                result.steps.append(Step(tool=call.name, input=call.input, summary=CUT_SUMMARY))
+                step(result, Step(tool=call.name, input=call.input, summary=CUT_SUMMARY), progress)
                 messages.append(Message(role="tool", text=CUT_RESULT, tool_call_id=call.id))
                 cut_key = (call.name, "", CUT_SUMMARY)
                 failures[cut_key] = failures.get(cut_key, 0) + 1
@@ -295,7 +321,7 @@ def tool_loop(
             if tools.should_stop():
                 return _stopped_by_user(result)
             outcome = tools.run(call.name, call.input)
-            result.steps.append(Step(tool=call.name, input=call.input, summary=outcome.summary))
+            step(result, Step(tool=call.name, input=call.input, summary=outcome.summary), progress)
             if outcome.changed_lesson and outcome.changed_lesson not in result.changed_lessons:
                 result.changed_lessons.append(outcome.changed_lesson)
             saved = getattr(outcome, "changed_note", None)
