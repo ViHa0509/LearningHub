@@ -299,6 +299,8 @@ def _answer(
                 store=request.app.state.store,
                 allowed=allowed,
                 kh_search=request.app.state.kh.search_for(user.id),
+                roadmapsh=request.app.state.roadmapsh,
+                box=box_of(request),
                 interactive=interactive,
                 should_stop=should_stop,
             ),

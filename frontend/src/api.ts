@@ -247,6 +247,12 @@ export interface KhStatus {
   pending: KhPending | null
 }
 
+/** GET/PUT /api/github: whether a GitHub token is saved and its last 4 characters. Never holds the token. */
+export interface GithubStatus {
+  saved: boolean
+  hint: string | null
+}
+
 /** POST /api/kh/connect/poll. `interval` is the new interval while pending; `reason` explains expired or denied. */
 export interface KhPoll {
   status: 'pending' | 'connected' | 'expired' | 'denied'
@@ -940,6 +946,9 @@ export const api = {
   khConnect: () => request<KhPending>('/api/kh/connect', { method: 'POST' }),
   khPoll: () => request<KhPoll>('/api/kh/connect/poll', { method: 'POST' }),
   khDisconnect: () => request<void>('/api/kh', { method: 'DELETE' }),
+  github: () => request<GithubStatus>('/api/github'),
+  saveGithub: (token: string) => request<GithubStatus>('/api/github', json('PUT', { token })),
+  removeGithub: () => request<void>('/api/github', { method: 'DELETE' }),
   agentTools: () => request<AgentTool[]>('/api/agents/tools'),
   agentToolSet: (id: string) => request<AgentToolSet>(`/api/agents/${id}/tools`),
   saveAgentToolSet: (id: string, attached: string[]) =>

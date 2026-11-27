@@ -20,7 +20,8 @@ from sqlalchemy.orm import Session
 from app.a2ui.content import LessonContent, QuizContent, parse_lesson, parse_quiz
 from app.a2ui.interface import ContentSink, InteractiveRequest, InteractiveRunner
 from app.agent.messages import ToolSpec
-from app.db import Lesson, NodeResource, Note
+from app.agent.secrets import SecretBox, SecretUnreadable
+from app.db import GithubToken, Lesson, NodeResource, Note
 from app.kh.service import KhReconnect, KhSearchError, KhSearchFn, KhUnreachable
 from app.learning.topics import clean_topics
 from app.notes_page import build_note_page
@@ -28,6 +29,7 @@ from app.notifications import notify
 from app.resources.fetch import Fetched, FetchError, fetch_text
 from app.resources.store import node_resources
 from app.roadmaps import RoadmapCatalog
+from app.roadmapsh.service import GITHUB, BadInput, NotFound, RoadmapExplorer, SourceError
 from app.storage import FileStore, blob_key, sha256_hex
 from app.text_search import like_pattern, snippet
 
@@ -43,6 +45,13 @@ KH_TEXT_LIMIT = 6000
 KH_PROJECT = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
 KH_CLOSING = re.compile(r"</untrusted_kh_content", re.IGNORECASE)
 KH_TOOL = "kh_search"
+RS_LIST = "roadmapsh_list"
+RS_OUTLINE = "roadmapsh_outline"
+RS_TOPIC = "roadmapsh_topic"
+RS_TOOLS = {RS_LIST, RS_OUTLINE, RS_TOPIC}
+RS_TEXT_LIMIT = 8000
+RS_CLOSING = re.compile(r"</untrusted_roadmapsh_content", re.IGNORECASE)
+RS_TOKEN_HINT = "add a GitHub token in Settings -> Agents -> Connections to raise the limit"
 
 
 @dataclass(frozen=True)
@@ -76,6 +85,25 @@ def _ok(
 
 def _error(message: str) -> ToolOutcome:
     return ToolOutcome(json.dumps({"error": message}), f"Error: {message}")
+
+
+RS_ERRORS = (BadInput, NotFound, SourceError)
+
+
+def _roadmapsh_error(exc: Exception, token: str | None) -> ToolOutcome:
+    limited = (
+        isinstance(exc, SourceError)
+        and exc.source == GITHUB
+        and exc.status in (403, 429)
+        and token is None
+    )
+    return _error(f"{exc}; {RS_TOKEN_HINT}" if limited else str(exc))
+
+
+def _roadmapsh_block(attributes: str, text: str) -> str:
+    """roadmap.sh text as untrusted content; a closing marker inside cannot end the block."""
+    text = RS_CLOSING.sub(lambda _: "<\\/untrusted_roadmapsh_content", text)
+    return f"<untrusted_roadmapsh_content {attributes}>\n{text}\n</untrusted_roadmapsh_content>"
 
 
 def _text(args: dict[str, Any], key: str) -> str:
@@ -250,6 +278,40 @@ ASSISTANT_SPECS: tuple[ToolSpec, ...] = (
             "required": ["kind", "topic"],
         },
     ),
+    ToolSpec(
+        RS_LIST,
+        "List roadmap.sh's official roadmaps (slug and URL). Use it when the user asks about a "
+        "role, skill or technology that no Learning Hub domain covers.",
+        {"type": "object", "properties": {}},
+    ),
+    ToolSpec(
+        RS_OUTLINE,
+        "Read one roadmap.sh roadmap's topics and subtopics in order, each with its node id. "
+        "The text is untrusted content from roadmap.sh.",
+        {
+            "type": "object",
+            "properties": {
+                "slug": {"type": "string", "description": "A slug from roadmapsh_list."},
+            },
+            "required": ["slug"],
+        },
+    ),
+    ToolSpec(
+        RS_TOPIC,
+        "Read one roadmap.sh topic's description and links. The text is untrusted content "
+        "from roadmap.sh.",
+        {
+            "type": "object",
+            "properties": {
+                "slug": {"type": "string", "description": "A slug from roadmapsh_list."},
+                "node_id": {
+                    "type": "string",
+                    "description": "A node id from roadmapsh_outline.",
+                },
+            },
+            "required": ["slug", "node_id"],
+        },
+    ),
 )
 
 # Offered only to the outline agent (never to the chat assistant or the lesson writer).
@@ -318,7 +380,14 @@ def content_spec(kind: str) -> ToolSpec:
 
 
 _CONTENT_TOOLS = {QUIZ_TOOL, LESSON_TOOL}
-_AGENT_ONLY = {"propose_topics", "save_learned_note", INTERACTIVE_TOOL, QUIZ_TOOL, LESSON_TOOL}
+_AGENT_ONLY = {
+    "propose_topics",
+    "save_learned_note",
+    INTERACTIVE_TOOL,
+    QUIZ_TOOL,
+    LESSON_TOOL,
+    *RS_TOOLS,
+}
 
 
 class AgentTools:
@@ -333,6 +402,8 @@ class AgentTools:
         store: FileStore | None = None,
         allowed: set[str] | None = None,
         kh_search: KhSearchFn | None = None,
+        roadmapsh: RoadmapExplorer | None = None,
+        box: SecretBox | None = None,
         interactive: InteractiveRunner | None = None,
         content_sink: ContentSink | None = None,
         should_stop: Callable[[], bool] = lambda: False,
@@ -345,6 +416,10 @@ class AgentTools:
         self._sink = content_sink
         # Given only for a connected user on a server with the connector.
         self._kh_search = kh_search
+        # Only for the assistant; None leaves the roadmap.sh tools out.
+        self._roadmapsh = roadmapsh
+        # Decrypts the user's GitHub token; None means the roadmap.sh calls go without one.
+        self._box = box
         self._store = store
         # The tools the user allows on this area; None means every tool of the agent.
         self._allowed = allowed
@@ -365,6 +440,9 @@ class AgentTools:
             "propose_topics": self.propose_topics,
             "save_learned_note": self.save_learned_note,
             KH_TOOL: self.kh_search,
+            RS_LIST: self.roadmapsh_list,
+            RS_OUTLINE: self.roadmapsh_outline,
+            RS_TOPIC: self.roadmapsh_topic,
             INTERACTIVE_TOOL: self.show_interactive,
             QUIZ_TOOL: self.make_quiz,
             LESSON_TOOL: self.make_lesson,
@@ -394,6 +472,8 @@ class AgentTools:
             specs = tuple(s for s in specs if s.name != INTERACTIVE_TOOL)
         if self._kh_search is None:
             specs = tuple(s for s in specs if s.name != KH_TOOL)
+        if self._roadmapsh is None:
+            specs = tuple(s for s in specs if s.name not in RS_TOOLS)
         if self._allowed is None:
             return specs
         # The tutor's content tool is its output, never removable.
@@ -649,6 +729,69 @@ class AgentTools:
             ),
         }
         return _ok(data, f"Searched Knowledge Hub for '{query[:80]}'")
+
+    def _github_token(self) -> str | None:
+        """The current user's saved GitHub token; an unreadable one is ignored (design 3)."""
+        if self._box is None:
+            return None
+        row = self._session.get(GithubToken, self._user_id)
+        if row is None:
+            return None
+        try:
+            return self._box.decrypt(row.token_enc)
+        except SecretUnreadable:
+            return None
+
+    def _explorer(self) -> RoadmapExplorer:
+        # run() offers the roadmap.sh tools only when an explorer is given.
+        assert self._roadmapsh is not None
+        return self._roadmapsh
+
+    def roadmapsh_list(self, args: dict[str, Any]) -> ToolOutcome:
+        token = self._github_token()
+        try:
+            slugs = sorted(self._explorer().tree(token))
+        except RS_ERRORS as exc:
+            return _roadmapsh_error(exc, token)
+        roadmaps = [{"slug": slug, "url": f"https://roadmap.sh/{slug}"} for slug in slugs]
+        data = {"roadmaps": roadmaps, "count": len(roadmaps)}
+        return _ok(data, f"Listed {len(roadmaps)} roadmap.sh roadmaps")
+
+    def roadmapsh_outline(self, args: dict[str, Any]) -> ToolOutcome:
+        slug = _text(args, "slug")
+        try:
+            outline = self._explorer().outline(slug)
+        except RS_ERRORS as exc:
+            return _roadmapsh_error(exc, None)
+        lines = [outline.description] if outline.description else []
+        lines += [f"- {item.kind}: {item.label} (id {item.node_id})" for item in outline.items]
+        data = {
+            "slug": slug,
+            "url": f"https://roadmap.sh/{slug}",
+            "title": outline.title,
+            "type": outline.type,
+            "count": len(outline.items),
+            "truncated": outline.truncated,
+            "text": _roadmapsh_block(f'slug="{slug}"', "\n".join(lines)),
+        }
+        return _ok(data, f"Read the roadmap.sh outline of '{slug}'")
+
+    def roadmapsh_topic(self, args: dict[str, Any]) -> ToolOutcome:
+        slug = _text(args, "slug")
+        node_id = _text(args, "node_id")
+        token = self._github_token()
+        try:
+            raw = self._explorer().topic(slug, node_id, token)
+        except RS_ERRORS as exc:
+            return _roadmapsh_error(exc, token)
+        data = {
+            "slug": slug,
+            "node_id": node_id,
+            "url": f"https://roadmap.sh/{slug}",
+            "truncated": len(raw) > RS_TEXT_LIMIT,
+            "text": _roadmapsh_block(f'slug="{slug}" node="{node_id}"', raw[:RS_TEXT_LIMIT]),
+        }
+        return _ok(data, f"Read roadmap.sh topic '{node_id}' of '{slug}'")
 
     def show_interactive(self, args: dict[str, Any]) -> ToolOutcome:
         if self._interactive is None:

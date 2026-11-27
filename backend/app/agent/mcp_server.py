@@ -189,6 +189,7 @@ class DatabaseTools:
         from app.kh.service import KhService
         from app.main import build_store
         from app.roadmaps import RoadmapCatalog
+        from app.roadmapsh.service import RoadmapExplorer
 
         raw = os.environ.get(USER_VARIABLE, "").strip()
         if not raw:
@@ -204,7 +205,9 @@ class DatabaseTools:
         self._builtin = RoadmapCatalog.load(settings.roadmaps_dir)
         self._store = build_store(settings)
         self._sessions = make_session_factory(make_engine(settings.database_url))
-        self._kh = KhService(settings, SecretBox.from_settings(settings), self._sessions, utc_now)
+        self._box = SecretBox.from_settings(settings)
+        self._kh = KhService(settings, self._box, self._sessions, utc_now)
+        self._roadmapsh = RoadmapExplorer(settings)
         with self._sessions() as session:
             if session.get(User, self._user_id) is None:
                 raise SystemExit(f"{USER_VARIABLE} does not name an existing user")
@@ -231,6 +234,8 @@ class DatabaseTools:
                 store=self._store,
                 allowed=self._allowed,
                 kh_search=self._kh.search_for(self._user_id),
+                roadmapsh=self._roadmapsh,
+                box=self._box,
             ).run(name, arguments)
 
 

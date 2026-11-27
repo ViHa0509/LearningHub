@@ -129,3 +129,23 @@ def timeout_error(sdk: Any) -> Exception:
 def connection_error(sdk: Any) -> Exception:
     error: Exception = sdk.APIConnectionError(request=REQUEST)
     return error
+
+
+class NetworkInTest(AssertionError):
+    """A test reached for roadmap.sh or GitHub without injecting a fake."""
+
+
+def no_roadmapsh_network(url: str, timeout: float, headers: dict[str, str], limit: int) -> bytes:
+    raise NetworkInTest(f"no network in tests: {url}")
+
+
+def no_github_check(url: str, token: str) -> int | None:
+    raise NetworkInTest(f"no network in tests: {url}")
+
+
+def offline(app: Any) -> None:
+    """The app's roadmap.sh explorer and GitHub token check never reach the network."""
+    from app.roadmapsh.service import RoadmapExplorer
+
+    app.state.roadmapsh = RoadmapExplorer(app.state.settings, get=no_roadmapsh_network)
+    app.state.github_check = no_github_check

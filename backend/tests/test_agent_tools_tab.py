@@ -26,6 +26,9 @@ ASSISTANT_TOOLS = [
     "fetch_reference",
     "save_learned_note",
     "show_interactive",
+    "roadmapsh_list",
+    "roadmapsh_outline",
+    "roadmapsh_topic",
 ]
 WRITER_TOOLS = ASSISTANT_TOOLS[:7]
 TUTOR_TOOLS = ["search_notes", "read_note", "list_roadmap", "read_lesson"]

@@ -130,18 +130,61 @@ def roadmap_control(payload: dict) -> dict:
     return roadmap_state
 
 
-@app.get("/roadmap-api/repos/kamranahmedse/developer-roadmap/git/trees/{commit}")
+# --- fake roadmap.sh explorer (roadmap-explorer e2e): one synthetic roadmap ----------------------
+# The API answer under /roadmapsh-api, its content files in the tree (ref "master" only) and the raw
+# files; GET /github-api/rate_limit accepts one made-up token. Synthetic text only.
+RSH_SLUG = "e2e-roadmap"
+RSH_TOKEN = "e2eSyntheticRoadmapTokenWXYZ"  # matches ^[A-Za-z0-9_]{20,255}$, not a real token shape
+RSH_NODES = [
+    {"id": "e2eSub1", "type": "subtopic", "position": {"x": 10, "y": 300}, "data": {"label": "Synthetic Subtopic"}},
+    {"id": "e2eLabel1", "type": "label", "position": {"x": 0, "y": 50}, "data": {"label": "Layout only label"}},
+    {"id": "e2eTopic1", "type": "topic", "position": {"x": 0, "y": 100}, "data": {"label": "Synthetic Topic"}},
+]
+RSH_FILES = {
+    f"roadmaps/{RSH_SLUG}/content/synthetic-topic@e2eTopic1.md": (
+        "# Synthetic Topic\n\nSynthetic description of the topic.\n\n"
+        "- [@article@Synthetic reading](https://example.test/e2e-roadmap-topic)\n"
+    ),
+    f"roadmaps/{RSH_SLUG}/content/synthetic-subtopic@e2eSub1.md": "# Synthetic Subtopic\n\nSynthetic subtopic text.\n",
+}
+
+
+@app.get("/roadmapsh-api/v1-official-roadmap/{slug}")
+def roadmapsh_roadmap(slug: str) -> JSONResponse:
+    if slug != RSH_SLUG:
+        return JSONResponse({"message": "Roadmap not found"}, status_code=404)
+    body = {
+        "title": {"card": "E2E Roadmap", "page": "E2E Roadmap"},
+        "description": "A synthetic roadmap for the e2e run.",
+        "slug": slug,
+        "type": "role",
+        "nodes": RSH_NODES,
+        "edges": [],
+    }
+    return JSONResponse(body)
+
+
+@app.get("/github-api/rate_limit")
+def github_rate_limit(request: Request) -> JSONResponse:
+    auth = request.headers.get("authorization", "")
+    if auth.split(" ")[-1] == RSH_TOKEN:
+        return JSONResponse({"resources": {"core": {"limit": 5000, "remaining": 4999}}})
+    return JSONResponse({"message": "Bad credentials"}, status_code=401)
+
+
+@app.get("/roadmap-api/repos/nilbuild/developer-roadmap/git/trees/{commit}")
 async def roadmap_tree(commit: str) -> JSONResponse:
     await asyncio.sleep(TREE_DELAY_S)
     if roadmap_state["fail"]:
         return JSONResponse({"message": "fake source failure"}, status_code=500)
-    tree = [{"path": p, "type": "blob"} for p in sorted(_roadmap_files())]
+    paths = set(_roadmap_files()) | (set(RSH_FILES) if commit == "master" else set())
+    tree = [{"path": p, "type": "blob"} for p in sorted(paths)]
     return JSONResponse({"sha": commit, "truncated": False, "tree": tree})
 
 
-@app.get("/roadmap-raw/kamranahmedse/developer-roadmap/{commit}/{path:path}")
+@app.get("/roadmap-raw/nilbuild/developer-roadmap/{commit}/{path:path}")
 def roadmap_raw(commit: str, path: str) -> PlainTextResponse:
-    text = _roadmap_files().get(path)
+    text = {**_roadmap_files(), **RSH_FILES}.get(path)
     if text is None:
         return PlainTextResponse("404: Not Found", status_code=404)
     return PlainTextResponse(text)
@@ -496,6 +539,48 @@ def _kh(payload: dict) -> tuple[dict | None, str | None]:
     return call, None
 
 
+ROADMAP_RE = re.compile(r"\[\[roadmap:([^\]]+)\]\]")
+
+
+def _roadmapsh(payload: dict) -> tuple[dict | None, str | None]:
+    """[[roadmap:<slug>]] in the last user message (roadmap-explorer e2e): roadmapsh_list, then
+    roadmapsh_outline(<slug>), then roadmapsh_topic for the first node id of the outline, then
+    "ROADMAP ok ..." built from the three results; any tool error ends it with "ROADMAP error <message>"."""
+    names = {(t.get("function") or {}).get("name") for t in payload.get("tools") or []}
+    messages = payload.get("messages") or []
+    last_user = max((i for i, m in enumerate(messages) if m.get("role") == "user"), default=-1)
+    found = ROADMAP_RE.search(_text(messages[last_user].get("content"))) if last_user >= 0 else None
+    if not found or "roadmapsh_list" not in names:
+        return None, None
+    slug = found.group(1).strip()
+    results = [_text(m.get("content")) for m in messages[last_user + 1 :] if m.get("role") == "tool"]
+    data = []
+    for r in results:
+        try:
+            data.append(json.loads(r))
+        except ValueError:
+            return None, "ROADMAP error unreadable result"
+        if "error" in data[-1]:
+            return None, f"ROADMAP error {data[-1]['error']}"
+
+    def call(name: str, args: dict) -> dict:
+        return {"id": f"call_{name}", "type": "function", "function": {"name": name, "arguments": json.dumps(args)}}
+
+    if len(data) == 0:
+        return call("roadmapsh_list", {}), None
+    if len(data) == 1:
+        return call("roadmapsh_outline", {"slug": slug}), None
+    node = re.search(r"\(id ([A-Za-z0-9_-]+)\)", str(data[1].get("text", "")))
+    if len(data) == 2:
+        return call("roadmapsh_topic", {"slug": slug, "node_id": node.group(1) if node else "none"}), None
+
+    def shown(value: object) -> str:
+        return str(value).replace("<", "[").replace(">", "]").replace("\n", " / ")
+
+    slugs = ",".join(r["slug"] for r in data[0]["roadmaps"])
+    return None, f"ROADMAP ok slugs={slugs} outline={shown(data[1]['text'])} topic={shown(data[2]['text'])}"
+
+
 # "quiz me" not followed by a colon: the /quiz skill expands to "Quiz me: write 5 questions ..."
 INTERACTIVE_TRIGGERS = (
     (re.compile(r"quiz me\b(?!:)", re.IGNORECASE), "quiz"),
@@ -650,6 +735,7 @@ async def chat_completions(payload: dict) -> JSONResponse:
     learn_call, learn_text = _learn(payload)
     cut_call, cut_text, cut = _cut(payload)
     kh_call, kh_text = _kh(payload)
+    rsh_call, rsh_text = _roadmapsh(payload)
     lesson_call, lesson_text = _write_lesson(payload)
     ui_call, ui_text = _a2ui(payload)
     slow_call, slow_text = await _slow(payload)
@@ -670,6 +756,12 @@ async def chat_completions(payload: dict) -> JSONResponse:
         finish = "tool_calls"
     elif lesson_text is not None:
         message = {"role": "assistant", "content": lesson_text}
+        finish = "stop"
+    elif rsh_call is not None:
+        message = {"role": "assistant", "content": None, "tool_calls": [rsh_call]}
+        finish = "tool_calls"
+    elif rsh_text is not None:
+        message = {"role": "assistant", "content": rsh_text}
         finish = "stop"
     elif kh_call is not None:
         message = {"role": "assistant", "content": None, "tool_calls": [kh_call]}

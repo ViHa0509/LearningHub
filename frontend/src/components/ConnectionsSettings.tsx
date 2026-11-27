@@ -1,5 +1,119 @@
 import { useEffect, useState } from 'react'
-import { api, ApiError, type KhStatus } from '../api'
+import { api, ApiError, type GithubStatus, type KhStatus } from '../api'
+
+/** The GitHub card: an optional token that raises GitHub's rate limit for the roadmap.sh tools. */
+function GithubCard() {
+  const [info, setInfo] = useState<GithubStatus | null>(null)
+  const [replacing, setReplacing] = useState(false)
+  const [token, setToken] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let live = true
+    api
+      .github()
+      .then((out) => live && setInfo(out))
+      .catch(() => live && setError('Could not load the GitHub token.'))
+    return () => {
+      live = false
+    }
+  }, [])
+
+  const cancel = () => {
+    setToken('')
+    setError(null)
+    setReplacing(false)
+  }
+
+  const save = async () => {
+    if (!token.trim() || busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      setInfo(await api.saveGithub(token.trim()))
+      setToken('')
+      setReplacing(false)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'The request failed') // the field keeps its text
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const remove = async () => {
+    if (!window.confirm('Remove the GitHub token? The assistant goes back to the anonymous GitHub limit.')) return
+    setBusy(true)
+    setError(null)
+    try {
+      await api.removeGithub()
+      setInfo({ saved: false, hint: null })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'The request failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const showField = info !== null && (!info.saved || replacing)
+  return (
+    <div className="provider-cards">
+      <article className="provider-card" aria-label="GitHub">
+        <header className="provider-header">
+          <h3 className="agent-name">GitHub</h3>
+        </header>
+        {!info && !error && <p className="muted small">Loading…</p>}
+        {showField && (
+          <>
+            <p className="muted small">
+              Optional. The assistant reads roadmap.sh&apos;s public repository on GitHub; a token raises GitHub&apos;s
+              limit of 60 requests per hour. A fine-grained token with no permissions is enough.
+            </p>
+            <label className="field">
+              GitHub token
+              <input
+                type="password"
+                autoComplete="off"
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void save()
+                  else if (e.key === 'Escape') cancel()
+                }}
+              />
+            </label>
+            <div className="provider-actions">
+              <button type="button" className="primary" onClick={() => void save()} disabled={busy || !token.trim()}>
+                Save
+              </button>
+              <button type="button" onClick={cancel} disabled={busy}>
+                Cancel
+              </button>
+            </div>
+          </>
+        )}
+        {info?.saved && !replacing && (
+          <>
+            <p>Token saved ({info.hint})</p>
+            <div className="provider-actions">
+              <button type="button" onClick={() => setReplacing(true)} disabled={busy}>
+                Replace
+              </button>
+              <button type="button" onClick={() => void remove()} disabled={busy}>
+                Remove
+              </button>
+            </div>
+          </>
+        )}
+        {error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
+      </article>
+    </div>
+  )
+}
 
 /** Settings > Agents > Connections: the outside services the agents read as the user. */
 export function ConnectionsSettings() {
@@ -11,6 +125,7 @@ export function ConnectionsSettings() {
       <section className="agents-section" aria-label="Connections">
         <p className="muted">Link outside services, so the agents can read them as you.</p>
         <KhCard />
+        <GithubCard />
       </section>
     </section>
   )

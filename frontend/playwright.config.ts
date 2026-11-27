@@ -29,6 +29,8 @@ export const E2E_ENV = {
   // The reference sync reads a synthetic source on the fake server, never GitHub or roadmap.sh.
   LH_ROADMAP_API_BASE: 'http://127.0.0.1:8002/roadmap-api',
   LH_ROADMAP_RAW_BASE: 'http://127.0.0.1:8002/roadmap-raw',
+  // The roadmap.sh explorer reads one synthetic roadmap on the fake server (ref defaults to master).
+  LH_ROADMAPSH_API_BASE: 'http://127.0.0.1:8002/roadmapsh-api',
   // The news feeds of the e2e run sit on a loopback address, which the safe fetch refuses
   // before connecting: a refresh never reads a real feed.
   LH_NEWS_SOURCES_FILE: join(import.meta.dirname, 'e2e', 'news-sources.e2e.yaml'),

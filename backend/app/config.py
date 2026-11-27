@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     # these at a local fake server.
     roadmap_api_base: str = "https://api.github.com"
     roadmap_raw_base: str = "https://raw.githubusercontent.com"
+    # The assistant's roadmap.sh tools: official roadmaps from this API, topic files from the
+    # repository at this ref (listing and files through the two bases above).
+    roadmapsh_api_base: str = "https://roadmap.sh/api"
+    roadmapsh_ref: str = "master"
     # The AI news feeds (checked at startup).
     news_sources_file: Path = REPO_ROOT / "news" / "sources.yaml"
     # The built frontend (frontend/dist) to serve next to the API, as the release image does;

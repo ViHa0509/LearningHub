@@ -29,7 +29,7 @@ from app.sync_resources import main as sync_command
 from tests.conftest import SERVERLESS, TEST_DATABASE_URL, signed_in_client
 
 COMMIT = "abc1234"
-REPO = "/kamranahmedse/developer-roadmap"
+REPO = "/nilbuild/developer-roadmap"
 CONTENT = f"{REPO}/{COMMIT}/roadmaps"
 
 MAPPING = f"""\

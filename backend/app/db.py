@@ -185,6 +185,19 @@ class KhConnection(Base):
     connected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class GithubToken(Base):
+    """A user's optional GitHub token (SecretBox-encrypted); only ``token_hint`` is shown."""
+
+    __tablename__ = "github_tokens"
+
+    user_id: Mapped[uuid.UUID] = user_fk(primary_key=True)
+    token_enc: Mapped[str] = mapped_column(Text)
+    token_hint: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class AppSetting(Base):
     """A setting saved in the app; ``secret_enc`` holds a SecretBox-encrypted secret."""
 

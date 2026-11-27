@@ -201,8 +201,10 @@ def auth_kit(settings: Any) -> Iterator[AuthKit]:
     from fastapi.testclient import TestClient
 
     from app.main import create_app
+    from tests.agent_fakes import offline
 
     app = create_app(settings)
+    offline(app)
     mailer = CapturingMailer()
     clock = FakeClock()
     app.state.mailer = mailer

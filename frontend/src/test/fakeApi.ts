@@ -454,6 +454,8 @@ export interface FakeState {
    * `outcome` is what the next poll answers while a sign-in is pending; set it to finish, refuse or expire it.
    */
   kh: FakeKh
+  /** The GitHub token store (GET/PUT/DELETE /api/github); `refuse` makes the next PUTs answer that error. */
+  github: { saved: boolean; hint: string | null; refuse: { status: number; detail: string } | null }
   /** The refresh job (idle until one is started). */
   newsJob: NewsRefreshStatus
   /**
@@ -754,6 +756,7 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
       polls: 0,
       connectError: null,
     },
+    github: { saved: false, hint: null, refuse: null },
     newsJob: { state: 'idle', started_at: null, finished_at: null, error: null, sources: [] },
     newsRefreshOutcome: { items: [] },
     newsRefreshPolls: 1,
@@ -1751,6 +1754,19 @@ export function installFakeApi(notes: Note[] = [], importResults?: ImportOutcome
           attached: own.filter((t) => !removed.includes(t)),
           available: own.filter((t) => removed.includes(t)),
         })
+      }
+      if (url === '/api/github') {
+        const gh = state.github
+        if (method === 'PUT') {
+          if (gh.refuse) return respond({ detail: gh.refuse.detail }, gh.refuse.status)
+          gh.saved = true
+          gh.hint = `…${String(body.token).slice(-4)}`
+        } else if (method === 'DELETE') {
+          gh.saved = false
+          gh.hint = null
+          return respond(null, 204)
+        }
+        return respond({ saved: gh.saved, hint: gh.hint })
       }
       if (url === '/api/kh' || url.startsWith('/api/kh/')) {
         const kh = state.kh

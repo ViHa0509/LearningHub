@@ -29,6 +29,7 @@ from app.news.sources import load_sources
 from app.resources.mapping import load_mappings
 from app.resources.sync import SyncJobs, http_get
 from app.roadmaps import RoadmapCatalog
+from app.roadmapsh.service import RoadmapExplorer
 from app.routes import (
     a2ui,
     admin,
@@ -41,6 +42,7 @@ from app.routes import (
     data_upload,
     domains,
     fields,
+    github,
     kh,
     lessons,
     news,
@@ -166,6 +168,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.kh = KhService(
         settings, app.state.box, app.state.session_factory, lambda: app.state.clock()
     )
+    app.state.roadmapsh = RoadmapExplorer(settings)
+    app.state.github_check = github.github_status  # tests inject a fake
 
     @app.exception_handler(RequestValidationError)
     async def field_errors(request: Request, exc: RequestValidationError) -> Response:
@@ -211,6 +215,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         chat_sessions,
         ai_providers,
         agents,
+        github,
         kh,
         resources,
         news,

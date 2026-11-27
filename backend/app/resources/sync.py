@@ -24,7 +24,8 @@ from app.db import NodeResource
 from app.resources.mapping import COMMIT, ResourceMapping
 from app.resources.parser import parse_links
 
-REPO = "kamranahmedse/developer-roadmap"
+# Moved from kamranahmedse/developer-roadmap; raw.githubusercontent.com does not follow moves.
+REPO = "nilbuild/developer-roadmap"
 SOURCE = "roadmap.sh"
 WORKERS = 4
 TIMEOUT_S = 20.0

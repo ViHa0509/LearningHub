@@ -19,6 +19,9 @@ NAMES = [
     "fetch_reference",
     "save_learned_note",
     "show_interactive",
+    "roadmapsh_list",
+    "roadmapsh_outline",
+    "roadmapsh_topic",
     "propose_topics",
 ]
 
@@ -34,7 +37,7 @@ def rows_in_table(client: TestClient) -> int:
         return int(db.scalar(select(func.count()).select_from(AreaAgentSetting)) or 0)
 
 
-def test_tools_list_names_the_ten_tools_and_who_has_them(client: TestClient) -> None:
+def test_tools_list_names_the_thirteen_tools_and_who_has_them(client: TestClient) -> None:
     response = client.get("/api/agents/tools")
     assert response.status_code == 200
     tools = response.json()
@@ -47,6 +50,8 @@ def test_tools_list_names_the_ten_tools_and_who_has_them(client: TestClient) -> 
         assert agents[name] == ["assistant", "lesson-writer", "outline", *tutor]
     assert agents["save_learned_note"] == ["assistant"]
     assert agents["show_interactive"] == ["assistant"]
+    for name in ("roadmapsh_list", "roadmapsh_outline", "roadmapsh_topic"):
+        assert agents[name] == ["assistant"]
     assert agents["propose_topics"] == ["outline"]
     assert all(t["description"] and not t["description"].endswith(". ") for t in tools)
     assert tools[0]["description"].startswith("Search the user's imported notes")

@@ -16,7 +16,7 @@ from app.auth.sessions import COOKIE, LIFETIME, hash_token, new_token
 from app.config import Settings
 from app.db import User, UserSession
 from app.main import create_app
-from tests.agent_fakes import NoNetworkFactory, fake_resolver
+from tests.agent_fakes import NoNetworkFactory, fake_resolver, offline
 from tests.auth_fakes import AuthKit, auth_kit
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -45,7 +45,7 @@ def clean_tables() -> None:
             text(
                 "TRUNCATE notes, lessons, agent_providers, ai_providers, node_resources, "
                 "news_items, agent_settings, area_agent_settings, kh_connections, users, "
-                "shared_usage, "
+                "github_tokens, shared_usage, "
                 "oauth_accounts, sessions, "
                 "auth_tokens, "
                 "app_settings, sync_keys, invitations, oauth_pending, sync_uploads, "
@@ -144,6 +144,7 @@ def client(settings: Settings) -> Iterator[TestClient]:
     app = create_app(settings)
     app.state.url_resolver = fake_resolver()
     app.state.llm_factory = NoNetworkFactory()
+    offline(app)
     with signed_in_client(app, headers={"X-LearningHub": "1"}) as test_client:
         yield test_client
     app.state.engine.dispose()
