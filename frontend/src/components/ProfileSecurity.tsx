@@ -141,13 +141,20 @@ function LinkedMethods({ me }: { me: Me }) {
   return (
     <div className="provider-card" role="group" aria-label="Sign-in methods">
       <h2>Sign-in methods</h2>
-      <ul>
-        {me.has_password && <li>Password</li>}
+      <ul className="session-list">
+        {me.has_password && (
+          <li className="session-row">
+            <div>Password</div>
+          </li>
+        )}
         {PROVIDERS.map(({ id, label }) => {
           const linked = me.linked.includes(id)
           return (
-            <li key={id}>
-              {label} <span className="muted">{linked ? 'Linked' : 'Not linked'}</span>{' '}
+            <li key={id} className="session-row">
+              <div>
+                <div>{label}</div>
+                <div className="muted small">{linked ? 'Linked' : 'Not linked'}</div>
+              </div>
               {linked ? (
                 <button type="button" disabled={unlink.isPending} aria-label={`Unlink ${label}`} onClick={() => unlink.mutate(id)}>
                   Unlink
